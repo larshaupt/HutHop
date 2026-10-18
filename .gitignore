@@ -1,0 +1,23 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Environment / secrets
+.env
+.env.*
+
+# Local data (SQLite DB, raw API dumps, OSM extracts, GraphHopper cache)
+data/*.db
+data/*.db-*
+data/raw/
+*.osm.pbf
+graphhopper/graph-cache/
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
