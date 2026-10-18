@@ -71,6 +71,17 @@ button { cursor: pointer; }
 .search kbd { position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
   font: 11px var(--font); color: var(--text-faint); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; }
 
+/* ---------- Tabs ---------- */
+.tabs { display: flex; gap: 4px; margin: 0 16px 10px; border-bottom: 1px solid var(--line); }
+.tabs button {
+  border: 0; background: none; padding: 8px 4px 10px; margin-right: 12px; font-weight: 600; color: var(--text-soft);
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.tabs button:hover { color: var(--text); }
+.tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+.tab { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.tab.scroll { overflow-y: auto; overscroll-behavior: contain; }
+
 /* ---------- Filters ---------- */
 .filters { margin: 4px 16px 0; border-bottom: 1px solid var(--line); }
 .filters summary {
@@ -166,7 +177,7 @@ input[type="range"] { width: 100%; accent-color: var(--text); margin: 4px 0; }
 .dot.unknown { background: var(--unknown); box-shadow: inset 0 0 0 1.5px var(--closed); }
 
 /* ---------- Detail ---------- */
-#detail { overflow-y: auto; overscroll-behavior: contain; }
+#detail, #tourDetail { overflow-y: auto; overscroll-behavior: contain; }
 .hero { position: relative; aspect-ratio: 16 / 9; background: linear-gradient(135deg, #3b4a42, #1d2521); flex: none; }
 .hero img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .hero::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to bottom, rgb(0 0 0 / .35), transparent 30%, transparent 70%, rgb(0 0 0 / .25)); pointer-events: none; }
@@ -232,6 +243,84 @@ input[type="range"] { width: 100%; accent-color: var(--text); margin: 4px 0; }
 
 .source { margin-top: 24px; color: var(--text-faint); font-size: 11.5px; }
 .source a { color: inherit; }
+
+/* ---------- Tour planner ---------- */
+.tour-form { padding: 4px 16px 8px; }
+.input {
+  width: 100%; height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg);
+}
+.input:focus { outline: none; border-color: var(--text-soft); }
+label.field-label { display: flex; }
+.stepper { display: flex; align-items: center; height: 36px; border: 1px solid var(--line); border-radius: 9px; overflow: hidden; }
+.stepper button { width: 36px; height: 100%; border: 0; background: var(--bg-soft); font-size: 17px; }
+.stepper button:hover { background: var(--bg-hover); }
+.stepper output { flex: 1; text-align: center; font-weight: 600; }
+.check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-soft); margin: 4px 0 8px; cursor: pointer; }
+.check input { accent-color: var(--text); width: 15px; height: 15px; margin: 0; }
+.btn.wide { width: 100%; height: 42px; margin-top: 8px; font-size: 14.5px; }
+.btn:disabled { opacity: .6; cursor: progress; }
+.stop-picker { position: relative; }
+.chip-picked {
+  display: flex; align-items: center; justify-content: space-between; height: 36px; padding: 0 6px 0 12px;
+  border: 1px solid var(--text); border-radius: 9px; font-weight: 500;
+}
+.chip-picked button { border: 0; background: none; font-size: 18px; color: var(--text-soft); width: 26px; height: 26px; border-radius: 6px; }
+.chip-picked button:hover { background: var(--bg-soft); }
+.suggest {
+  position: absolute; left: 0; right: 0; top: 40px; z-index: 5; list-style: none; margin: 0; padding: 4px;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 10px; box-shadow: var(--shadow); max-height: 260px; overflow-y: auto;
+}
+.suggest li { padding: 7px 8px; border-radius: 7px; cursor: pointer; }
+.suggest li:hover { background: var(--bg-soft); }
+.suggest li.none { color: var(--text-faint); cursor: default; }
+
+#tourResults { padding: 0 8px 16px; }
+#tourResults .results-head { padding: 12px 8px 8px; }
+#tourResults .empty b { color: var(--text); }
+.tour-card {
+  border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-bottom: 8px; cursor: pointer;
+  transition: border-color .12s, box-shadow .12s;
+}
+.tour-card:hover, .tour-card:focus-visible { border-color: var(--text-soft); box-shadow: 0 2px 10px rgb(0 0 0 / .07); outline: none; }
+.tour-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--text-soft); font-size: 13px; }
+.tour-head b { color: var(--text); }
+.flag { background: #fff6e0; color: #7a5200; border-radius: 99px; padding: 1px 8px; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
+.tour-body { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: end; margin-top: 8px; }
+.chain { list-style: none; margin: 0; padding: 0; font-size: 13px; min-width: 0; }
+.chain li { position: relative; padding-left: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.6; }
+.chain li::before { content: ""; position: absolute; left: 3px; top: 7px; width: 7px; height: 7px; border-radius: 50%; background: var(--text); }
+.chain li.stop::before { background: var(--bg); box-shadow: inset 0 0 0 2px var(--text); }
+.chain li:not(:last-child)::after { content: ""; position: absolute; left: 6px; top: 14px; height: calc(100% - 7px); width: 1px; background: var(--line); }
+.chain li.hut { font-weight: 600; }
+/* Bars share a fixed maximum width, so long tours get thinner bars instead of a wider chart. */
+.daybars { display: flex; align-items: flex-end; gap: 4px; height: 64px; width: min(var(--days) * 26px, 132px); }
+.daybars.dense { gap: 2px; }
+.daybar { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; flex: 1 1 0; min-width: 0; gap: 3px; }
+.daybars.dense .daybar span { display: none; }
+.daybar i { width: 100%; border-radius: 4px 4px 2px 2px; opacity: .85; }
+.daybar span { font-size: 10.5px; color: var(--text-soft); font-variant-numeric: tabular-nums; }
+
+.tour-top { padding: 16px 20px 0; }
+.tour-top h2 { margin: 10px 0 0; font-size: 20px; line-height: 1.25; letter-spacing: -0.01em; }
+.back.flat { position: static; box-shadow: none; background: var(--bg-soft); }
+.timeline { list-style: none; margin: 0; padding: 0; }
+.timeline li { display: grid; grid-template-columns: 26px 1fr; gap: 10px; position: relative; padding-bottom: 14px; }
+.timeline li::before { content: ""; position: absolute; left: 12px; top: 18px; bottom: -2px; width: 2px; background: var(--line); }
+.timeline li:last-child::before { display: none; }
+.tl-day { cursor: pointer; }
+.tl-dot { width: 14px; height: 14px; margin: 3px 0 0 6px; border-radius: 50%; background: var(--bg); box-shadow: inset 0 0 0 3px var(--c, var(--text)); position: relative; z-index: 1; }
+.tl-dot.hut { width: 26px; height: 26px; margin: 0; background: var(--text); box-shadow: none; display: flex; align-items: center; justify-content: center; }
+.tl-dot.hut span { color: #fff; font-weight: 700; font-size: 12px; line-height: 1; }
+.tl-title { font-size: 12px; font-weight: 700; color: var(--text-soft); text-transform: uppercase; letter-spacing: .04em; }
+.tl-meta { color: var(--text-soft); font-size: 12.5px; margin-top: 2px; }
+.tl-meta b { color: var(--text); }
+.tl-night { padding-top: 2px; }
+.tl-night a, .tl-day a { color: var(--text); text-decoration: none; border-bottom: 1px solid var(--line); }
+.tl-night a:hover, .tl-day a:hover { border-bottom-color: var(--text); }
+.night { font-weight: 600; }
+.night.catered { color: var(--catered); }
+.night.self_service { color: var(--self-service); }
+.night.unknown { color: #a36a00; }
 
 /* ---------- Connections ---------- */
 .trail-seg button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }

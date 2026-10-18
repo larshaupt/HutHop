@@ -8,8 +8,8 @@ Steps (see hut-tour-planner.md, "Routing approach"):
 2. Snap huts and stops to the nearest trail node (snap distance stored on `place`).
 3. From every hut, Dijkstra up to the cutoff, forward (hut → hut/stop) and on the reversed graph (stop → hut),
    once per trail category limit (yellow only, up to red-white, up to blue-white).
-4. Store edges with a simplified route line. A stop edge is skipped when its path passes another stop
-   (you would get on or off there). Higher category limits only store edges that differ from the easier one.
+4. Store edges with a simplified route line: all huts reached, and the STOPS_PER_HUT fastest stops per hut and
+   direction. Higher category limits only store edges that differ from the easier one.
 5. Keep manual `excluded` flags and notes across rebuilds, and attach matching SAC hut-to-hut routes.
 """
 
@@ -38,6 +38,9 @@ LIMITS = (1, 2, 3)
 NODE_PRECISION_M = 1.0
 CUTOFF_MIN = 600.0
 STOP_MAX_SNAP_M = 300.0
+# Fastest stops kept per hut, direction and category limit. Enough to include the stations of a village with
+# many bus stops (e.g. Grindelwald), while keeping the table small.
+STOPS_PER_HUT = 40
 # Huts further than this from a signposted trail (glacier and high-alpine huts, huts abroad) get no computed
 # edges: the gap would be counted as flat walking and give misleading times.
 HUT_MAX_SNAP_M = 500.0
@@ -134,10 +137,10 @@ def snap(network: TrailNetwork, xy: np.ndarray) -> tuple[np.ndarray, np.ndarray]
     return nodes, dist
 
 
-def tree_aggregates(pred: np.ndarray, source: int, edge_vals: dict[str, np.ndarray], is_stop: np.ndarray,
+def tree_aggregates(pred: np.ndarray, source: int, edge_vals: dict[str, np.ndarray],
                     reached: np.ndarray) -> dict[str, np.ndarray]:
-    """Sum/max edge values from the source to every reached node of a shortest-path tree, and whether an
-    intermediate node on that path is a stop. Uses pointer doubling on the reached nodes only."""
+    """Sum/max edge values from the source to every reached node of a shortest-path tree.
+    Uses pointer doubling on the reached nodes only."""
     idx = np.flatnonzero(reached)
     k = len(idx)
     pos = np.full(len(pred), k, dtype=np.int64)  # k = sentinel (the source and unreached nodes)
@@ -148,22 +151,16 @@ def tree_aggregates(pred: np.ndarray, source: int, edge_vals: dict[str, np.ndarr
     sums = {name: np.append(np.where(has_parent, v[idx], 0.0), 0.0) for name, v in edge_vals.items()
             if name != "category"}
     cat = np.append(np.where(has_parent, edge_vals["category"][idx], 0), 0)
-    # stop flag starts at the parent: the target itself and the source don't count
-    via_stop = np.append(has_parent & is_stop[np.where(has_parent, pred[idx], source)]
-                         & (pred[idx] != source), False)
     while (anc[:k] != k).any():
         for name in sums:
             sums[name] = sums[name] + np.where(anc != k, sums[name][anc], 0.0)
         cat = np.maximum(cat, cat[anc])
-        via_stop = via_stop | via_stop[anc]
         anc = anc[anc]
     out = {name: np.zeros(len(pred)) for name in sums}
     for name in sums:
         out[name][idx] = sums[name][:k]
     out["category"] = np.zeros(len(pred), dtype=int)
     out["category"][idx] = cat[:k]
-    out["via_stop"] = np.zeros(len(pred), dtype=bool)
-    out["via_stop"][idx] = via_stop[:k]
     return out
 
 
@@ -199,8 +196,6 @@ def search(network: TrailNetwork, places: list[dict], cutoff: float = CUTOFF_MIN
         if p["snap_m"] <= max_snap[p["kind"]]:
             by_node.setdefault(p["node"], []).append(p)
     n = len(network.node_xy)
-    is_stop = np.zeros(n, dtype=bool)
-    is_stop[[p["node"] for p in places if p["kind"] == "stop" and p["snap_m"] <= STOP_MAX_SNAP_M]] = True
     target_nodes = np.array(sorted(by_node))
     flat_min_per_m = hiking_time.FLAT_MIN_PER_KM / 1000
 
@@ -225,30 +220,32 @@ def search(network: TrailNetwork, places: list[dict], cutoff: float = CUTOFF_MIN
                     eid[with_parent] = network.lookup(limit, a[with_parent], c[with_parent])
                     vals = {"length": es.length[eid], "up": es.up[eid], "down": es.down[eid],
                             "category": es.category[eid]}
-                    agg = tree_aggregates(pred[row], src_node, vals, is_stop, reached)
+                    agg = tree_aggregates(pred[row], src_node, vals, reached)
+                    candidates = []  # (total minutes, other place, node)
                     for t in target_nodes[reached[target_nodes]]:
                         for other in by_node[t]:
                             if other["id"] == hut["id"] or (reverse and other["kind"] == "hut"):
                                 continue
-                            if other["kind"] == "stop" and agg["via_stop"][t]:
-                                continue
-                            snap_m = hut["snap_m"] + other["snap_m"]
-                            total = dist[row, t] + snap_m * flat_min_per_m
-                            if total > cutoff:
-                                continue
-                            frm, to = (other, hut) if reverse else (hut, other)
-                            easier = next((found[k] for k in ((frm["id"], to["id"], lim) for lim in
-                                           range(limit - 1, 0, -1)) if k in found), None)
-                            if easier and easier["time_min"] - total < SAME_EDGE_MIN:
-                                continue  # same path as with an easier limit
-                            nodes = path_nodes(pred[row], src_node, int(t))
-                            found[(frm["id"], to["id"], limit)] = {
-                                "from_place": frm["id"], "to_place": to["id"], "category_limit": limit,
-                                "time_min": round(total), "distance_m": round(agg["length"][t] + snap_m),
-                                "ascent_m": round(agg["up"][t]), "descent_m": round(agg["down"][t]),
-                                "max_category": int(agg["category"][t]) or 1,
-                                "_nodes": nodes[::-1] if reverse else nodes,
-                            }
+                            total = dist[row, t] + (hut["snap_m"] + other["snap_m"]) * flat_min_per_m
+                            if total <= cutoff:
+                                candidates.append((total, other, int(t)))
+                    huts_reached = [c for c in candidates if c[1]["kind"] == "hut"]
+                    stops_reached = sorted((c for c in candidates if c[1]["kind"] == "stop"), key=lambda c: c[0])
+                    for total, other, t in huts_reached + stops_reached[:STOPS_PER_HUT]:
+                        frm, to = (other, hut) if reverse else (hut, other)
+                        easier = next((found[k] for k in ((frm["id"], to["id"], lim) for lim in
+                                       range(limit - 1, 0, -1)) if k in found), None)
+                        if easier and easier["time_min"] - total < SAME_EDGE_MIN:
+                            continue  # same path as with an easier limit
+                        nodes = path_nodes(pred[row], src_node, t)
+                        snap_m = hut["snap_m"] + other["snap_m"]
+                        found[(frm["id"], to["id"], limit)] = {
+                            "from_place": frm["id"], "to_place": to["id"], "category_limit": limit,
+                            "time_min": round(total), "distance_m": round(agg["length"][t] + snap_m),
+                            "ascent_m": round(agg["up"][t]), "descent_m": round(agg["down"][t]),
+                            "max_category": int(agg["category"][t]) or 1,
+                            "_nodes": nodes[::-1] if reverse else nodes,
+                        }
                     del agg
             print(f"  limit {limit} {'reverse' if reverse else 'forward'}: {len(found)} edges so far", flush=True)
 

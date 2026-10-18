@@ -72,13 +72,19 @@ def test_category_limits(network, places):
     assert (1, 2, 2) not in edges  # same path as yellow, not stored again
 
 
-def test_stop_edges_skip_paths_through_other_stops(network, places):
+def test_stop_edges_both_directions_no_stop_to_stop(network, places):
     edges = edges_by_key(search(network, places))
     assert (1, 10, 1) in edges and (10, 1, 1) in edges   # hut A ↔ stop J
-    assert (1, 11, 1) not in edges                        # A → C on yellow passes stop J
-    assert (1, 11, 3) in edges                            # the blue path to C avoids J
+    assert (1, 11, 1) in edges                            # A → C on yellow passes stop J; still kept
     assert (2, 11, 1) in edges and (11, 2, 1) in edges   # hut B ↔ stop C
     assert not any(e["from_place"] >= 10 and e["to_place"] >= 10 for e in edges.values())  # no stop→stop
+
+
+def test_only_fastest_stops_per_hut(network, places, monkeypatch):
+    monkeypatch.setattr("app.ingest.build_edges.STOPS_PER_HUT", 1)
+    edges = edges_by_key(search(network, places))
+    from_a = {to for (frm, to, lim) in edges if frm == 1 and to >= 10 and lim == 1}
+    assert from_a == {10}  # J is closer to A than C
 
 
 def test_snap_time_added_and_cutoff(network, places):

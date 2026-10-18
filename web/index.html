@@ -26,6 +26,12 @@
         </div>
       </header>
 
+      <nav class="tabs" id="tabs" role="tablist">
+        <button role="tab" data-view="huts">Huts</button>
+        <button role="tab" data-view="tours">Plan a tour</button>
+      </nav>
+
+      <div class="tab" id="hutsTab">
       <div class="search">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
         <input id="q" type="search" placeholder="Search huts" autocomplete="off" aria-label="Search huts by name">
@@ -92,9 +98,77 @@
         </label>
       </div>
       <ul class="list" id="list" aria-label="Huts"></ul>
+      </div>
+
+      <div class="tab scroll" id="toursTab" hidden>
+        <form class="tour-form" id="tourForm" autocomplete="off">
+          <div class="field two">
+            <div>
+              <label class="field-label" for="tDate">Start date</label>
+              <input class="input" type="date" id="tDate" required>
+            </div>
+            <div>
+              <div class="field-label">Nights</div>
+              <div class="stepper">
+                <button type="button" data-step="-1" aria-label="Fewer nights">−</button>
+                <output id="tNightsLabel"></output>
+                <button type="button" data-step="1" aria-label="More nights">+</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="field">
+            <div class="field-label">Hiking per day <output id="tHoursLabel"></output></div>
+            <div class="range2">
+              <input type="range" id="tMin" min="1" max="10" step="0.5" aria-label="Minimum hours per day">
+              <input type="range" id="tMax" min="1" max="10" step="0.5" aria-label="Maximum hours per day">
+              <div class="range2-track"><div class="range2-fill" id="tHoursFill"></div></div>
+            </div>
+          </div>
+
+          <div class="field">
+            <div class="field-label">Hardest trail</div>
+            <div class="seg trail-seg" id="tLimit" role="group" aria-label="Hardest trail">
+              <button type="button" data-v="1"><i class="trail-swatch c1"></i>Yellow</button>
+              <button type="button" data-v="2"><i class="trail-swatch c2"></i>Red-white</button>
+              <button type="button" data-v="3"><i class="trail-swatch c3"></i>Blue-white</button>
+            </div>
+          </div>
+
+          <div class="field">
+            <div class="field-label">Huts</div>
+            <div class="seg" id="tCat" role="group" aria-label="Catering">
+              <button type="button" data-v="any">Any</button><button type="button" data-v="catered">Catered</button><button type="button" data-v="self_service">Self-service</button>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="field-label" for="tStartInput">Start</label>
+            <div class="stop-picker">
+              <div class="chip-picked" id="tStartPicked" hidden><span id="tStartName"></span><button type="button" id="tStartClear" aria-label="Clear start">×</button></div>
+              <input class="input" id="tStartInput" placeholder="Anywhere – or type a station" aria-autocomplete="list" aria-controls="tStartList">
+              <ul class="suggest" id="tStartList" role="listbox" hidden></ul>
+            </div>
+          </div>
+
+          <div class="field">
+            <div class="field-label">End</div>
+            <div class="seg" id="tLoop" role="group" aria-label="End">
+              <button type="button" data-v="0">Anywhere</button><button type="button" data-v="1">Back to start</button>
+            </div>
+          </div>
+
+          <label class="check"><input type="checkbox" id="tArea"> Only huts in the visible map area</label>
+          <label class="check"><input type="checkbox" id="tUnknown"> Include huts without opening data</label>
+
+          <button class="btn primary wide" type="submit" id="tFind">Find tours</button>
+        </form>
+        <div id="tourResults" aria-live="polite"></div>
+      </div>
     </section>
 
     <section id="detail" class="view" hidden aria-live="polite"></section>
+    <section id="tourDetail" class="view" hidden aria-live="polite"></section>
   </aside>
 
   <div class="map-tools">
@@ -112,6 +186,7 @@
   </div>
 
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="tours.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

@@ -2,7 +2,7 @@
 
 A private web app to browse and filter Swiss mountain huts (SAC plus selected non-SAC huts) and to **suggest multi-day summer hut tours** from user constraints, including availability checks and price estimates.
 
-> Status: Phases 0–2 done, Phase 3 (tour suggestions) next. Items marked **(verify)** are assumptions or partial observations and must be checked before relying on them.
+> Status: Phases 0–3 done, Phase 4 (availability and prices) next. Items marked **(verify)** are assumptions or partial observations and must be checked before relying on them.
 
 ---
 
@@ -359,16 +359,16 @@ Answer the open questions before building:
 ### Phase 2: Route graph
 
 - [x] `load_stops`: official stop list (incl. cable cars and lifts) into `place`/`stop`. 27,325 passenger stops.
-- [x] `build_edges`: swissTLM3D trail graph → snap huts and stops → outward searches from every hut (forward + reverse, per category limit, SciPy Dijkstra) → `edge` with route lines. ~13,800 edges in ~90 s. Stop edges whose path passes another stop are dropped.
+- [x] `build_edges`: swissTLM3D trail graph → snap huts and stops → outward searches from every hut (forward + reverse, per category limit, SciPy Dijkstra) → `edge` with route lines. ~31,000 edges in ~2 min; the 40 fastest stops per hut and direction are kept (an earlier rule that dropped stops behind other stops removed village stations such as Grindelwald).
 - [x] Show matching SAC route time and grade next to computed edges (name matching as in the spike, 37 matches).
 - [x] Edge review in the frontend: connections of the selected hut on the map and in the detail view (per trail limit), toggle `excluded`; snap warnings for huts > 200 m from a trail.
 - Huts more than 500 m from a signposted trail (54, mostly glacier/high-alpine huts and huts abroad) get no computed edges.
 
 ### Phase 3: Tour suggestions
 
-- [ ] Tour search (bounded DFS / beam search) with date-aware catering/self-service checks (SAC monthly codes).
-- [ ] `/tours/suggest` endpoint and input form.
-- [ ] Results list and route on the map, per-day stats.
+- [x] Tour search (beam search, width 3000) with date-aware catering/self-service checks (SAC monthly codes). All edge variants up to the trail limit are alternatives, so a harder limit only adds options; a small per-day penalty prefers easier trails between equal tours.
+- [x] `POST /api/tours/suggest` and `GET /api/stops` (start picker). Inputs: date (not in the past), nights, hours per day, hardest trail, catering, map area, start near a stop (1.5 km), back to start (3 km), include unknown huts.
+- [x] "Plan a tour" tab: form, result cards with day bars, tour detail timeline, route on the map with numbered huts; state in the URL.
 
 ### Phase 4: Prices + availability
 
@@ -380,6 +380,7 @@ Answer the open questions before building:
 
 - GPX export, saved tours, non-SAC huts, PWA/offline, better ranking.
 - SAC times as automatic overrides (per-grade calibration for T4+).
+- **Public transport within a tour:** allow a day to include a bus/train/cable car ride, e.g. walk down from a hut, take the bus through the valley, walk up to the next hut. Approach: combine a hut→stop edge, a timetable ride (or a simple stop→stop transfer table from the official timetable data), and a stop→hut edge into one day, counting only the walking time against the daily limit. Needs timetable data (e.g. opentransportdata.swiss GTFS) and a cap on rides per day.
 - Warnings for official trail closures and military shooting zones (geo.admin layers, see via-helvetica).
 - Docker Compose for a home server.
 

@@ -61,3 +61,21 @@ def test_exclude_edge(client):
 def test_unknown_hut(client):
     c, _ = client
     assert c.get("/api/huts/999999/edges").status_code == 404
+
+
+def test_suggest_one_night_tour(client):
+    c, ids = client
+    body = {"start_date": "2027-07-10", "nights": 1, "min_hours": 1, "max_hours": 2, "limit": 2}
+    tours = c.post("/api/tours/suggest", json=body).json()["tours"]
+    assert len(tours) == 1
+    days = tours[0]["days"]
+    assert [d["from"]["id"] for d in days] == [ids["stop"], ids["a"]]
+    assert days[0]["night"] == {"status": "catered", "partial": False} and days[1]["night"] is None
+    assert days[0]["geometry"] and tours[0]["time_min"] == 150
+    assert c.post("/api/tours/suggest", json=body | {"min_hours": 3, "max_hours": 2}).status_code == 422
+    assert c.post("/api/tours/suggest", json=body | {"start_date": "2020-07-10"}).status_code == 422
+
+
+def test_stop_search(client):
+    c, ids = client
+    assert [s["id"] for s in c.get("/api/stops", params={"q": "valley"}).json()] == [ids["stop"]]

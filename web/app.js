@@ -43,9 +43,14 @@ const DEFAULTS = {
   month: 0, openAs: "any", hb: false, kitchen: false, bookable: false,
   altMin: 0, altMax: ALT_MAX, minBeds: 0, operator: "all", q: "", sort: "name",
   hut: 0, base: "light", trails: false, limit: 2,
+  // tour planner
+  view: "huts", tDate: "", tNights: 2, tMin: 3, tMax: 6, tCat: "any", tStart: 0, tStartName: "", tLoop: false,
+  tArea: true, tUnknown: true, tBox: "", tour: 0,
 };
 const HASH_KEYS = { month: "m", openAs: "open", hb: "hb", kitchen: "kitchen", bookable: "book", altMin: "amin",
-  altMax: "amax", minBeds: "beds", operator: "type", q: "q", sort: "sort", hut: "hut", base: "map", trails: "trails", limit: "tl" };
+  altMax: "amax", minBeds: "beds", operator: "type", q: "q", sort: "sort", hut: "hut", base: "map", trails: "trails", limit: "tl",
+  view: "v", tDate: "td", tNights: "tn", tMin: "tmin", tMax: "tmax", tCat: "tc", tStart: "ts", tStartName: "tsn",
+  tLoop: "loop", tArea: "area", tUnknown: "unk", tBox: "tb", tour: "tour" };
 let state = readHash();
 let huts = [];
 let visible = [];
@@ -70,7 +75,7 @@ function writeHash() {
   for (const [key, short] of Object.entries(HASH_KEYS)) {
     const v = state[key];
     if (v === DEFAULTS[key]) continue;
-    params.set(short, typeof v === "boolean" ? "1" : v);
+    params.set(short, typeof v === "boolean" ? (v ? "1" : "0") : v);
   }
   const hash = params.toString();
   history.replaceState(null, "", hash ? `#${hash}` : location.pathname);
@@ -314,10 +319,13 @@ function addHutLayers() {
     },
     paint: { "text-color": "#1d2521", "text-halo-color": "#ffffff", "text-halo-width": 1.6 },
   });
+  addTourLayers();
   if (state.hut) {
     map.setFeatureState({ source: "huts", id: state.hut }, { selected: true });
     const data = connections.get(`${state.hut}:${state.limit}`);
     if (data) drawConnections(data);
+  } else if (state.tour && tourResults) {
+    drawTour(tourResults.tours[state.tour - 1], { fit: false });
   }
 }
 
@@ -351,6 +359,8 @@ async function selectHut(id, { fly = true } = {}) {
   if (state.hut !== id) return; // another hut was selected meanwhile
   renderDetail(d);
   showConnections(id);
+  $("#tourDetail").hidden = true;
+  clearTour();
   $("#browse").hidden = true;
   $("#detail").hidden = false;
   $("#detail").scrollTop = 0;
@@ -362,7 +372,7 @@ function closeDetail() {
   setState({ hut: 0 });
   clearConnections();
   $("#detail").hidden = true;
-  $("#browse").hidden = false;
+  if (!(state.view === "tours" && state.tour && returnToTour())) $("#browse").hidden = false;
 }
 
 function renderDetail(d) {
@@ -553,6 +563,20 @@ async function toggleExcluded(edgeId) {
   drawConnections(data);
 }
 
+// ---------- Tabs ----------
+function setView(view) {
+  setState({ view });
+  document.querySelectorAll("#tabs button").forEach((b) => b.setAttribute("aria-selected", b.dataset.view === view));
+  $("#hutsTab").hidden = view !== "huts";
+  $("#toursTab").hidden = view !== "tours";
+  if (view === "huts") {
+    if (state.tour) setState({ tour: 0 });
+    clearTour();
+  } else if (tourResults && !state.tour) {
+    clearTour();
+  }
+}
+
 // ---------- Layout helpers ----------
 const isMobile = () => matchMedia("(max-width: 720px)").matches;
 
@@ -567,6 +591,12 @@ function setSheet(mode) {
 
 // ---------- Events ----------
 function bindEvents() {
+  $("#tabs").addEventListener("click", (e) => {
+    const b = e.target.closest("button");
+    if (b) setView(b.dataset.view);
+  });
+  bindTourForm();
+
   $("#months").addEventListener("click", (e) => {
     const b = e.target.closest("button");
     if (b) { setState({ month: Number(b.dataset.m) }); update(); }
@@ -661,6 +691,7 @@ function bindEvents() {
       $("#q").focus();
     } else if (e.key === "Escape") {
       if (state.hut) closeDetail();
+      else if (state.tour) closeTour();
       else if (document.activeElement === $("#q")) $("#q").blur();
     }
   });
@@ -728,6 +759,9 @@ async function main() {
   const res = await fetch("/api/huts");
   huts = await res.json();
   update();
+  syncTourForm();
+  setView(state.view);
+  if (state.view === "tours" && state.tour) await runTourSearch();
   if (state.hut) selectHut(state.hut);
 }
 
