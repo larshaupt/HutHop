@@ -2,7 +2,7 @@
 
 A private web app to browse and filter Swiss mountain huts (SAC plus selected non-SAC huts) and to **suggest multi-day summer hut tours** from user constraints, including availability checks and price estimates.
 
-> Status: Phase 0 (spikes) done, Phase 1 next. Items marked **(verify)** are assumptions or partial observations and must be checked before relying on them.
+> Status: Phase 0 and Phase 1 done, Phase 2 (route graph) next. Items marked **(verify)** are assumptions or partial observations and must be checked before relying on them.
 
 ---
 
@@ -154,9 +154,14 @@ CREATE TABLE hut (
   sac_id       INTEGER UNIQUE,         -- NULL for non-SAC huts
   hrs_id       INTEGER,                -- hut-reservation.org id
   operator     TEXT,                   -- 'sac', 'private', ...
+  owner        TEXT,
   beds         INTEGER,
+  shelter_beds INTEGER,                -- winter room / emergency shelter places
   website      TEXT,
+  description  TEXT,
   services     TEXT,                   -- JSON
+  photos       TEXT,                   -- JSON: caption, copyright, thumbnail URLs
+  routes       TEXT,                   -- JSON: free SAC access routes only
   source       TEXT NOT NULL,          -- 'sac_api' | 'manual' | 'scraped'
   raw          TEXT,                   -- original API JSON
   synced_at    TEXT
@@ -316,7 +321,8 @@ Notes:
 
 ### 3.4 swisstopo (open data)
 
-- Base map tiles (WMTS), e.g. `https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-farbe/default/current/3857/{z}/{x}/{y}.jpeg` **(verify layer and terms)**.
+- Base maps: vector style `https://vectortiles.geo.admin.ch/styles/ch.swisstopo.lightbasemap.vt/style.json`, raster WMTS `ch.swisstopo.pixelkarte-farbe` (3857), trail overlay WMTS `ch.swisstopo.swisstlm3d-wanderwege`.
+- Terms ([FSDI general terms](https://www.geo.admin.ch/en/general-terms-of-use-fsdi)): free, no registration, fair use (a web app with up to ~20,000 users/day counts as fair use). Credit "© swisstopo".
 - swissTLM3D: official hiking trail network with categories (yellow / white-red-white / white-blue-white).
 - swissALTI3D: elevation model.
 - geo.admin REST API, e.g. winter accommodations layer `ch.swisstopo.unterkuenfte-winter` (made with the SAC, licence "open use, must provide the source"). Useful as an open hut-location source.
@@ -344,10 +350,10 @@ Answer the open questions before building:
 
 ### Phase 1: Data + map (first usable version)
 
-- [ ] Project skeleton: FastAPI, SQLite, run with `uv` (no Docker yet).
-- [ ] `sync_sac` CLI: SAC API → `place`, `hut`, `hut_month` (+ LV95→WGS84, raw JSON).
-- [ ] `/huts` endpoint with filters.
-- [ ] Frontend: MapLibre map, swisstopo tiles, hut markers, filter panel, detail view.
+- [x] Project skeleton: FastAPI, SQLite, run with `uv` (no Docker yet).
+- [x] `sync_sac` CLI: SAC API → `place`, `hut`, `hut_month` (+ LV95→WGS84, raw JSON).
+- [x] `/api/huts` endpoint with filters, `/api/huts/{id}` detail.
+- [x] Frontend: MapLibre map, swisstopo tiles (light vector / topo raster / trail overlay), hut layer coloured by month status, filter panel, list, detail view, mobile bottom sheet, state in the URL hash.
 
 ### Phase 2: Route graph
 

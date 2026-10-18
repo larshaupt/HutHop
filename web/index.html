@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>HutHop</title>
+  <meta name="description" content="Browse and filter Swiss mountain huts on swisstopo maps.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 4 3 27h26z' fill='%23c8102e'/%3E%3Cpath d='M16 13l-5 9h10z' fill='%23fff'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://vectortiles.geo.admin.ch" crossorigin>
+  <link rel="preconnect" href="https://static.www.suissealpine.sac-cas.ch">
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="map" aria-label="Map of Swiss mountain huts"></div>
+
+  <aside id="panel" class="panel" data-sheet="peek">
+    <button class="sheet-handle" id="sheetHandle" aria-label="Expand or collapse panel"><span></span></button>
+
+    <section id="browse" class="view">
+      <header class="brand">
+        <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 4 3 27h26z"/><path class="logo-door" d="M16 13l-5 9h10z"/></svg>
+        <div>
+          <h1>HutHop</h1>
+          <p>Swiss mountain huts</p>
+        </div>
+      </header>
+
+      <div class="search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="q" type="search" placeholder="Search huts" autocomplete="off" aria-label="Search huts by name">
+        <kbd>/</kbd>
+      </div>
+
+      <details class="filters" id="filters" open>
+        <summary>
+          <span>Filters</span>
+          <span class="active-count" id="activeCount" hidden></span>
+          <button type="button" class="link" id="reset" hidden>Reset</button>
+        </summary>
+
+        <div class="field">
+          <div class="field-label">Open in</div>
+          <div class="months" id="months" role="group" aria-label="Month"></div>
+        </div>
+
+        <div class="field">
+          <div class="field-label">Open as</div>
+          <div class="seg" id="openAs" role="group" aria-label="Open as">
+            <button data-v="any">Any</button><button data-v="catered">Catered</button><button data-v="self_service">Self-service</button>
+          </div>
+        </div>
+
+        <div class="field chips" role="group" aria-label="Features">
+          <button class="chip" data-toggle="hb">Half board</button>
+          <button class="chip" data-toggle="kitchen">Guest kitchen</button>
+          <button class="chip" data-toggle="bookable">Book online</button>
+        </div>
+
+        <div class="field">
+          <div class="field-label">Altitude <output id="altLabel"></output></div>
+          <div class="range2">
+            <input type="range" id="altMin" min="0" max="4600" step="100" aria-label="Minimum altitude">
+            <input type="range" id="altMax" min="0" max="4600" step="100" aria-label="Maximum altitude">
+            <div class="range2-track"><div class="range2-fill" id="altFill"></div></div>
+          </div>
+        </div>
+
+        <div class="field two">
+          <div>
+            <div class="field-label">Min. beds <output id="bedsLabel"></output></div>
+            <input type="range" id="minBeds" min="0" max="120" step="5" aria-label="Minimum beds">
+          </div>
+          <div>
+            <div class="field-label">Type</div>
+            <div class="seg small" id="operator" role="group" aria-label="Hut type">
+              <button data-v="all">All</button><button data-v="sac">SAC</button><button data-v="private">Other</button>
+            </div>
+          </div>
+        </div>
+      </details>
+
+      <div class="results-head">
+        <span><strong id="count">–</strong> <span id="countLabel">huts</span></span>
+        <label class="sort">Sort
+          <select id="sort">
+            <option value="name">Name</option>
+            <option value="alt_desc">Highest first</option>
+            <option value="alt_asc">Lowest first</option>
+            <option value="beds">Most beds</option>
+          </select>
+        </label>
+      </div>
+      <ul class="list" id="list" aria-label="Huts"></ul>
+    </section>
+
+    <section id="detail" class="view" hidden aria-live="polite"></section>
+  </aside>
+
+  <div class="map-tools">
+    <div class="seg map-seg" id="base" role="group" aria-label="Base map">
+      <button data-v="light">Light</button><button data-v="topo">Topo</button>
+    </div>
+    <button class="chip map-chip" id="trails" aria-pressed="false">Hiking trails</button>
+  </div>
+
+  <div class="legend" id="legend" hidden>
+    <span><i class="dot catered"></i>Catered</span>
+    <span><i class="dot self_service"></i>Self-service</span>
+    <span><i class="dot closed"></i>Closed</span>
+    <span><i class="dot unknown"></i>No data</span>
+  </div>
+
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
