@@ -12,7 +12,7 @@ A private web app to browse and filter Swiss mountain huts (SAC plus selected no
 
 - **Private project** (single user / friends). Not public, not commercial. See the legal notes in §6.
 - **Region:** Switzerland. SAC huts first, plus selected non-SAC huts added manually.
-- **Activity:** summer hiking only, on marked trails (T1–T6 scale, user-selectable maximum).
+- **Activity:** summer hiking only, on the official signposted trail network. Difficulty uses the official trail categories (yellow / red-white / blue-white), with a user-selectable maximum.
 - **Platform:** web app (desktop and mobile browser).
 
 ### Functional requirements
@@ -33,19 +33,20 @@ A private web app to browse and filter Swiss mountain huts (SAC plus selected no
 - Inputs:
   - start date, number of days / nights
   - max hiking hours per day (and optionally min hours)
-  - max difficulty (T1–T6)
-  - start/end region or specific public transport stops; loop vs. point-to-point
+  - max trail category (yellow / red-white / blue-white)
+  - start/end region or specific public transport stops, including cable car and lift stations; loop vs. point-to-point
   - catering preference (self-catering / half board / don't care)
   - number of people and member status (for price and availability)
 - Output: ranked list of tour suggestions (stop → hut → … → hut → stop), each with:
-  - per-day time, distance, ascent/descent and max difficulty
+  - per-day time, distance, ascent/descent and max trail category (plus the SAC grade and SAC time where a matching SAC route exists)
   - route on the map
   - price estimate
   - availability status per night
 
-**F3: Availability check**
-- Live check of free beds per hut and night for suggested tours (where the hut uses hut-reservation.org).
-- Clearly flag huts with unknown availability.
+**F3: Availability**
+- Free beds and daily status per hut and night from hut-reservation.org. One request per hut returns the whole season, cached for a few hours.
+- Used as a **filter during tour search** (full or closed huts are dropped), not only as a final check.
+- Distinguish full, closed, not yet released (0 of 0 beds) and unknown (hut not on hut-reservation.org).
 
 **F4: Price estimate**
 - Computed from stored price components and user inputs: members/non-members, half board vs. self-catering vs. overnight only, number of people, nights, local tax.
@@ -63,7 +64,7 @@ A private web app to browse and filter Swiss mountain huts (SAC plus selected no
 - Right-sized: SQLite, a single backend service, minimal frontend. No framework or microservices unless needed.
 - Be a polite API consumer: low request rates, caching, an identifiable User-Agent, no bulk hammering.
 - Track the provenance of every data value (`source`, `updated_at`).
-- Runs locally or on a home server via Docker Compose.
+- Runs locally with `uv run`. Docker Compose only once it is deployed to a home server.
 
 ---
 
@@ -71,27 +72,27 @@ A private web app to browse and filter Swiss mountain huts (SAC plus selected no
 
 ```
                 ┌──────────────────────────── Web frontend ───────────────────────────┐
-                │ MapLibre/Leaflet + swisstopo tiles · filters · tour form · results  │
+                │ MapLibre + swisstopo tiles · filters · tour form · results          │
                 └──────────────────────────────────┬──────────────────────────────────┘
                                                    │ JSON/HTTP
                 ┌──────────────────────────────────▼──────────────────────────────────┐
                 │ Backend (Python, FastAPI)                                           │
                 │  • /huts (filtering)  • /tours/suggest  • /availability  • /admin   │
-                │  • tour search over route graph  • price estimator                  │
-                └───────┬──────────────────────┬───────────────────────┬──────────────┘
-                        │                      │                       │ live, cached
-                 ┌──────▼──────┐        ┌──────▼───────┐       ┌───────▼──────────────┐
-                 │ SQLite DB   │        │ Trail graph  │       │ hut-reservation.org  │
-                 │ huts, edges │        │ (swissTLM3D  │       │ (availability)       │
-                 │ prices, ... │        │  hiking net) │       └──────────────────────┘
-                 └──────▲──────┘        └──────▲───────┘
-                        │ batch jobs           │
-        ┌───────────────┴───────────────────────┴────────────────────────┐
-        │ Ingestion / batch jobs (Python CLI)                            │
+                │  • tour search over the place graph  • price estimator              │
+                └───────────────┬─────────────────────────────────────┬───────────────┘
+                                │                                     │ one request per hut
+                 ┌──────────────▼──────────────┐          ┌───────────▼──────────────┐
+                 │ SQLite DB                   │          │ hut-reservation.org      │
+                 │ huts, stops, place graph    │          │ (availability, cached    │
+                 │ (edges + route lines),      │          │  for a few hours)        │
+                 │ prices, availability cache  │          └──────────────────────────┘
+                 └──────────────▲──────────────┘
+                                │ offline batch jobs (Python CLI)
+        ┌───────────────────────┴────────────────────────────────────────┐
         │  • sync_sac: SAC API → place/hut/hut_month                     │
-        │  • load_stops: public transport stops → place/stop             │
-        │  • build_edges: swissTLM3D routes for nearby pairs → edge      │
-        │  • match_sac_routes: prefer SAC times/difficulty where present │
+        │  • load_stops: official stop list (incl. cable cars) → stop    │
+        │  • build_edges: swissTLM3D trail graph (in memory only) →      │
+        │    searches outward from every hut → edge (+ route lines)      │
         └────────────────────────────────────────────────────────────────┘
 ```
 
@@ -101,31 +102,36 @@ A private web app to browse and filter Swiss mountain huts (SAC plus selected no
 |---|---|---|
 | Hut base data (location, beds, opening, catering, services) | rare | Sync job from the SAC API (e.g. weekly) into the DB |
 | Prices, missing details, non-SAC huts | rare, no API | Manual entry / scraping into the DB |
-| Bed availability | constant | Live query at planning time, short cache (minutes) |
-| Hut↔hut and stop↔hut connections | almost never | Precomputed with a routing engine and stored |
+| Bed availability | constant | One request per hut returns the whole season. Cached for a few hours and used as a search filter |
+| Hut↔hut and stop↔hut connections | almost never | Precomputed offline on the swissTLM3D trail graph (rebuilt yearly with each new edition) |
 
 **Key principles**
 - Keep **source data separate from manual edits** (`hut_override`). The app reads "override if present, else source" (view `hut_effective`).
 - Store the **raw API JSON** so fields can be re-parsed without re-fetching.
 - Store prices as **components**, not totals. Compute estimates per request.
 - Tour suggestions and price estimates are **computed, not stored** (until saved tours exist).
+- **Offline build and app are separate.** The full trail graph (~389k nodes) only exists inside `build_edges`. The app only reads the small place graph (huts + stops) and simplified route lines from SQLite.
+- Store **LV95 coordinates** next to WGS84. All Swiss sources use LV95, and the map uses WGS84.
 
 ### Routing approach
 
-1. Candidate pairs: hut↔hut within about 25 km straight-line distance, and stop↔hut within a radius.
-2. Route each pair on the **official swissTLM3D hiking network** (swisstopo, 3D lines, own graph in Python). Difficulty from the trail category: yellow ≈ T1, red-white ≈ T2–T3 (sometimes T4), blue-white ≈ T4–T6. Refine with SAC route grades where available. (Decided in Phase 0 over GraphHopper/OSM, see `spikes/routing_findings.md`.)
-3. Hiking time with the **Swiss hiking-time formula** (Schweizer Wanderwege, "Wanderzeitberechnung" 2020.2): minutes per km as a polynomial of slope, applied per ~20 m piece using the swissTLM3D elevations. Calibrate against SAC times.
-4. Store **directed** edges (A→B ≠ B→A).
-5. Where an SAC route matches, **SAC values override** computed ones. Priority: `sac` > `manual` > `tlm_routed`.
-6. `excluded` flag to veto bad edges (closed paths, glacier crossings, etc.).
+Decided in Phase 0 (see `spikes/routing_findings.md`): own routing on the official swissTLM3D hiking network.
+
+1. **Trail graph:** build a directed graph from the swissTLM3D hiking lines (3D) inside the build job. Snap every hut and stop to its nearest trail node, store the snap distance and flag snaps over ~200 m for review.
+2. **Search outward from each hut**, not pair by pair: from every hut, run Dijkstra by hiking time up to a cutoff (e.g. 10 h), forward (hut → X) and on the reversed graph (X → hut). Every hut and stop reached becomes a directed edge. This covers hut→hut, stop→hut and hut→stop without a straight-line radius and without searches from the many stops.
+3. **Hiking time** with the Swiss hiking-time formula (Schweizer Wanderwege, "Wanderzeitberechnung" 2020.2): minutes per km as a polynomial of slope, applied per ~20 m piece using the swissTLM3D elevations.
+4. **Difficulty = trail category:** 1 = yellow (≈ T1), 2 = red-white (≈ T2–T3, sometimes T4), 3 = blue-white (≈ T4–T6). The searches run once per category limit (yellow only, up to red-white, up to blue-white), so each edge is the fastest path *within* that limit. An edge is only stored for a higher limit if it differs from the easier one.
+5. Store **directed** edges (A→B ≠ B→A) with a simplified route line (e.g. 10 m tolerance, encoded polyline).
+6. **SAC routes are shown, not used as overrides (for now):** where an SAC route matches an edge, show its time and grade next to the computed values. Computed times already match SAC times (median ratio 0.99), so automatic overrides are deferred.
+7. `excluded` flag to veto bad edges (closed paths, glacier crossings, etc.).
 
 ### Tour search
 
-- Graph: nodes = `place` (huts and stops), edges = non-excluded edges within the user's max difficulty.
-- Bounded DFS / beam search: start stop → N huts (one per night) → end stop.
-- Each day's time must fall within [min, max] hours, and each hut must be open (and catered/self-catering as required) on that date.
-- Ranking (initial): closeness to the target hours per day, total price, no repeated huts, optional "scenic"/altitude bonus.
-- Then the availability check on the top-k candidates only (keeps live requests low).
+- Graph: nodes = `place` (huts and stops), edges = non-excluded edges for the user's max trail category.
+- **Before the search:** find the candidate huts in the area, fetch their season availability (cached), and drop huts that are full or closed on every relevant night.
+- **Hut usable on a date:** prefer hut-reservation.org's daily status (SERVICED = catered, UNSERVICED = self-service only, CLOSED) and free beds ≥ group size. Otherwise fall back to the SAC monthly codes (`catering`, `self_service`). `1` (partly) means "check dates", and huts with no data are "unknown": allowed but ranked lower and flagged.
+- Bounded DFS / beam search: start stop → N huts (one per night) → end stop. Each day's time must fall within [min, max] hours, and the catering preference must match on that date.
+- Ranking (initial): closeness to the target hours per day, total price, availability certainty, no repeated huts, optional "scenic"/altitude bonus.
 
 ### Data model (SQLite)
 
@@ -135,9 +141,12 @@ CREATE TABLE place (
   id          INTEGER PRIMARY KEY,
   kind        TEXT NOT NULL CHECK (kind IN ('hut','stop')),
   name        TEXT NOT NULL,
-  lat         REAL NOT NULL,          -- WGS84 (converted from LV95)
+  e_lv95      REAL NOT NULL,          -- Swiss LV95 (EPSG:2056), as in all sources
+  n_lv95      REAL NOT NULL,
+  lat         REAL NOT NULL,          -- WGS84, for the map
   lon         REAL NOT NULL,
-  altitude_m  INTEGER
+  altitude_m  INTEGER,
+  snap_m      REAL                    -- distance to the trail network (build_edges QA)
 );
 
 CREATE TABLE hut (
@@ -156,8 +165,9 @@ CREATE TABLE hut (
 CREATE TABLE hut_month (
   hut_id    INTEGER REFERENCES hut(place_id),
   month     INTEGER CHECK (month BETWEEN 1 AND 12),
-  open      INTEGER,                   -- SAC code: self-service part open, 0 yes / 1 partly / 2 no
-  catering  INTEGER,                   -- SAC code: catered, 0 yes / 1 partly / 2 no
+  self_service INTEGER,                -- SAC `opening`: winter room / self-service open, 0 yes / 1 partly / 2 no
+  catering     INTEGER,                -- SAC `catering`: catered, 0 yes / 1 partly / 2 no
+                                       -- all months 2/2 = no data (unknown), not "closed"
   PRIMARY KEY (hut_id, month)
 );
 
@@ -187,7 +197,7 @@ CREATE TABLE hut_override (
 CREATE TABLE stop (
   place_id  INTEGER PRIMARY KEY REFERENCES place(id),
   sloid     TEXT UNIQUE,               -- official Swiss stop id
-  mode      TEXT                       -- 'train' | 'bus' | 'cableway'
+  mode      TEXT                       -- 'train' | 'bus' | 'cableway' | 'lift' | 'boat' | ...
 );
 
 CREATE TABLE edge (
@@ -197,30 +207,35 @@ CREATE TABLE edge (
   distance_m     INTEGER,
   ascent_m       INTEGER,
   descent_m      INTEGER,
-  time_min       INTEGER,              -- hiking time in this direction
-  difficulty     INTEGER,              -- 1..6 = T1..T6 (max along path)
-  source         TEXT NOT NULL,        -- 'tlm_routed' | 'sac' | 'manual'
-  sac_route_id   INTEGER,
-  geometry       TEXT,                 -- encoded polyline or GeoJSON
+  time_min       INTEGER,              -- hiking time in this direction (Swiss formula)
+  max_category   INTEGER NOT NULL,     -- 1 yellow, 2 red-white, 3 blue-white (hardest along path)
+  category_limit INTEGER NOT NULL,     -- search limit this edge was found with (1..3)
+  source         TEXT NOT NULL,        -- 'tlm_routed' | 'manual'
+  sac_route_id   INTEGER,              -- matching SAC route, shown for reference
+  sac_time_min   INTEGER,
+  sac_grade      TEXT,                 -- e.g. 'T3+'
+  geometry       TEXT,                 -- simplified encoded polyline
   excluded       INTEGER DEFAULT 0,
   note           TEXT,
   computed_at    TEXT,
-  UNIQUE (from_place, to_place, source)
+  UNIQUE (from_place, to_place, category_limit, source)
 );
 CREATE INDEX edge_from ON edge(from_place) WHERE excluded = 0;
 
 CREATE TABLE availability (
   hut_id      INTEGER REFERENCES hut(place_id),
-  date        TEXT,
-  free_beds   INTEGER,
-  fetched_at  TEXT,
+  date          TEXT,
+  hut_status    TEXT,                  -- 'SERVICED' | 'UNSERVICED' | 'CLOSED'
+  free_beds     INTEGER,
+  total_places  INTEGER,               -- 0 with free_beds 0 = not released yet, not "full"
+  fetched_at    TEXT,
   PRIMARY KEY (hut_id, date)
 );
 ```
 
 Planned views:
 - `hut_effective`: source data merged with overrides.
-- `edge_best`: one edge per (from, to), chosen by source priority.
+- `edge_best`: one edge per (from, to, category limit); `manual` wins over `tlm_routed`.
 
 ---
 
@@ -310,11 +325,11 @@ Notes:
 ### 3.5 Public transport stops
 
 - Official stop list: GeoAdmin STAC collection `ch.bav.haltestellen-oev` (LV95 CSV export, `PointExploitation.csv`). See via-helvetica `docs/PUBLIC_TRANSPORT_DATA_PIPELINE.md`.
-- Used as tour start/end nodes.
+- Used as tour start/end nodes. Includes cable car, gondola and lift stations, which are key for hut tours (start or end at a top station). The exact field for the transport mode: **(verify)**.
 
 ### 3.6 Coordinate conversion
 
-- SAC uses LV95 (EPSG:2056). Convert to WGS84 (EPSG:4326) with `pyproj`.
+- SAC, swissTLM3D and the stop list all use LV95 (EPSG:2056). Store LV95 and convert to WGS84 (EPSG:4326) for the map with `pyproj`.
 
 ---
 
@@ -329,33 +344,36 @@ Answer the open questions before building:
 
 ### Phase 1: Data + map (first usable version)
 
-- [ ] Project skeleton: FastAPI, SQLite, Docker Compose.
+- [ ] Project skeleton: FastAPI, SQLite, run with `uv` (no Docker yet).
 - [ ] `sync_sac` CLI: SAC API → `place`, `hut`, `hut_month` (+ LV95→WGS84, raw JSON).
 - [ ] `/huts` endpoint with filters.
-- [ ] Frontend: MapLibre/Leaflet map, swisstopo tiles, hut markers, filter panel, detail view.
+- [ ] Frontend: MapLibre map, swisstopo tiles, hut markers, filter panel, detail view.
 
 ### Phase 2: Route graph
 
-- [ ] `load_stops`: public transport stops into `place`/`stop`.
-- [ ] `build_edges`: candidate pairs → swissTLM3D graph → `edge`.
-- [ ] `match_sac_routes`: prefer SAC times/difficulty.
-- [ ] Edge review in the frontend: show edges on the map, toggle `excluded`.
+- [ ] `load_stops`: official stop list (incl. cable cars and lifts) into `place`/`stop`.
+- [ ] `build_edges`: swissTLM3D trail graph → snap huts and stops → outward searches from every hut (forward + reverse, per category limit) → `edge` with route lines.
+- [ ] Show matching SAC route time and grade next to computed edges (name matching as in the spike).
+- [ ] Edge review in the frontend: show edges and long snaps on the map, toggle `excluded`.
 
 ### Phase 3: Tour suggestions
 
-- [ ] Tour search (bounded DFS / beam search) with date-aware opening/catering checks.
+- [ ] Tour search (bounded DFS / beam search) with date-aware catering/self-service checks (SAC monthly codes).
 - [ ] `/tours/suggest` endpoint and input form.
 - [ ] Results list and route on the map, per-day stats.
 
 ### Phase 4: Prices + availability
 
+- [ ] Availability: season fetch per hut with a few hours' cache, used as a filter in tour search (daily status overrides monthly codes).
 - [ ] Price entry (start with YAML/CSV import, then a simple admin form).
 - [ ] Price estimator from user inputs.
-- [ ] Live availability check for top-k suggestions, with caching.
 
 ### Later
 
 - GPX export, saved tours, non-SAC huts, PWA/offline, better ranking.
+- SAC times as automatic overrides (per-grade calibration for T4+).
+- Warnings for official trail closures and military shooting zones (geo.admin layers, see via-helvetica).
+- Docker Compose for a home server.
 
 ---
 
@@ -364,19 +382,18 @@ Answer the open questions before building:
 - **Backend:** Python 3.12, FastAPI, `httpx`, `pyproj`, SQLite (via `sqlite3` or SQLModel)
 - **Routing:** own graph on swissTLM3D (pyogrio, shapely, networkx)
 - **Frontend:** plain HTML/JS + MapLibre GL (no framework initially)
-- **Ops:** Docker Compose (app), runs locally or on a home server
+- **Ops:** `uv run` locally. Docker Compose later, for a home server.
 
 ```
 hut-planner/
 ├── app/
 │   ├── api/            # FastAPI routes
 │   ├── db/             # schema.sql, migrations, queries
-│   ├── ingest/         # sync_sac.py, load_stops.py, build_edges.py, match_sac_routes.py
-│   ├── planner/        # tour search, ranking, price estimator
+│   ├── ingest/         # sync_sac.py, load_stops.py, build_edges.py (offline jobs)
+│   ├── planner/        # tour search, ranking, hiking time, price estimator
 │   └── clients/        # sac.py, hut_reservation.py, geoadmin.py
 ├── web/                # static frontend
-├── data/               # sqlite db, manual price files (gitignored as needed)
-├── docker-compose.yml
+├── data/               # sqlite db, swissTLM3D, manual price files (gitignored as needed)
 └── README.md
 ```
 
@@ -393,7 +410,9 @@ hut-planner/
 
 **Technical risks:**
 - Undocumented APIs can change or disappear. Store raw JSON and keep the clients isolated.
-- Computed times are less reliable for T4+ (official times there are hand-adjusted). Mark computed edges and prefer SAC data.
+- Computed times are less reliable for T4+ (official times there are hand-adjusted). Show the SAC time next to the computed one where available.
+- Huts far from the signposted network (long snaps) can get wrong or missing edges. Review snaps over ~200 m.
+- The monthly SAC codes are coarse. Prefer hut-reservation.org's daily status where it exists.
 - Price data is manual and goes stale. Show `updated_at` and source with every estimate.
 - Not all huts use hut-reservation.org. Show availability as "unknown" for those.
 
