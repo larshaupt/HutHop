@@ -2,7 +2,7 @@
 
 A private web app to browse and filter Swiss mountain huts (SAC plus selected non-SAC huts) and to **suggest multi-day summer hut tours** from user constraints, including availability checks and price estimates.
 
-> Status: planning. Nothing is implemented yet. Items marked **(verify)** are assumptions or partial observations and must be checked before relying on them.
+> Status: Phase 0 (spikes) done, Phase 1 next. Items marked **(verify)** are assumptions or partial observations and must be checked before relying on them.
 
 ---
 
@@ -81,16 +81,16 @@ A private web app to browse and filter Swiss mountain huts (SAC plus selected no
                 └───────┬──────────────────────┬───────────────────────┬──────────────┘
                         │                      │                       │ live, cached
                  ┌──────▼──────┐        ┌──────▼───────┐       ┌───────▼──────────────┐
-                 │ SQLite DB   │        │ GraphHopper  │       │ hut-reservation.org  │
-                 │ huts, edges │        │ (Docker, OSM │       │ (availability)       │
-                 │ prices, ... │        │  CH extract) │       └──────────────────────┘
+                 │ SQLite DB   │        │ Trail graph  │       │ hut-reservation.org  │
+                 │ huts, edges │        │ (swissTLM3D  │       │ (availability)       │
+                 │ prices, ... │        │  hiking net) │       └──────────────────────┘
                  └──────▲──────┘        └──────▲───────┘
                         │ batch jobs           │
         ┌───────────────┴───────────────────────┴────────────────────────┐
         │ Ingestion / batch jobs (Python CLI)                            │
         │  • sync_sac: SAC API → place/hut/hut_month                     │
         │  • load_stops: public transport stops → place/stop             │
-        │  • build_edges: GraphHopper routes for nearby pairs → edge     │
+        │  • build_edges: swissTLM3D routes for nearby pairs → edge      │
         │  • match_sac_routes: prefer SAC times/difficulty where present │
         └────────────────────────────────────────────────────────────────┘
 ```
@@ -113,10 +113,10 @@ A private web app to browse and filter Swiss mountain huts (SAC plus selected no
 ### Routing approach
 
 1. Candidate pairs: hut↔hut within about 25 km straight-line distance, and stop↔hut within a radius.
-2. Route each pair with **GraphHopper** (hiking/foot profile) on OSM data. Use OSM `sac_scale` for difficulty and filter by the max T-grade.
-3. Hiking time from distance and elevation, using the DIN 33466-style rule: 4 km/h horizontal, 300 m/h ascent, 500 m/h descent; total = larger of horizontal/vertical time + half of the smaller. Calibrate against SAC times.
+2. Route each pair on the **official swissTLM3D hiking network** (swisstopo, 3D lines, own graph in Python). Difficulty from the trail category: yellow ≈ T1, red-white ≈ T2–T3 (sometimes T4), blue-white ≈ T4–T6. Refine with SAC route grades where available. (Decided in Phase 0 over GraphHopper/OSM, see `spikes/routing_findings.md`.)
+3. Hiking time with the **Swiss hiking-time formula** (Schweizer Wanderwege, "Wanderzeitberechnung" 2020.2): minutes per km as a polynomial of slope, applied per ~20 m piece using the swissTLM3D elevations. Calibrate against SAC times.
 4. Store **directed** edges (A→B ≠ B→A).
-5. Where an SAC route matches, **SAC values override** computed ones. Priority: `sac` > `manual` > `osm_routed`.
+5. Where an SAC route matches, **SAC values override** computed ones. Priority: `sac` > `manual` > `tlm_routed`.
 6. `excluded` flag to veto bad edges (closed paths, glacier crossings, etc.).
 
 ### Tour search
@@ -156,8 +156,8 @@ CREATE TABLE hut (
 CREATE TABLE hut_month (
   hut_id    INTEGER REFERENCES hut(place_id),
   month     INTEGER CHECK (month BETWEEN 1 AND 12),
-  open      INTEGER,                   -- SAC code 0/1/2 (verify semantics)
-  catering  INTEGER,                   -- SAC code 0/1/2 (verify semantics)
+  open      INTEGER,                   -- SAC code: self-service part open, 0 yes / 1 partly / 2 no
+  catering  INTEGER,                   -- SAC code: catered, 0 yes / 1 partly / 2 no
   PRIMARY KEY (hut_id, month)
 );
 
@@ -199,7 +199,7 @@ CREATE TABLE edge (
   descent_m      INTEGER,
   time_min       INTEGER,              -- hiking time in this direction
   difficulty     INTEGER,              -- 1..6 = T1..T6 (max along path)
-  source         TEXT NOT NULL,        -- 'osm_routed' | 'sac' | 'manual'
+  source         TEXT NOT NULL,        -- 'tlm_routed' | 'sac' | 'manual'
   sac_route_id   INTEGER,
   geometry       TEXT,                 -- encoded polyline or GeoJSON
   excluded       INTEGER DEFAULT 0,
@@ -245,10 +245,10 @@ lang=en&output_lang=en&order_by=-first_time_published&type=hut
 &hut_type=all&mode=per_discipline&limit=24
 ```
 
-- Pagination: `cursor` is returned. The request parameter to pass it back is unknown **(verify, check the JS bundle or try `cursor=` / `offset=`)**.
+- Pagination: pass the returned value back as `cursor=`. `limit=100` works (4 requests for all huts).
 - Auth: none. Cross-origin requests without cookies returned 200.
 - Caching: `Cache-Control: max-age=1800`.
-- A per-POI detail endpoint likely exists (may include route geometry) **(verify)**.
+- Per-hut detail: `GET sacplus/poi/{id}?output_lang=en` (adds `used_as_destination_in`, `used_as_waypoint_in`, ...). `route/search?id=...` gives route metadata. **No route geometry** without login. Details: `spikes/sac_findings.md`.
 
 **Hut record fields (observed)**
 ```
@@ -279,7 +279,7 @@ plain_meals, separable_group_rooms
 
 Notes:
 - **No price fields** in the SAC data.
-- `opening`/`catering` codes 0/1/2: semantics unknown **(verify against known huts)**.
+- `opening`/`catering` codes: **0 = yes (whole month), 1 = partly, 2 = no**. `catering` = staffed/catered (confirmed). `opening` = self-service part (winter room) open (strong hypothesis). All-2 = no data (82 huts).
 - `hrs_id` links to hut-reservation.org (0 = none).
 - Contact fields (tel, email) are personal data of hut operators. Don't republish.
 
@@ -290,16 +290,14 @@ Notes:
   - availability lookups are unauthenticated
   - the hut list requires login
   - booking endpoints (`preBook`, `submit`, `myReservations`, …) exist but are undocumented
-- Exact availability endpoint and response format: **(verify, read that repo's source)**.
-- Prices may be exposed per hut **(verify)**.
+- Availability: `GET /api/v1/reservation/getHutAvailability?hutId=X&step=WIZARD` (no login, no CSRF) returns the whole booking window per day: `freeBeds`, `totalSleepingPlaces`, `freeBedsPerCategory`, `hutStatus` (SERVICED / UNSERVICED / CLOSED). `0/0` = dates not released yet, not "full".
+- Hut info: `GET /api/v1/reservation/hutInfo/{id}` (beds, categories, website). **No prices** in public responses. Details: `spikes/hut_reservation_findings.md`.
 - Booking is out of scope. Only read availability.
 
-### 3.3 Routing: GraphHopper + OpenStreetMap
+### 3.3 Routing: swissTLM3D hiking network
 
-- GraphHopper in Docker with a Switzerland OSM extract (e.g. Geofabrik `switzerland-latest.osm.pbf`).
-- Hiking/foot profile. Use OSM `sac_scale` (`hiking`=T1 … `difficult_alpine_hiking`=T6) for difficulty.
-- Elevation: GraphHopper can use SRTM; swissALTI3D is more accurate (optional).
-- BRouter is an alternative engine.
+- **swissTLM3D Wanderwege** (STAC `ch.swisstopo.swisstlm3d-wanderwege`, GeoPackage, ~200 MB, open data): the official signposted network as 3D lines, with `wanderwege` = Wanderweg / Bergwanderweg / Alpinwanderweg. Builds one connected graph (389k nodes) in about 45 s with pyogrio + shapely + networkx.
+- Phase 0 comparison with 17 SAC hut-to-hut routes: Swiss time / SAC time median 0.99, ascent close to SAC. GraphHopper + OSM + SRTM: ascent 2–10× too high, several detours.
 
 ### 3.4 swisstopo (open data)
 
@@ -311,7 +309,7 @@ Notes:
 
 ### 3.5 Public transport stops
 
-- opentransportdata.swiss: official Swiss stop list ("service points", with `sloid`) **(verify dataset and format)**.
+- Official stop list: GeoAdmin STAC collection `ch.bav.haltestellen-oev` (LV95 CSV export, `PointExploitation.csv`). See via-helvetica `docs/PUBLIC_TRANSPORT_DATA_PIPELINE.md`.
 - Used as tour start/end nodes.
 
 ### 3.6 Coordinate conversion
@@ -325,9 +323,9 @@ Notes:
 ### Phase 0: Spikes (1–2 evenings)
 
 Answer the open questions before building:
-- [ ] SAC API: pagination parameter, detail endpoint, meaning of the 0/1/2 codes (compare 5 known huts).
-- [ ] hut-reservation.org: availability endpoint, auth, response format, prices?
-- [ ] GraphHopper in Docker with the CH extract. Route 5–10 hut pairs and compare with SAC times and the swisstopo app. **This decides the feasibility of the tour feature.**
+- [x] SAC API: pagination parameter, detail endpoint, meaning of the 0/1/2 codes. → `spikes/sac_findings.md`
+- [x] hut-reservation.org: availability endpoint, auth, response format, prices. → `spikes/hut_reservation_findings.md`
+- [x] Routing: GraphHopper/OSM vs. swissTLM3D on 17 hut pairs, compared with SAC times. **swissTLM3D chosen.** → `spikes/routing_findings.md`
 
 ### Phase 1: Data + map (first usable version)
 
@@ -339,7 +337,7 @@ Answer the open questions before building:
 ### Phase 2: Route graph
 
 - [ ] `load_stops`: public transport stops into `place`/`stop`.
-- [ ] `build_edges`: candidate pairs → GraphHopper → `edge`.
+- [ ] `build_edges`: candidate pairs → swissTLM3D graph → `edge`.
 - [ ] `match_sac_routes`: prefer SAC times/difficulty.
 - [ ] Edge review in the frontend: show edges on the map, toggle `excluded`.
 
@@ -364,9 +362,9 @@ Answer the open questions before building:
 ## 5. Proposed stack and repo layout
 
 - **Backend:** Python 3.12, FastAPI, `httpx`, `pyproj`, SQLite (via `sqlite3` or SQLModel)
-- **Routing:** GraphHopper (Docker)
+- **Routing:** own graph on swissTLM3D (pyogrio, shapely, networkx)
 - **Frontend:** plain HTML/JS + MapLibre GL (no framework initially)
-- **Ops:** Docker Compose (app + GraphHopper), runs locally or on a home server
+- **Ops:** Docker Compose (app), runs locally or on a home server
 
 ```
 hut-planner/
@@ -375,7 +373,7 @@ hut-planner/
 │   ├── db/             # schema.sql, migrations, queries
 │   ├── ingest/         # sync_sac.py, load_stops.py, build_edges.py, match_sac_routes.py
 │   ├── planner/        # tour search, ranking, price estimator
-│   └── clients/        # sac.py, hut_reservation.py, graphhopper.py
+│   └── clients/        # sac.py, hut_reservation.py, geoadmin.py
 ├── web/                # static frontend
 ├── data/               # sqlite db, manual price files (gitignored as needed)
 ├── docker-compose.yml
@@ -395,7 +393,7 @@ hut-planner/
 
 **Technical risks:**
 - Undocumented APIs can change or disappear. Store raw JSON and keep the clients isolated.
-- OSM routing is fine for T1–T3 and less reliable for T4+. Mark computed edges and prefer SAC data.
+- Computed times are less reliable for T4+ (official times there are hand-adjusted). Mark computed edges and prefer SAC data.
 - Price data is manual and goes stale. Show `updated_at` and source with every estimate.
 - Not all huts use hut-reservation.org. Show availability as "unknown" for those.
 
@@ -412,6 +410,8 @@ hut-planner/
 | [KlaraSaary/find-free-huts](https://github.com/KlaraSaary/find-free-huts) (AGPL) | Finds free DAV/SAC/ÖAV huts for dates, groups nearby huts into multi-day tours (straight-line distance, no UI) | Similar idea, much simpler. Uses session cookies |
 | [miloszpp/sac-hut-checker](https://github.com/miloszpp/sac-hut-checker) | Small TypeScript project, no README | Probably an availability checker |
 | [OSM SAC hut metadata process](https://wiki.openstreetmap.org/wiki/SAC_hut_metadata_update_process) | OSM import of SAC hut data with SAC permission | Shows the SAC grants API use on request |
+| [egofree71/via-helvetica](https://github.com/egofree71/via-helvetica) (MIT) | Browser route planner on swisstopo maps, routing on swissTLM3D, Swiss hiking-time formula, PT stops, trail closures | Reference for swissTLM3D routing, the official time formula and the stop dataset |
+| [lailo/bergauf](https://github.com/lailo/bergauf) (MIT + Commons Clause) | MCP server: SwitzerlandMobility routes, elevation, weather (Open-Meteo), PT connections (transport.opendata.ch) | Reference for weather and PT connection APIs |
 | SAC app / route portal | Official huts and routes | No custom filters, no automatic tour suggestions |
 
 No existing project combines hut metadata, routing-based tour suggestions, availability and price estimates in one UI.
@@ -420,9 +420,9 @@ No existing project combines hut metadata, routing-based tour suggestions, avail
 
 ## 8. Open questions
 
-1. Meaning of SAC `opening`/`catering` codes 0/1/2.
-2. SAC API pagination parameter and per-POI detail endpoint (route geometry?).
-3. hut-reservation.org availability endpoint, auth requirements, and whether prices are available.
-4. How well GraphHopper/OSM times match SAC times (calibration factor?).
+1. ~~Meaning of SAC `opening`/`catering` codes~~ → 0 yes / 1 partly / 2 no (§3.1). Confirm `opening` = winter room with SAC or a few hut websites.
+2. ~~SAC API pagination and detail endpoint~~ → `cursor=`, `sacplus/poi/{id}`. No route geometry.
+3. ~~hut-reservation.org availability~~ → public `getHutAvailability`, no prices (§3.2).
+4. ~~GraphHopper/OSM vs. SAC times~~ → switched to swissTLM3D + Swiss formula (median ratio 0.99). Open: per-grade correction for T4+, which needs more than 17 pairs.
 5. Which non-SAC huts to include, and their data source.
 6. Tour ranking criteria beyond hours per day and price.

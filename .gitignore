@@ -10,14 +10,17 @@ __pycache__/
 .env
 .env.*
 
-# Local data (SQLite DB, raw API dumps, OSM extracts, GraphHopper cache)
+# Local data (SQLite DB, raw API dumps, swissTLM3D)
 data/*.db
 data/*.db-*
 data/raw/
-*.osm.pbf
-graphhopper/graph-cache/
 
 # Editors / OS
 .DS_Store
 .idea/
 .vscode/
+
+# Cloned third-party reference repos
+reference/
+
+data/tlm/

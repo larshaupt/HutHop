@@ -2,7 +2,7 @@
 
 A private web app to browse Swiss mountain huts (SAC plus selected non-SAC huts) and to suggest multi-day summer hut tours from your constraints, with availability checks and price estimates.
 
-**Status:** planning / Phase 0 (spikes). See [`hut-tour-planner.md`](hut-tour-planner.md) for the full project brief: requirements, system design, data model, known APIs and the development plan.
+**Status:** Phase 0 (spikes) done, see [`spikes/`](spikes/) for findings. Routing uses the official swissTLM3D hiking network. See [`hut-tour-planner.md`](hut-tour-planner.md) for the full project brief: requirements, system design, data model, known APIs and the development plan.
 
 ## Setup
 
@@ -13,7 +13,7 @@ uv sync          # create .venv and install dependencies
 uv run python …  # run scripts inside the environment
 ```
 
-GraphHopper (routing) runs in Docker; see the brief, §3.3.
+Routing data: the swissTLM3D hiking network (swisstopo open data, about 200 MB) goes in `data/tlm/`; see the brief, §3.3.
 
 ## Usage and data
 
