@@ -1,0 +1,19 @@
+# Lives on server2 (larsbox) at /opt/huthop/server/compose.yaml (cloned repo). See docs/deployment.md.
+# Only reachable on localhost; `tailscale serve` on the host publishes it to the tailnet.
+
+services:
+  huthop:
+    image: ghcr.io/larshaupt/huthop:latest
+    restart: unless-stopped
+    ports: ["127.0.0.1:8100:8000"]
+    volumes: [../data:/app/data]
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/', timeout=3)"]
+      interval: 1m
+      timeout: 5s
+      retries: 3
+      start_period: 20s

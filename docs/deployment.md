@@ -4,11 +4,11 @@ As of 2026-10-18. Living version: [HutHop Deployment Plan](https://claude.ai/cod
 
 ## Summary
 
-HutHop will run first on a home server, using Docker Compose, and be reachable only over Tailscale (option A). The design brief already planned this ("Docker Compose only once it is deployed to a home server"). It also keeps the SAC data private without any login code in the app.
+HutHop runs on the home server `server2` (larsbox) with Docker Compose and is reachable only over Tailscale (option A). It is deployed the same way as the website: GitHub Actions builds the image, and the server pulls it every 5 minutes. The design brief already planned a home server ("Docker Compose only once it is deployed to a home server"), and this keeps the SAC data private without any login code in the app.
 
-- **Serve at home, build on the Mac.** The server runs one FastAPI container and a SQLite file. The heavy route graph build (`build_edges`, about 2 GB RAM) stays on the Mac.
-- **Private by network.** Only devices in your Tailscale network can reach the app, and nothing is exposed to the internet.
-- **Little to run.** One container, one volume, a nightly backup and a periodic SAC sync.
+- **Push to deploy.** A push to `main` runs the tests and publishes `ghcr.io/larshaupt/huthop:latest`. Cron on the server picks it up within 5 minutes.
+- **Serve at home, build data on the Mac.** The server runs one FastAPI container and a SQLite file. The heavy route graph build (`build_edges`, about 2 GB RAM) stays on the Mac.
+- **Private by network.** The container listens on localhost only, and the host's Tailscale publishes it to the tailnet. Nothing is exposed to the internet.
 
 ## App profile
 
@@ -36,44 +36,42 @@ Any deployment has to keep the app private, because the SAC terms allow private 
 
 ## Target setup (option A)
 
-One always-on machine at home runs the HutHop container plus a Tailscale client, with the SQLite file on a host volume.
+`server2` (larsbox: x86_64, Debian 13, 6.7 GB RAM) runs the HutHop container next to the website, Immich and Paperless. Tailscale already runs on the host.
 
 ```
-┌─ Your tailnet (private network) ──────────────────────────────┐
-│                          ┌─ Home server (Docker Compose) ───┐ │
-│  ┌──────────────────┐    │  ┌────────────────────────────┐  │ │
-│  │ Your devices     │───────▶ tailscale sidecar          │  │ │
-│  │ Mac, phone,      │    │  │ HTTPS on huthop.*.ts.net   │  │ │
-│  │ friends          │    │  │ no ports open to LAN/router│  │ │
-│  └──────────────────┘    │  └─────────────┬──────────────┘  │ │     Internet (outgoing only)
-│                          │  ┌─────────────▼──────────────┐  │ │    ┌─────────────────────┐
-│                          │  │ huthop container           │──────────▶ SAC API             │
-│                          │  │ FastAPI + web/ on :8000    │  │ │    └─────────────────────┘
-│                          │  │ cron: sync_sac weekly      │──────────▶ hut-reservation.org │
-│                          │  └─────────────▲──────────────┘  │ │    │ (Phase 4)           │
-│  ┌──────────────────┐    │  ┌─────────────▼──────────────┐  │ │    └─────────────────────┘
-│  │ Mac (build)      │◀──────▶ ./data volume              │  │ │
-│  │ build_edges,     │ scp│  │ huthop.db (SQLite, WAL)    │  │ │
-│  │ load_stops       │    │  │ nightly .backup copies     │  │ │
-│  └──────────────────┘    │  └────────────────────────────┘  │ │
-│                          └──────────────────────────────────┘ │
-└───────────────────────────────────────────────────────────────┘
+  GitHub: push to main ──▶ Actions: pytest, build ──▶ ghcr.io/larshaupt/huthop:latest
+                                                                │ pulled every 5 min
+┌─ Your tailnet (private network) ──────────────────────────────┼─────┐
+│                          ┌─ server2 (larsbox) ────────────────▼───┐ │
+│  ┌──────────────────┐    │  host tailscale serve (not funnel)     │ │
+│  │ Your devices     │───────▶ https://larsbox.<tailnet>.ts.net:8443 │
+│  │ Mac, phone,      │    │            │                           │ │
+│  │ friends          │    │  ┌─────────▼──────────────────────┐    │ │     Internet (outgoing only)
+│  └──────────────────┘    │  │ huthop container               │─────────▶ SAC API
+│                          │  │ FastAPI + web/, 127.0.0.1:8100 │─────────▶ hut-reservation.org
+│                          │  └─────────▲──────────────────────┘    │ │
+│  ┌──────────────────┐    │  ┌─────────▼──────────────────────┐    │ │
+│  │ Mac (build)      │◀──────▶ /opt/huthop/data               │    │ │
+│  │ build_edges,     │ scp│  │ huthop.db (SQLite)             │    │ │
+│  │ load_stops       │    │  └────────────────────────────────┘    │ │
+│  └──────────────────┘    └────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────┘
 ```
 
 The browser loads swisstopo tiles and MapLibre directly. The server only makes outgoing calls.
 
-**Hardware.** Any machine that stays on works: a Raspberry Pi 5 (4 GB or more), a NAS that runs Docker, or an old laptop. Serving needs under 1 GB of RAM. With 4 GB or more the machine could also run `build_edges`, but the plan doesn't depend on it.
+**Files in the repo.**
 
-**Containers (Docker Compose).**
+| File | Purpose |
+| --- | --- |
+| `Dockerfile` | uv base image, Python 3.12, runtime dependencies only; runs uvicorn on port 8000 as uid 1000. Contains code only, no data |
+| `.github/workflows/deploy.yml` | On push to `main`: run tests, build for linux/amd64, push `latest` and `sha-…` tags to GHCR |
+| `server/compose.yaml` | Pulls the image, publishes `127.0.0.1:8100`, mounts `../data`, read-only root filesystem, no capabilities, health check |
+| `server/update.sh` | `git pull`, `docker compose pull`, `up -d`, prune old images (same as the website) |
 
-| Service | Image | Purpose |
-| --- | --- | --- |
-| `huthop` | Built from the repo (uv base image, Python 3.12) | Runs `uvicorn app.main:app` on port 8000, with `./data` mounted at `/app/data` |
-| `tailscale` | `tailscale/tailscale` | Joins your tailnet as host `huthop`; `tailscale serve` adds HTTPS at `https://huthop.<tailnet>.ts.net` |
+**On the server.** The repo is cloned to `/opt/huthop`, next to `/opt/website`. The database lives in `/opt/huthop/data/` (gitignored, owned by `lars`, uid 1000). Port 8000 is taken by another service, hence 8100.
 
-Alternative: install Tailscale on the host itself and bind the app to the Tailscale interface only. That's simpler on a Pi; the sidecar is tidier on a NAS.
-
-**Access.** Port 8000 is never published to the LAN or the router. Your devices and invited friends join the tailnet, and the iOS and Android apps work for phones on a hike. Tailscale ACLs can limit friends to the `huthop` host only.
+**Access.** The container is bound to localhost only. `tailscale serve --bg --https=8443 http://127.0.0.1:8100` on the host publishes it at `https://larsbox.<tailnet>.ts.net:8443`, inside the tailnet only (never `tailscale funnel`, and not through the website's Cloudflare tunnel). Your devices and invited friends join the tailnet, and the iOS and Android apps work for phones on a hike. Tailscale ACLs can limit friends to that port on `larsbox` only.
 
 ## Data workflow
 
@@ -82,7 +80,7 @@ The Mac builds the database and the server owns it afterwards. Before each rebui
 **First deploy**
 
 1. Run `sync_sac`, `load_stops` and `build_edges` on the Mac, as today.
-2. Copy `data/huthop.db` to the server's `./data/` (for example `scp` over Tailscale) while the container is stopped.
+2. Copy `data/huthop.db` to `/opt/huthop/data/` on the server (`scp` over Tailscale) while the container is stopped.
 3. Start the stack. From then on the server's copy is the live one.
 
 **Yearly route graph rebuild (new swissTLM3D edition)**
@@ -95,38 +93,36 @@ The Mac builds the database and the server owns it afterwards. Before each rebui
 
 ## Code changes before deploy
 
-Five small changes; none touches the app's behaviour.
+None of these touches the app's behaviour.
 
-- [ ] `Dockerfile`: uv base image, `uv sync --frozen --no-dev`, copy `app/` and `web/`, run uvicorn on `0.0.0.0:8000`. The ingest-only dependencies (pyogrio, scipy) can stay for now.
-- [ ] `compose.yaml`: `huthop` plus the `tailscale` sidecar, `./data` volume, `restart: unless-stopped`. The Tailscale auth key goes in an untracked `.env`, never in the repo.
+- [x] `Dockerfile`, `server/compose.yaml`, `server/update.sh` and the GitHub Actions workflow (see Target setup).
 - [ ] SQLite WAL mode in `connect()` (`PRAGMA journal_mode=WAL`), so reads keep working while the availability cache writes.
 - [ ] `GET /api/health` for the Docker health check and monitoring.
 - [ ] Cache `load_graph()` per trail limit, cleared when edges are changed. It rebuilds on every `/api/tours/suggest` call today, which will be noticeable on a Pi.
 
 ## Operations
 
-The recurring work comes down to a few host cron jobs and a `git pull` when deploying.
+Deploying is a push to `main`; the rest is a few host cron jobs.
 
 | Task | How often | How |
 | --- | --- | --- |
-| SAC sync | Weekly or monthly | Host cron: `docker compose exec huthop python -m app.ingest.sync_sac` |
+| App update | Every 5 min | Host cron: `/opt/huthop/server/update.sh >> /opt/huthop/update.log 2>&1` |
+| SAC sync | Weekly or monthly | Host cron: `docker compose -f /opt/huthop/server/compose.yaml exec huthop python -m app.ingest.sync_sac` |
 | Availability | On demand | Fetched per hut and cached for a few hours by the app (Phase 4); no job |
 | Route graph rebuild | Yearly, by hand | On the Mac, see Data workflow |
 | Backup | Nightly | `sqlite3 data/huthop.db ".backup ..."` to a dated file, keep about 14 copies, sometimes copy one off the server |
-| App update | When you ship | `git pull && docker compose up -d --build` on the server |
-| Monitoring | Ongoing | Docker health check on `/api/health`; optionally a free uptime ping over Tailscale |
+| Monitoring | Ongoing | Docker health check; optionally a healthchecks.io ping after `update.sh`, like the website |
 
 ## Rollout steps
 
-- [ ] Pick the machine and install Docker plus the Compose plugin
-- [ ] Make the code changes above and commit them
-- [ ] Create a Tailscale account, add the Mac and phone, and generate an auth key for the server
-- [ ] Clone the repo on the server and put the auth key in `.env`
-- [ ] Copy `huthop.db` from the Mac into the server's `./data/`
-- [ ] `docker compose up -d --build` and open `https://huthop.<tailnet>.ts.net` from a phone over mobile data
+- [x] Machine: `server2` (larsbox) with Docker and Tailscale already installed
+- [ ] Commit and push the deploy files; check that the Actions run publishes the image
+- [ ] Clone the repo to `/opt/huthop` and copy `huthop.db` into `/opt/huthop/data/`
+- [ ] `docker compose pull && docker compose up -d` in `/opt/huthop/server`
+- [ ] `tailscale serve --bg --https=8443 http://127.0.0.1:8100`, then open the URL from a phone over mobile data
 - [ ] Check that the app can't be reached from the LAN IP or the public IP
-- [ ] Set up the cron jobs for SAC sync and backups
-- [ ] Invite friends to the tailnet and add an ACL limiting them to `huthop`
+- [ ] Add the cron jobs for `update.sh`, SAC sync and backups
+- [ ] Invite friends to the tailnet and add an ACL limiting them to `larsbox:8443`
 
 ## Alternatives considered
 
@@ -142,7 +138,6 @@ Moving from A to a VPS later is a matter of copying the Compose folder and the d
 
 ## Open questions
 
-- [ ] Which machine: Pi 5, NAS or an old laptop?
 - [ ] Is installing Tailscale fine for friends, or do they need a plain link with a password?
 - [ ] Deploy now, with Phases 0–3, or wait for Phase 4 (availability, prices)?
 - [ ] Should backups also go off the machine (external drive, cloud)?
