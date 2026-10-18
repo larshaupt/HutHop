@@ -5,6 +5,7 @@ import sqlite3
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
+from app.admin import require_admin
 from app.api.deps import get_db
 
 router = APIRouter(prefix="/api", tags=["edges"])
@@ -66,7 +67,7 @@ class EdgeReview(BaseModel):
     note: str | None = None
 
 
-@router.patch("/edges/{edge_id}")
+@router.patch("/edges/{edge_id}", dependencies=[Depends(require_admin)])
 def review_edge(edge_id: int, review: EdgeReview, conn: sqlite3.Connection = Depends(get_db)) -> dict:
     changes = review.model_dump(exclude_unset=True)
     if not changes:

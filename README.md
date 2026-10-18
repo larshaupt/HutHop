@@ -20,6 +20,9 @@ only when swisstopo publishes one, and rebuilds the route graph only when hut/st
 (`--rebuild` forces it). Each run is logged to `data/refresh_log.json`. Run it weekly during the season.
 `sync_sac --from-file data/raw/sac/huts.json` re-imports the last saved API response without fetching.
 
+Deployment (server2, tailnet only): see `docs/deployment.md`. Changing data needs the admin password once one is
+set (`python -m app.admin set-password`); on the server, changes are refused until then.
+
 Settings: `huthop.toml` (weights of the "best" tour order). Manual corrections: "Edit hut data" in a hut's detail
 view, "+ Add hut" in the hut list; they survive re-syncs. New huts get walking connections at the next
 `refresh --rebuild`.

@@ -125,13 +125,26 @@ async function toggleExcluded(edgeId) {
   const res = await fetch(`/api/edges/${edgeId}`, {
     method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ excluded: !edge.excluded }),
   });
-  if (!res.ok) return;
+  if (!res.ok) {
+    $("#connList").insertAdjacentHTML("afterbegin", `<p class="warn">${esc(await errorText(res))}</p>`);
+    return;
+  }
   const { excluded } = await res.json();
   for (const cached of cache.values()) {  // the same edge can appear under several limits
     for (const e of allEdges(cached)) if (e.id === edgeId) e.excluded = excluded;
   }
   render(data);
   draw(data);
+}
+
+/** Readable message for a refused change (401: password prompt cancelled or wrong, 403: no password set). */
+export async function errorText(res) {
+  if (res.status === 401) return "Changing data needs the admin password.";
+  try {
+    return (await res.json()).detail || `Could not save (${res.status}).`;
+  } catch {
+    return `Could not save (${res.status}).`;
+  }
 }
 
 export function addEdgeLayers() {

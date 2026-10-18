@@ -1,6 +1,6 @@
 """Manual corrections (overrides that survive SAC re-syncs) and huts added by hand.
 
-No authentication: meant for a private app on localhost. Protect it before exposing the app elsewhere.
+All changes need the admin password once one is set (see app/admin.py).
 """
 
 import json
@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field, field_validator
 from pyproj import Transformer
 
+from app.admin import require_admin
 from app.api.deps import get_db
 from app.planner import opening
 
@@ -103,7 +104,7 @@ class OverrideBody(BaseModel):
     note: str | None = Field(None, max_length=500)
 
 
-@router.put("/{hut_id}/overrides/{field}")
+@router.put("/{hut_id}/overrides/{field}", dependencies=[Depends(require_admin)])
 def set_override(hut_id: int, field: str, body: OverrideBody, conn: sqlite3.Connection = Depends(get_db)) -> dict:
     require_hut(conn, hut_id)
     try:
@@ -116,7 +117,7 @@ def set_override(hut_id: int, field: str, body: OverrideBody, conn: sqlite3.Conn
     return {"field": field, "value": value, "note": body.note}
 
 
-@router.delete("/{hut_id}/overrides/{field}")
+@router.delete("/{hut_id}/overrides/{field}", dependencies=[Depends(require_admin)])
 def delete_override(hut_id: int, field: str, conn: sqlite3.Connection = Depends(get_db)) -> dict:
     require_hut(conn, hut_id)
     with conn:
@@ -152,7 +153,7 @@ class ManualHut(BaseModel):
         return _url(v)
 
 
-@router.post("", status_code=201)
+@router.post("", status_code=201, dependencies=[Depends(require_admin)])
 def add_hut(hut: ManualHut, conn: sqlite3.Connection = Depends(get_db)) -> dict:
     """Add a hut that isn't in the SAC portal. Run `refresh --rebuild` (or build_edges) to connect it to trails."""
     e, n = WGS84_TO_LV95.transform(hut.lon, hut.lat)
@@ -169,7 +170,7 @@ def add_hut(hut: ManualHut, conn: sqlite3.Connection = Depends(get_db)) -> dict:
     return {"id": place_id, "note": "Not connected to trails yet: run `uv run python -m app.ingest.refresh --rebuild`."}
 
 
-@router.delete("/{hut_id}")
+@router.delete("/{hut_id}", dependencies=[Depends(require_admin)])
 def delete_manual_hut(hut_id: int, conn: sqlite3.Connection = Depends(get_db)) -> dict:
     """Delete a hut that was added by hand (SAC huts can't be deleted, only corrected)."""
     if require_hut(conn, hut_id)["source"] != "manual":

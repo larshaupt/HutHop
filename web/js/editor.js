@@ -2,6 +2,7 @@
 import { $, MONTHS, esc, revealPanel } from "./util.js";
 import { map } from "./map.js";
 import { closeDetail, invalidateHut, reloadHuts, selectHut } from "./huts.js";
+import { errorText } from "./connections.js";
 
 const FIELD_LABELS = { name: "Name", altitude: "Altitude (m)", beds: "Beds", shelter_beds: "Winter room places",
   website: "Website", hrs_id: "hut-reservation.org id" };
@@ -85,7 +86,7 @@ async function saveEdit(form) {
   const failed = results.find((r) => !r.ok);
   if (failed) {
     $("#editError").hidden = false;
-    $("#editError").textContent = (await failed.json()).detail || "Could not save.";
+    $("#editError").textContent = await errorText(failed);
     return;
   }
   await afterChange(hutId);
@@ -147,9 +148,13 @@ async function submitAdd(form) {
   };
   const res = await fetch("/api/huts", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   if (!res.ok) {
-    const detail = (await res.json()).detail;
     $("#editError").hidden = false;
-    $("#editError").textContent = Array.isArray(detail) ? detail.map((d) => `${d.loc.at(-1)}: ${d.msg}`).join("; ") : detail;
+    if (res.status === 422) {
+      const detail = (await res.json()).detail;
+      $("#editError").textContent = Array.isArray(detail) ? detail.map((d) => `${d.loc.at(-1)}: ${d.msg}`).join("; ") : detail;
+    } else {
+      $("#editError").textContent = await errorText(res);
+    }
     return;
   }
   const { id } = await res.json();
@@ -174,7 +179,10 @@ async function deleteHut(button) {
   }
   const { hutId } = editing;
   const res = await fetch(`/api/huts/${hutId}`, { method: "DELETE" });
-  if (!res.ok) return;
+  if (!res.ok) {
+    button.textContent = await errorText(res);
+    return;
+  }
   editing = null;
   invalidateHut(hutId);
   await reloadHuts();

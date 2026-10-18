@@ -29,7 +29,7 @@ Serving HutHop takes little: a few hundred MB of RAM and a fraction of a CPU. On
 
 Any deployment has to keep the app private, because the SAC terms allow private use only.
 
-1. **No public access.** SAC hut data may not be redistributed (brief §6). The app has no login, and `PATCH /api/edges` lets anyone change data. The network has to provide access control.
+1. **No public access.** SAC hut data may not be redistributed (brief §6). The network provides access control (tailnet only). Inside the tailnet, everyone can view and plan; **changing data needs the admin password** (`app/admin.py`, HTTP Basic auth over Tailscale's HTTPS). `server/compose.yaml` sets `HUTHOP_REQUIRE_ADMIN=1`, so changes are refused until a password is set.
 2. **Build and serving are separate.** `build_edges` needs 2 GB of RAM and 651 MB of input for a job that runs once a year. Building on the Mac and copying the finished `huthop.db` keeps the server small.
 3. **Server-side edits must survive a rebuild.** Edge exclusions, and later prices, are written on the server. Uploading a newly built database must not overwrite them (see Data workflow).
 4. **Be a polite API consumer.** Use low request rates, caching and an identifiable User-Agent toward SAC and hut-reservation.org. That applies equally to the server.
@@ -100,13 +100,24 @@ None of these touches the app's behaviour.
 - [ ] `GET /api/health` for the Docker health check and monitoring.
 - [ ] Cache `load_graph()` per trail limit, cleared when edges are changed. It rebuilds on every `/api/tours/suggest` call today, which will be noticeable on a Pi.
 
+## Admin password
+
+Set it once on the server (the hash is stored in `/opt/huthop/data/admin_password`, never in git):
+
+```sh
+cd /opt/huthop/server && docker compose exec huthop python -m app.admin set-password
+```
+
+The browser asks for it the first time you edit a hut or exclude a connection; any username works.
+Run the same command again to change it. On the Mac, editing stays open unless a password is set there.
+
 ## Operations
 
 Deploying is a push to `main`; the rest is a few host cron jobs.
 
 | Task | How often | How |
 | --- | --- | --- |
-| App update | Every 5 min | Host cron: `/opt/huthop/server/update.sh >> /opt/huthop/update.log 2>&1` |
+| App update | Every 5 min | Host cron: `/opt/huthop/server/update.sh >> /opt/huthop/update.log 2>&1`. The script waits 150 s so it doesn't overlap the website's update (whose `docker image prune` broke our pulls), retries the pull once, and prunes only HutHop images |
 | SAC sync | Weekly or monthly | Host cron: `docker compose -f /opt/huthop/server/compose.yaml exec huthop python -m app.ingest.sync_sac` |
 | Availability | On demand | Fetched per hut and cached for a few hours by the app (Phase 4); no job |
 | Route graph rebuild | Yearly, by hand | On the Mac, see Data workflow |
