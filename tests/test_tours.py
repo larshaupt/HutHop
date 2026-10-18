@@ -28,7 +28,7 @@ def graph():
     huts = {1: hut(1), 2: hut(2), 3: hut(3, catering=NONE, self_service=SELF_JULY, lon=8.5)}
     stops = {11: stop(11, 2_600_000), 12: stop(12, 2_620_000), 13: stop(13, 2_601_000)}
     g = Graph(huts, stops)
-    leg = lambda i, a, b, minutes: Leg(i, a, b, minutes, minutes * 50, 500, 400, 2, None)
+    leg = lambda i, a, b, minutes: Leg(i, a, b, minutes, minutes * 50, 500, 400, 2, None, 2)
     g.stop_in = {1: [leg(1, 11, 1, 240)]}
     g.hut_out = {1: [leg(2, 1, 2, 300), leg(3, 1, 3, 300)], 2: [leg(4, 2, 1, 300)], 3: [leg(5, 3, 1, 300)]}
     g.stop_out = {2: [leg(6, 2, 12, 240)], 3: [leg(7, 3, 13, 240)], 1: [leg(8, 1, 11, 240)]}
@@ -84,7 +84,37 @@ def test_night_status_unknown_and_partial():
 
 def test_harder_limit_keeps_easier_alternative(graph):
     """With both a red (5 h) and a faster blue (2 h) edge A → B, a 3–6 h search must still find the red one."""
-    blue = Leg(9, 1, 2, 120, 6000, 800, 700, 3, None)
+    blue = Leg(9, 1, 2, 120, 6000, 800, 700, 3, None, 3)
     graph.hut_out[1].append(blue)
     tours = suggest(graph, TourRequest(date(2027, 7, 10), 2, 3, 6, limit=3))
     assert [[leg.edge_id for leg in t.legs] for t in tours][0] == [1, 2, 6]
+
+
+def test_tour_id_roundtrip_and_rebuild(graph):
+    from app.planner.tours import build_tour, parse_tour_id
+    graph.legs = {(leg.frm, leg.to, leg.category_limit): leg for legs in (
+        *graph.stop_in.values(), *graph.hut_out.values(), *graph.stop_out.values()) for leg in legs}
+    tour = suggest(graph, TourRequest(date(2027, 7, 10), 2, 3, 6))[0]
+    assert tour.id == "2027-07-10_11-1-2-12_2-2-2"
+    start, places, limits = parse_tour_id(tour.id)
+    rebuilt = build_tour(graph, start, places, limits)
+    assert rebuilt.legs == tour.legs and [n.hut for n in rebuilt.nights] == [1, 2]
+    assert build_tour(graph, start, places, [3, 3, 3]).legs == tour.legs  # falls back to the stored easier variant
+    with pytest.raises(ValueError, match="no longer available"):
+        build_tour(graph, start, [11, 1, 12], [2, 2])   # there is no hut A → stop 12 edge
+    with pytest.raises(ValueError, match="stop → hut"):
+        build_tour(graph, start, [1, 2, 12], [2, 2])    # must start at a stop
+    with pytest.raises(ValueError, match="no longer available"):
+        build_tour(graph, start, [11, 2, 12], [2, 2])   # there is no stop 11 → hut B edge
+    for bad in ("2027-07-10_11-1", "2027-07-10_11-1-12_2", "2027-07-10_11-1-12_2-9", "nonsense"):
+        with pytest.raises(ValueError):
+            parse_tour_id(bad)
+    # A night that doesn't fit any more is kept and marked: hut 3 is closed in August
+    late = build_tour(graph, date(2027, 7, 31), [11, 1, 3, 13], [2, 2, 2])
+    assert [n.status for n in late.nights] == ["catered", "closed"]
+
+
+def test_gpx_filename_is_ascii():
+    from app.planner.gpx import filename
+    tour = {"nights": 3, "days": [{"date": "2027-06-26", "from": {"name": "Elm, Büelstafel"}}]}
+    assert filename(tour) == "huthop-2027-06-26-elm-buelstafel-3n.gpx"

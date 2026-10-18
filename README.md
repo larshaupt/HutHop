@@ -26,12 +26,14 @@ uv run pytest                             # tests
 
 ```
 app/
-  api/       FastAPI routes (/api/huts, /api/huts/{id}/edges, /api/edges/{id}, /api/tours/suggest, /api/stops)
+  api/       FastAPI routes (/api/huts, /api/huts/{id}/edges, /api/edges/{id}, /api/tours/suggest,
+             /api/tours/{id}, /api/tours/{id}/gpx, /api/stops)
   db/        schema.sql and connection
   ingest/    offline jobs (sync_sac, load_stops, build_edges)
-  planner/   tour search, availability cache, hiking time (Swiss formula), polyline encoding
+  planner/   tour search, opening rules, availability cache, GPX, hiking time (Swiss formula), polyline
   clients/   external APIs (SAC, hut-reservation.org)
-web/         static frontend (MapLibre + swisstopo tiles, no build step): app.js (map, huts), tours.js (planner)
+web/         static frontend (MapLibre + swisstopo tiles, no build step), ES modules in web/js/:
+             main (wiring), state (URL hash), map, huts, connections, tours, util
 spikes/      Phase 0 experiments and findings
 tests/
 ```

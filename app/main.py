@@ -3,14 +3,23 @@
     uv run uvicorn app.main:app --reload
 """
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.api import edges, huts, tours
-from app.db import ROOT
+from app.db import ROOT, connect
 
-app = FastAPI(title="HutHop")
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    connect().close()  # create tables and views once
+    yield
+
+
+app = FastAPI(title="HutHop", lifespan=lifespan)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.include_router(huts.router)
 app.include_router(edges.router)

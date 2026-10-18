@@ -374,12 +374,14 @@ Answer the open questions before building:
 
 - [x] Availability: season calendar per hut from hut-reservation.org, **cached 10 minutes** (availability changes quickly). Tour search runs in up to 3 rounds: search, fetch the calendars of huts in the best 25 candidates (max 40 fetches, 2 in parallel), search again. Full or closed nights drop out; free-bed nights use the daily status (SERVICED = catered, UNSERVICED = self-service); not-yet-released (0 of 0) and huts without online booking fall back to SAC monthly codes and rank slightly lower. Typical search: 3–6 s with fresh fetches.
 - [x] Planner: number of people, "check free beds" option, card badge (beds free / N nights unconfirmed), free beds + "Book" link per night.
+- [x] A CLOSED 0-of-0 night before the hut's released season counts as closed (e.g. Chamanna Cluozza before 3 June), not "not bookable yet". Only nights with nothing released later stay "not bookable yet".
 - [ ] Price entry (start with YAML/CSV import, then a simple admin form). **Postponed.**
 - [ ] Price estimator from user inputs. **Postponed.**
 
 ### Later
 
-- GPX export, saved tours, non-SAC huts, PWA/offline, better ranking.
+- ~~GPX export~~ done: `GET /api/tours/{id}/gpx`, one track per day + waypoints. Tour ids are `date_places_limits` (e.g. `2027-07-17_123-45-67-89_2-2-3`), stable across edge rebuilds, so they also serve sharing, saved tours and the editor.
+- Saved tours, non-SAC huts, PWA/offline, better ranking. Elevation in GPX (from swissTLM3D Z).
 - **Custom sorting and a "best" score** for tour suggestions (user-defined quality metric).
 - **Tour editor:** build a tour by hand or edit a suggestion (swap a hut, add/remove a night, change start/end). Each day is a stored edge, so editing = choosing another edge from the hut's connections; recheck opening and free beds after each change.
 - SAC times as automatic overrides (per-grade calibration for T4+).

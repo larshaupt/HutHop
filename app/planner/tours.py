@@ -12,11 +12,11 @@ import sqlite3
 from dataclasses import dataclass, field
 from collections.abc import Callable
 from datetime import date, timedelta
-from typing import Literal
 
+from app.planner import opening
 from app.planner.availability import NightAvailability
 
-Catering = Literal["any", "catered", "self_service"]
+Catering = opening.Wanted
 BEAM_WIDTH = 3000
 END_LEGS_PER_STATE = 2
 LOOP_RADIUS_M = 3000
@@ -40,6 +40,7 @@ class Leg:
     descent_m: int
     max_category: int
     sac_time_min: int | None
+    category_limit: int = 1  # search limit the edge was stored for; with frm/to it names the edge stably
 
 
 @dataclass(frozen=True)
@@ -71,6 +72,7 @@ class Stop:
 class Graph:
     huts: dict[int, Hut]
     stops: dict[int, Stop]
+    legs: dict[tuple[int, int, int], Leg] = field(default_factory=dict)  # by (from, to, category limit)
     hut_out: dict[int, list[Leg]] = field(default_factory=dict)   # hut → hut
     stop_in: dict[int, list[Leg]] = field(default_factory=dict)   # stop → hut, keyed by hut
     stop_out: dict[int, list[Leg]] = field(default_factory=dict)  # hut → stop, keyed by hut
@@ -95,16 +97,37 @@ class TourRequest:
 class Night:
     hut: int
     date: date
-    status: str  # 'catered' | 'self_service' | 'unknown'
+    status: str  # 'catered' | 'self_service' | 'unknown' | 'closed' (only in tours built by hand)
     partial: bool
     availability: NightAvailability | None = None
 
 
 @dataclass(frozen=True)
 class Tour:
+    """stop → hut → … → hut → stop: one leg (stored edge) per day, one night per hut."""
+
     score: float
     legs: tuple[Leg, ...]
     nights: tuple[Night, ...]
+    start_date: date
+
+    @property
+    def id(self) -> str:
+        """Start date, place ids and each day's category limit, e.g. '2027-07-17_123-45-67-89_2-2-3'.
+
+        Uses places, not edge ids, so the id survives rebuilds of the edge table."""
+        places = [self.legs[0].frm, *(leg.to for leg in self.legs)]
+        return (f"{self.start_date.isoformat()}_{'-'.join(map(str, places))}_"
+                f"{'-'.join(str(leg.category_limit) for leg in self.legs)}")
+
+
+def parse_tour_id(tour_id: str) -> tuple[date, list[int], list[int]]:
+    """Inverse of Tour.id: (start date, place ids, category limit per day). Raises ValueError if malformed."""
+    day, places, limits = tour_id.split("_")
+    place_ids, limit_ids = [int(p) for p in places.split("-")], [int(x) for x in limits.split("-")]
+    if len(place_ids) < 3 or len(limit_ids) != len(place_ids) - 1 or not set(limit_ids) <= {1, 2, 3}:
+        raise ValueError("malformed tour id")
+    return date.fromisoformat(day), place_ids, limit_ids
 
 
 def load_graph(conn: sqlite3.Connection, limit: int) -> Graph:
@@ -113,14 +136,10 @@ def load_graph(conn: sqlite3.Connection, limit: int) -> Graph:
     A place pair can have one edge per category limit (only stored when the harder trail is faster). All of
     them are kept as alternatives, so allowing harder trails only ever adds options."""
     huts = {}
-    months = {}
-    for r in conn.execute("SELECT hut_id, month, catering, self_service FROM hut_month_effective ORDER BY hut_id, month"):
-        c, s = months.setdefault(r["hut_id"], ([], []))
-        c.append(str(r["catering"] if r["catering"] is not None else 2))
-        s.append(str(r["self_service"] if r["self_service"] is not None else 2))
+    codes = opening.load_codes(conn)
     for r in conn.execute("SELECT id, name, lat, lon, e_lv95, n_lv95, services, hrs_id FROM hut_effective"):
-        c, s = months.get(r["id"], (["2"] * 12, ["2"] * 12))
-        huts[r["id"]] = Hut(r["id"], r["name"], r["lat"], r["lon"], r["e_lv95"], r["n_lv95"], "".join(c), "".join(s),
+        c, s = codes.get(r["id"], (opening.NO_DATA, opening.NO_DATA))
+        huts[r["id"]] = Hut(r["id"], r["name"], r["lat"], r["lon"], r["e_lv95"], r["n_lv95"], c, s,
                             json.loads(r["services"] or "{}").get("half_board", False), r["hrs_id"])
     rows = conn.execute(
         "SELECT * FROM edge WHERE category_limit <= ? AND excluded = 0", (limit,)).fetchall()
@@ -135,7 +154,8 @@ def load_graph(conn: sqlite3.Connection, limit: int) -> Graph:
     graph = Graph(huts, stops)
     for r in rows:
         leg = Leg(r["id"], r["from_place"], r["to_place"], r["time_min"], r["distance_m"], r["ascent_m"],
-                  r["descent_m"], r["max_category"], r["sac_time_min"])
+                  r["descent_m"], r["max_category"], r["sac_time_min"], r["category_limit"])
+        graph.legs[(leg.frm, leg.to, leg.category_limit)] = leg
         if leg.frm in huts and leg.to in huts:
             graph.hut_out.setdefault(leg.frm, []).append(leg)
         elif leg.to in huts and leg.frm in stops:
@@ -146,15 +166,11 @@ def load_graph(conn: sqlite3.Connection, limit: int) -> Graph:
 
 
 def night_status(hut: Hut, day: date, catering: Catering, include_unknown: bool) -> Night | None:
-    """How the hut can be used on that night, or None if it doesn't fit the request."""
-    if set(hut.catering + hut.self_service) == {"2"}:
-        return Night(hut.id, day, "unknown", False) if include_unknown else None
-    c, s = hut.catering[day.month - 1], hut.self_service[day.month - 1]
-    if catering in ("any", "catered") and c in "01":
-        return Night(hut.id, day, "catered", c == "1")
-    if catering in ("any", "self_service") and s in "01":
-        return Night(hut.id, day, "self_service", s == "1")
-    return None
+    """How the hut can be used on that night (SAC monthly codes), or None if it doesn't fit the request."""
+    result = opening.usable(hut.catering, hut.self_service, day.month, catering)
+    if result is None or (result[0] == "unknown" and not include_unknown):
+        return None
+    return Night(hut.id, day, *result)
 
 
 AvailabilityLookup = Callable[[Hut, date], NightAvailability]
@@ -229,9 +245,37 @@ def suggest(graph: Graph, req: TourRequest, availability: AvailabilityLookup | N
             not req.loop or math.hypot(graph.stops[leg.to].e - start.e, graph.stops[leg.to].n - start.n) <= LOOP_RADIUS_M)]
         for leg in heapq.nsmallest(END_LEGS_PER_STATE, ends, key=day_cost):
             all_legs = legs + (leg,)
-            tours.append(Tour((cost + day_cost(leg)) / len(all_legs), all_legs, nights))
+            tours.append(Tour((cost + day_cost(leg)) / len(all_legs), all_legs, nights, req.start_date))
     tours.sort(key=lambda t: t.score)
     return diversify(tours, req.max_results)
+
+
+def build_tour(graph: Graph, start_date: date, places: list[int], limits: list[int], catering: Catering = "any",
+               availability: AvailabilityLookup | None = None) -> Tour:
+    """Rebuild a tour from its places and per-day category limits (for export, sharing and, later, editing).
+
+    Raises ValueError if the tour isn't stop → hut → … → stop or a connection no longer exists (e.g. excluded).
+    Nights that no longer fit are kept with what we know (status 'closed' or availability 'full'), so callers
+    can warn."""
+    if places[0] not in graph.stops or places[-1] not in graph.stops or any(p not in graph.huts for p in places[1:-1]):
+        raise ValueError("a tour must go stop → hut → … → hut → stop")
+    legs = []
+    for frm, to, limit in zip(places, places[1:], limits):
+        # The edge for exactly this limit, or (if that variant was dropped) the best one at an easier limit
+        leg = next((graph.legs[(frm, to, lim)] for lim in range(limit, 0, -1) if (frm, to, lim) in graph.legs), None)
+        if leg is None:
+            raise ValueError(f"the connection {frm} → {to} is no longer available")
+        legs.append(leg)
+    legs = tuple(legs)
+    nights = []
+    for i, leg in enumerate(legs[:-1]):
+        hut, day = graph.huts[leg.to], start_date + timedelta(days=i)
+        n = night_status(hut, day, catering, include_unknown=True)
+        avail = availability(hut, day) if availability else None
+        combined = with_availability(n, hut, day, catering, avail) if avail else n
+        # Keep nights that no longer fit, with what we know (e.g. availability 'full'), so callers can warn.
+        nights.append(combined or Night(hut.id, day, n.status if n else "closed", n.partial if n else False, avail))
+    return Tour(0.0, legs, tuple(nights), start_date)
 
 
 def diversify(tours: list[Tour], k: int) -> list[Tour]:

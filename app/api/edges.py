@@ -5,7 +5,7 @@ import sqlite3
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from app.api.huts import get_db
+from app.api.deps import get_db
 
 router = APIRouter(prefix="/api", tags=["edges"])
 

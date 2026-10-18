@@ -87,6 +87,11 @@ class Snapshot:
             """SELECT a.* FROM availability a JOIN availability_fetch f ON f.hut_id = a.hut_id
                WHERE f.fetched_at >= ? AND f.ok = 1 AND a.date BETWEEN ? AND ?""",
             (cutoff, start.isoformat(), end.isoformat()))}
+        # Last date with released places per hut: a CLOSED 0-of-0 night before it is a real closure
+        # (the season is out, the hut just isn't open then), not a contingent that is still to come.
+        self.last_released = {r["hut_id"]: date.fromisoformat(r["last"]) for r in conn.execute(
+            """SELECT a.hut_id, max(a.date) AS last FROM availability a JOIN availability_fetch f ON f.hut_id = a.hut_id
+               WHERE f.fetched_at >= ? AND f.ok = 1 AND a.total_places > 0 GROUP BY a.hut_id""", (cutoff,))}
 
     def night(self, hut_id: int, bookable: bool, day: date) -> NightAvailability:
         if not bookable:
@@ -98,12 +103,17 @@ class Snapshot:
         row = self.days.get((hut_id, day))
         if row is None:  # beyond the hut's booking window
             return NightAvailability("not_released")
-        return classify(row["hut_status"], row["free_beds"], row["total_places"], row["fetched_at"], self.people)
+        released_later = (last := self.last_released.get(hut_id)) is not None and day < last
+        return classify(row["hut_status"], row["free_beds"], row["total_places"], row["fetched_at"], self.people,
+                        released_later)
 
 
 def classify(hut_status: str | None, free_beds: int | None, total_places: int, checked_at: str | None,
-             people: int) -> NightAvailability:
+             people: int, released_later: bool = False) -> NightAvailability:
+    """`released_later`: the hut's calendar has bookable places after this date."""
     base = dict(hut_status=hut_status, free_beds=free_beds, total_places=total_places, checked_at=checked_at)
+    if hut_status == "CLOSED" and not total_places and released_later:
+        return NightAvailability("closed", **base)
     if not total_places:
         # 0 of 0: the contingent is not open for booking yet (or nothing is released for a closed period)
         return NightAvailability("not_released", **base)

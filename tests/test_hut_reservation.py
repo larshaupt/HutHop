@@ -22,3 +22,7 @@ def test_classify():
     assert classify("SERVICED", 3, 40, None, 4).state == "full"
     assert classify("SERVICED", None, 0, None, 1).state == "not_released"
     assert classify("CLOSED", 0, 20, None, 1).state == "closed"
+    # Closed 0-of-0 before a released season = really closed; with nothing released later = not released yet
+    assert classify("CLOSED", None, 0, None, 1, released_later=True).state == "closed"
+    assert classify("CLOSED", None, 0, None, 1, released_later=False).state == "not_released"
+    assert classify("SERVICED", None, 0, None, 1, released_later=True).state == "not_released"

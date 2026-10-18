@@ -3,7 +3,7 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.huts import get_db
+from app.api.deps import get_db
 from app.db import connect
 from app.ingest.sync_sac import sync
 from app.main import app
@@ -114,6 +114,15 @@ def test_tour_uses_availability(client, monkeypatch, status, free, total, people
     assert calls == [7]
 
 
+def test_closed_before_released_season(client, monkeypatch):
+    """Like Chamanna Cluozza: closed (0 of 0) on 10 July, released from 20 July. The hut must drop out."""
+    c, _ = client
+    days = calendar("2027-07-10", "CLOSED", None, 0) + calendar("2027-07-20", "SERVICED", 50, 61)
+    monkeypatch.setattr("app.clients.hut_reservation.fetch_calendar", lambda hrs_id, _client: days)
+    body = {"start_date": "2027-07-10", "nights": 1, "min_hours": 1, "max_hours": 2}
+    assert c.post("/api/tours/suggest", json=body).json()["tours"] == []
+
+
 def test_fetch_error_keeps_tour_marked(client, monkeypatch):
     c, _ = client
     def boom(hrs_id, _client):
@@ -122,3 +131,24 @@ def test_fetch_error_keeps_tour_marked(client, monkeypatch):
     body = {"start_date": "2027-07-10", "nights": 1, "min_hours": 1, "max_hours": 2}
     night = c.post("/api/tours/suggest", json=body).json()["tours"][0]["days"][0]["night"]
     assert night["availability"]["state"] == "error"
+
+
+def test_tour_by_id_and_gpx(client):
+    import xml.etree.ElementTree as ET
+    c, ids = client
+    body = {"start_date": "2027-07-10", "nights": 1, "min_hours": 1, "max_hours": 2, "check_availability": False}
+    tour = c.post("/api/tours/suggest", json=body).json()["tours"][0]
+    again = c.get(f"/api/tours/{tour['id']}").json()
+    assert again["id"] == tour["id"] and again["days"][0]["to"]["id"] == ids["a"]
+
+    res = c.get(f"/api/tours/{tour['id']}/gpx")
+    assert res.status_code == 200 and res.headers["content-type"].startswith("application/gpx+xml")
+    assert 'filename="huthop-2027-07-10-valley-station-1n.gpx"' in res.headers["content-disposition"]
+    ns = {"g": "http://www.topografix.com/GPX/1/1"}
+    root = ET.fromstring(res.text)
+    assert len(root.findall("g:trk", ns)) == 2                       # one track per day
+    assert [w.find("g:desc", ns).text for w in root.findall("g:wpt", ns)] == ["Start", "Night 1 (2027-07-10)", "End"]
+    assert root.find("g:trk/g:trkseg/g:trkpt", ns) is not None
+
+    assert c.get("/api/tours/not-a-tour").status_code == 400
+    assert c.get(f"/api/tours/2027-07-10_{ids['stop']}-{ids['b']}-{ids['stop']}_1-1").status_code == 404

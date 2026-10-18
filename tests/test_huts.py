@@ -5,7 +5,8 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from app.api.huts import get_db, month_status
+from app.api.deps import get_db
+from app.planner.opening import month_status
 from app.db import connect
 from app.ingest.sync_sac import parse_hut, sync
 from app.main import app
