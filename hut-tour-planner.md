@@ -51,7 +51,7 @@ A private web app to browse and filter Swiss mountain huts (SAC plus selected no
 **F4: Price estimate**
 - Computed from stored price components and user inputs: members/non-members, half board vs. self-catering vs. overnight only, number of people, nights, local tax.
 
-**F5: Data maintenance**
+**F5: Data maintenance** (done: `refresh` command, "Edit hut data", "+ Add hut")
 - Periodic sync of SAC hut data.
 - Manual entry and correction of prices, missing fields and non-SAC huts. Manual values must survive re-syncs.
 - Review tool for computed route edges, with the ability to exclude bad ones.
@@ -131,7 +131,7 @@ Decided in Phase 0 (see `spikes/routing_findings.md`): own routing on the offici
 - **Before the search:** find the candidate huts in the area, fetch their season availability (cached), and drop huts that are full or closed on every relevant night.
 - **Hut usable on a date:** prefer hut-reservation.org's daily status (SERVICED = catered, UNSERVICED = self-service only, CLOSED) and free beds ≥ group size. Otherwise fall back to the SAC monthly codes (`catering`, `self_service`). `1` (partly) means "check dates", and huts with no data are "unknown": allowed but ranked lower and flagged.
 - Bounded DFS / beam search: start stop → N huts (one per night) → end stop. Each day's time must fall within [min, max] hours, and the catering preference must match on that date.
-- Ranking (initial): closeness to the target hours per day, total price, availability certainty, no repeated huts, optional "scenic"/altitude bonus.
+- Ranking (`app/planner/ranking.py`): each tour gets sub-scores 0–1 (day length fit, confirmed free beds, opening-data certainty, easy trails, hut altitude, short approach). "Best" is their weighted average with **fixed weights from `huthop.toml`** (not changeable in the UI). Other sorts: day length, shortest, least ascent, highest huts, most free beds. The beam search still generates candidates by day-length fit, then the complete tours are re-ranked and diversified.
 
 ### Data model (SQLite)
 

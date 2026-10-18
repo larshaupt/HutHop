@@ -7,9 +7,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
 from pydantic import BaseModel, Field, model_validator
 
+from app import config
 from app.api.deps import get_db
 from app.api.huts import HRS_BOOKING_URL
-from app.planner import availability, gpx
+from app.planner import availability, gpx, ranking
 from app.planner.tours import (Catering, Graph, Night, Tour, TourRequest, build_tour, load_graph, parse_tour_id,
                                suggest)
 
@@ -32,6 +33,7 @@ class TourQuery(BaseModel):
     include_unknown: bool = True
     people: int = Field(2, ge=1, le=30)
     check_availability: bool = True
+    sort: ranking.Sort = Field("best", description="best (weights from huthop.toml), fit, time, ascent, altitude, beds")
 
     @model_validator(mode="after")
     def check_hours(self):
@@ -51,7 +53,7 @@ def suggest_tours(q: TourQuery, conn: sqlite3.Connection = Depends(get_db)) -> d
         if not row:
             raise HTTPException(404, "start stop not found")
         params["start_near"] = (row["e_lv95"], row["n_lv95"])
-    req = TourRequest(**params)
+    req = TourRequest(**params, weights=config.ranking_weights())
     fetched = 0
     if q.check_availability:
         tours, fetched = search_with_availability(conn, graph, req, q.people)
@@ -88,7 +90,7 @@ def rebuild(conn: sqlite3.Connection, tour_id: str, people: int, check_availabil
         snapshot = availability.Snapshot(conn, start, start + timedelta(days=len(limits) - 1), people)
         lookup = lambda hut, day: snapshot.night(hut.id, hut.hrs_id is not None, day)  # noqa: E731
     try:
-        return graph, build_tour(graph, start, places, limits, availability=lookup)
+        return graph, build_tour(graph, start, places, limits, availability=lookup, weights=config.ranking_weights())
     except ValueError as err:
         raise HTTPException(404, str(err)) from None
 
@@ -120,7 +122,8 @@ def tour_json(conn: sqlite3.Connection, graph: Graph, tours: list[Tour]) -> list
                                  edge_ids).fetchall()) if edge_ids else {}
     return [{
         "id": t.id,
-        "score": round(t.score, 4),
+        "score": round(t.score, 3),
+        "metrics": {m: round(getattr(t.metrics, m), 3) for m in ranking.METRICS} if t.metrics else None,
         "nights": len(t.nights),
         "time_min": sum(leg.time_min for leg in t.legs),
         "distance_m": sum(leg.distance_m for leg in t.legs),

@@ -9,14 +9,14 @@ export const DEFAULTS = {
   hut: 0, base: "light", trails: false, limit: 2,
   // tour planner
   view: "huts", tDate: "", tNights: 2, tMin: 3, tMax: 6, tCat: "any", tStart: 0, tStartName: "", tLoop: false,
-  tUnknown: true, tBox: "", tour: 0, tPeople: 2, tAvail: true,
+  tUnknown: true, tBox: "", tour: 0, tPeople: 2, tAvail: true, tSort: "best",
 };
 
 const HASH_KEYS = {
   month: "m", openAs: "open", hb: "hb", kitchen: "kitchen", bookable: "book", altMin: "amin", altMax: "amax",
   minBeds: "beds", operator: "type", q: "q", sort: "sort", hut: "hut", base: "map", trails: "trails", limit: "tl",
   view: "v", tDate: "td", tNights: "tn", tMin: "tmin", tMax: "tmax", tCat: "tc", tStart: "ts", tStartName: "tsn",
-  tLoop: "loop", tUnknown: "unk", tBox: "tb", tour: "tour", tPeople: "ppl", tAvail: "avail",
+  tLoop: "loop", tUnknown: "unk", tBox: "tb", tour: "tour", tPeople: "ppl", tAvail: "avail", tSort: "tsort",
 };
 
 /** The one state object. Modules read it directly and change it only through setState(). */

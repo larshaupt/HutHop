@@ -10,14 +10,19 @@ Requires [uv](https://docs.astral.sh/uv/) and Python 3.12.
 
 ```sh
 uv sync                                   # create .venv and install dependencies
-uv run python -m app.ingest.sync_sac      # fetch SAC huts into data/huthop.db (~10 s, 5 requests)
-uv run python -m app.ingest.load_stops    # public transport stops (~5 MB download)
-uv run python -m app.ingest.build_edges   # route graph on swissTLM3D (~90 s, ~2 GB RAM)
+uv run python -m app.ingest.refresh       # huts, stops, trails (if new) and route graph (if needed)
 uv run uvicorn app.main:app --reload      # http://localhost:8000
 uv run pytest                             # tests
 ```
 
+`refresh` runs the individual jobs (`sync_sac`, `load_stops`, `build_edges`), downloads a new swissTLM3D edition
+only when swisstopo publishes one, and rebuilds the route graph only when hut/stop positions or trails changed
+(`--rebuild` forces it). Each run is logged to `data/refresh_log.json`. Run it weekly during the season.
 `sync_sac --from-file data/raw/sac/huts.json` re-imports the last saved API response without fetching.
+
+Settings: `huthop.toml` (weights of the "best" tour order). Manual corrections: "Edit hut data" in a hut's detail
+view, "+ Add hut" in the hut list; they survive re-syncs. New huts get walking connections at the next
+`refresh --rebuild`.
 
 `build_edges` needs the swissTLM3D hiking network (swisstopo open data, about 200 MB) unpacked in `data/tlm/`:
 <https://data.geo.admin.ch/ch.swisstopo.swisstlm3d-wanderwege/swisstlm3d-wanderwege/swisstlm3d-wanderwege_2056_5728.gpkg.zip>. Manual `excluded` flags on edges survive rebuilds.
@@ -26,14 +31,14 @@ uv run pytest                             # tests
 
 ```
 app/
-  api/       FastAPI routes (/api/huts, /api/huts/{id}/edges, /api/edges/{id}, /api/tours/suggest,
-             /api/tours/{id}, /api/tours/{id}/gpx, /api/stops)
+  api/       FastAPI routes (/api/huts, /api/huts/{id}/edges, /api/huts/{id}/overrides, /api/edges/{id},
+             /api/tours/suggest, /api/tours/{id}, /api/tours/{id}/gpx, /api/stops)
   db/        schema.sql and connection
-  ingest/    offline jobs (sync_sac, load_stops, build_edges)
-  planner/   tour search, opening rules, availability cache, GPX, hiking time (Swiss formula), polyline
+  ingest/    offline jobs (refresh, sync_sac, load_stops, build_edges)
+  planner/   tour search, ranking, opening rules, availability cache, GPX, hiking time, polyline
   clients/   external APIs (SAC, hut-reservation.org)
 web/         static frontend (MapLibre + swisstopo tiles, no build step), ES modules in web/js/:
-             main (wiring), state (URL hash), map, huts, connections, tours, util
+             main (wiring), state (URL hash), map, huts, connections, tours, editor, util
 spikes/      Phase 0 experiments and findings
 tests/
 ```

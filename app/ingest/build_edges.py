@@ -317,16 +317,12 @@ def store(conn: sqlite3.Connection, places: list[dict], edges: list[dict], netwo
     print(f"stored {len(edges)} edges ({len(kept)} manual flags kept, {matched} matched to SAC routes)")
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--cutoff", type=float, default=CUTOFF_MIN, help="max hiking time per edge (minutes)")
-    args = parser.parse_args()
-
+def build(conn: sqlite3.Connection, cutoff: float = CUTOFF_MIN) -> int:
+    """Rebuild all computed edges. Returns the number of edges stored."""
     started = time.time()
     network = load_network()
     print(f"trail graph: {len(network.node_xy):,} nodes, {len(network.edges[3].src):,} directed edges "
           f"({time.time() - started:.0f} s)")
-    conn = connect()
     places = [dict(r) for r in conn.execute(
         "SELECT p.id, p.kind, p.name, p.e_lv95, p.n_lv95 FROM place p "
         "LEFT JOIN hut h ON h.place_id = p.id LEFT JOIN stop s ON s.place_id = p.id")]
@@ -337,9 +333,16 @@ def main() -> None:
     off = sum(1 for p in places if p["kind"] == "hut" and p["snap_m"] > HUT_MAX_SNAP_M)
     print(f"snapped {len(places):,} places; huts: {review} to review (>{HUT_REVIEW_SNAP_M:.0f} m from a trail), "
           f"{off} off the network (>{HUT_MAX_SNAP_M:.0f} m, no edges)")
-    edges = search(network, places, args.cutoff)
+    edges = search(network, places, cutoff)
     store(conn, places, edges, network)
     print(f"done in {time.time() - started:.0f} s")
+    return len(edges)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--cutoff", type=float, default=CUTOFF_MIN, help="max hiking time per edge (minutes)")
+    build(connect(), parser.parse_args().cutoff)
 
 
 if __name__ == "__main__":

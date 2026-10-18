@@ -1,0 +1,10 @@
+# HutHop settings. Read on every request, so edits apply without a restart.
+
+[ranking.weights]
+# How much each sub-score counts towards the "best" tour order (0 = ignore). See app/planner/ranking.py.
+fit = 3        # days close to the middle of the requested hours per day
+beds = 2       # free beds confirmed on hut-reservation.org
+certainty = 2  # full-month SAC opening data for every night (no unknown or partly-open months)
+ease = 1       # easier trails (yellow over red-white over blue-white)
+altitude = 1   # higher huts, a simple proxy for scenery
+approach = 1   # short first and last day (to the first hut, back to public transport)

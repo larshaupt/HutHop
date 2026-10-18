@@ -118,3 +118,39 @@ def test_gpx_filename_is_ascii():
     from app.planner.gpx import filename
     tour = {"nights": 3, "days": [{"date": "2027-06-26", "from": {"name": "Elm, Büelstafel"}}]}
     assert filename(tour) == "huthop-2027-06-26-elm-buelstafel-3n.gpx"
+
+
+def test_sort_orders_and_weights(graph):
+    from app.planner import ranking
+    base = dict(start_date=date(2027, 7, 10), nights=2, min_hours=3, max_hours=6)
+    # Hut 2 (via B) is catered: certain opening data; hut 3 is self-service in July only (also certain).
+    # Make hut 3 higher so "altitude" prefers the C tour while "fit" ties.
+    graph.huts[3] = Hut(3, "Hut 3", 46.5, 8.5, 2_600_000, 1_150_000, NONE, SELF_JULY, False, None, 3000)
+    graph.huts[2] = Hut(2, "Hut 2", 46.5, 7.8, 2_600_000, 1_150_000, SUMMER, NONE, True, None, 1600)
+    by_alt = suggest(graph, TourRequest(**base, sort="altitude"))
+    assert [t.nights[-1].hut for t in by_alt] == [3, 2]
+    only_altitude = {m: 0 for m in ranking.METRICS} | {"altitude": 3}
+    best_alt = suggest(graph, TourRequest(**base, sort="best", weights=only_altitude))
+    assert [t.nights[-1].hut for t in best_alt] == [3, 2]
+    assert 0 <= best_alt[0].score <= 1 and best_alt[0].metrics.altitude > best_alt[1].metrics.altitude
+
+
+def test_metrics_values():
+    from app.planner.ranking import metrics
+    from app.planner.tours import Night
+    legs = [Leg(1, 0, 1, 270, 9000, 800, 300, 1, None), Leg(2, 1, 0, 270, 9000, 300, 800, 3, None)]
+    nights = [Night(1, date(2027, 7, 10), "catered", False)]
+    m = metrics(legs, nights, [2250], 180, 360)
+    assert m.fit == 1.0 and m.ease == 0.5 and m.altitude == 0.5 and m.certainty == 1.0 and m.beds == 0.5
+    assert m.approach == 0.25  # 540 of 720 possible minutes on the first and last day
+
+
+def test_config_weights(tmp_path, monkeypatch):
+    from app import config
+    monkeypatch.setattr(config, "CONFIG_PATH", tmp_path / "huthop.toml")
+    assert config.ranking_weights()["fit"] == 3  # defaults without a file
+    (tmp_path / "huthop.toml").write_text("[ranking.weights]\naltitude = 5\n")
+    assert config.ranking_weights() | {} == {**config.ranking.DEFAULT_WEIGHTS, "altitude": 5.0}
+    (tmp_path / "huthop.toml").write_text("[ranking.weights]\naltitdue = 5\n")
+    with pytest.raises(ValueError, match="altitdue"):
+        config.ranking_weights()

@@ -15,6 +15,10 @@ const AVAIL_LABEL = {
   not_checked: () => "Free beds not checked",
   error: () => "Could not check free beds",
 };
+const SORTS = { best: "Best", fit: "Day length", time: "Shortest", ascent: "Least ascent", altitude: "Highest huts",
+  beds: "Most free beds" };
+const METRIC_LABEL = { fit: "Day length", beds: "Free beds", certainty: "Opening data", ease: "Easy trails",
+  altitude: "Hut altitude", approach: "Short approach" };
 const DAY_FMT = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short" });
 let results = null;
 const stopSearch = { timer: null, seq: 0 };
@@ -147,7 +151,7 @@ export async function runTourSearch() {
     start_date: state.tDate, nights: state.tNights, min_hours: state.tMin, max_hours: state.tMax,
     limit: state.limit, catering: state.tCat, loop: state.tLoop && !!state.tStart,
     include_unknown: state.tUnknown, start_stop: state.tStart || null,
-    people: state.tPeople, check_availability: state.tAvail,
+    people: state.tPeople, check_availability: state.tAvail, sort: state.tSort,
     bbox: state.tBox ? state.tBox.split(",").map(Number) : null,
   };
   const button = $("#tFind");
@@ -185,7 +189,13 @@ function renderResults() {
     return;
   }
   $("#tourResults").innerHTML = `<div class="results-head"><span><strong>${tours.length}</strong> tours</span>
-    <span class="hint">best match first</span></div>` + tours.map(tourCard).join("");
+    <label class="sort">Sort <select id="tSort">${Object.entries(SORTS).map(([v, label]) =>
+      `<option value="${v}"${v === state.tSort ? " selected" : ""}>${label}</option>`).join("")}</select></label></div>` +
+    tours.map(tourCard).join("");
+  $("#tSort").addEventListener("change", (e) => {
+    setState({ tSort: e.target.value, tour: 0 });
+    runTourSearch();
+  });
 }
 
 function tourCard(t, i) {
@@ -197,13 +207,20 @@ function tourCard(t, i) {
   return `<article class="tour-card" data-n="${i + 1}" tabindex="0">
     <div class="tour-head">
       <div><b>${t.nights} night${t.nights > 1 ? "s" : ""}</b> · ${(t.distance_m / 1000).toFixed(0)} km · ↑ ${t.ascent_m.toLocaleString("de-CH")} m</div>
-      ${availBadge(t)}
+      <div class="tour-flags">${availBadge(t)}${scoreBadge(t)}</div>
     </div>
     <div class="tour-body">
       <ol class="chain">${chainItems(chain)}</ol>
       <div class="daybars${t.days.length > 6 ? " dense" : ""}" style="--days:${t.days.length}">${bars}</div>
     </div>
   </article>`;
+}
+
+/** "Best" score as a percentage; the tooltip lists the sub-scores (weights come from huthop.toml). */
+function scoreBadge(t) {
+  if (!t.metrics) return "";
+  const parts = Object.entries(METRIC_LABEL).map(([k, label]) => `${label}: ${Math.round(t.metrics[k] * 100)}%`).join("\n");
+  return `<span class="score" title="Best score\n${parts}">${Math.round(t.score * 100)}%</span>`;
 }
 
 /** Card badge: free beds on every night, or how many nights are not confirmed. */

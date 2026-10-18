@@ -55,8 +55,8 @@ CREATE TABLE IF NOT EXISTS hut_price (
   PRIMARY KEY (hut_id, year, item)
 );
 
--- Manual corrections that survive re-syncs. Fields: 'name', 'beds', 'shelter_beds', 'hrs_id',
--- 'website', 'catering.<month>', 'self_service.<month>'.
+-- Manual corrections that survive re-syncs. Fields: 'name', 'altitude', 'beds', 'shelter_beds', 'hrs_id',
+-- 'website', 'catering.<month>', 'self_service.<month>'. See app/api/manual.py.
 CREATE TABLE IF NOT EXISTS hut_override (
   hut_id     INTEGER REFERENCES hut(place_id),
   field      TEXT NOT NULL,
@@ -119,7 +119,8 @@ CREATE VIEW hut_effective AS
 SELECT
   p.id, p.name AS source_name,
   COALESCE((SELECT json_extract(o.value, '$') FROM hut_override o WHERE o.hut_id = p.id AND o.field = 'name'), p.name) AS name,
-  p.lat, p.lon, p.e_lv95, p.n_lv95, p.altitude_m, p.snap_m,
+  p.lat, p.lon, p.e_lv95, p.n_lv95, p.snap_m,
+  COALESCE((SELECT json_extract(o.value, '$') FROM hut_override o WHERE o.hut_id = p.id AND o.field = 'altitude'), p.altitude_m) AS altitude_m,
   h.sac_id, h.operator, h.owner, h.description, h.services, h.photos, h.routes, h.source, h.synced_at,
   COALESCE((SELECT json_extract(o.value, '$') FROM hut_override o WHERE o.hut_id = p.id AND o.field = 'hrs_id'), h.hrs_id) AS hrs_id,
   COALESCE((SELECT json_extract(o.value, '$') FROM hut_override o WHERE o.hut_id = p.id AND o.field = 'beds'), h.beds) AS beds,

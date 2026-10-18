@@ -28,8 +28,9 @@ MODES = {"A": "bus", "B": "train", "C": "tram", "D": "metro", "E": "rack_railway
          "G": "cableway", "H": "chairlift", "I": "boat", "J": "elevator"}
 
 
-def download() -> None:
-    """Find the current LV95 GeoPackage through the STAC catalogue and unpack it into data/stops/."""
+def download() -> str:
+    """Find the current LV95 GeoPackage through the STAC catalogue and unpack it into data/stops/.
+    Returns the asset URL (it changes with each edition)."""
     client = httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=60, follow_redirects=True)
     items = client.get(STAC_ITEMS).raise_for_status().json()["features"]
     href = next(a["href"] for item in items for a in item["assets"].values() if a["href"].endswith(ASSET_SUFFIX))
@@ -37,6 +38,7 @@ def download() -> None:
     STOPS_DIR.mkdir(parents=True, exist_ok=True)
     zipfile.ZipFile(io.BytesIO(archive)).extractall(STOPS_DIR)
     print(f"downloaded {href} ({len(archive) / 1e6:.1f} MB)")
+    return href
 
 
 def read_stops() -> list[dict]:

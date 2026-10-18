@@ -285,6 +285,8 @@ label.field-label { display: flex; }
 .tour-card:hover, .tour-card:focus-visible { border-color: var(--text-soft); box-shadow: 0 2px 10px rgb(0 0 0 / .07); outline: none; }
 .tour-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--text-soft); font-size: 13px; }
 .tour-head b { color: var(--text); }
+.tour-flags { display: flex; gap: 6px; align-items: center; }
+.score { font-size: 11.5px; font-weight: 700; color: var(--text-soft); background: var(--bg-soft); border-radius: 99px; padding: 1px 8px; cursor: help; }
 .flag.ok { background: #e6f4ec; color: #1f6b43; }
 .flag { background: #fff6e0; color: #7a5200; border-radius: 99px; padding: 1px 8px; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
 .tour-body { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: end; margin-top: 8px; }
@@ -329,6 +331,24 @@ label.field-label { display: flex; }
 .avail.available { color: var(--catered); }
 .avail.not_released, .avail.no_booking, .avail.not_checked, .avail.error { color: #a36a00; }
 .book { margin-left: 6px; font-weight: 600; color: var(--accent) !important; border-bottom: 0 !important; }
+
+/* ---------- Editor ---------- */
+.editor .edit-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; font-size: 12.5px; font-weight: 600; color: var(--text-soft); }
+.editor .edit-field small { font-weight: 400; color: var(--text-faint); }
+.editor .btn { margin-top: 4px; }
+.chip-edited { border: 0; background: var(--accent-soft); color: var(--accent); border-radius: 99px; font-size: 11px; font-weight: 600; padding: 0 7px; margin-left: 4px; }
+.season-edit { display: grid; gap: 3px; }
+.season-edit-row { display: grid; grid-template-columns: 78px repeat(12, 1fr); gap: 3px; align-items: center; font-size: 12px; }
+.season-edit-row.head b { text-align: center; color: var(--text-faint); font-weight: 600; font-size: 11px; }
+.code { height: 26px; padding: 0; border: 1px solid var(--line); border-radius: 5px; background: var(--bg); font-weight: 700; color: var(--text-soft); }
+.code.c0 { background: var(--catered); border-color: var(--catered); color: #fff; }
+.season-edit-row:nth-child(3) .code.c0 { background: var(--self-service); border-color: var(--self-service); }
+.code.c1 { background: #e6f2ea; border-color: var(--catered); color: var(--catered); }
+.season-edit-row:nth-child(3) .code.c1 { background: #e5edf7; border-color: var(--self-service); color: var(--self-service); }
+.code.edited { box-shadow: 0 0 0 2px var(--accent); }
+.btn.danger { color: var(--accent); border-color: var(--accent); background: var(--bg); }
+.results-head .add-hut { margin-left: auto; margin-right: 14px; font-size: 13px; }
+code { font-size: 12px; background: var(--bg-soft); padding: 0 4px; border-radius: 4px; }
 
 /* ---------- Connections ---------- */
 .trail-seg button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }

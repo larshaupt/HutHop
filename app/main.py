@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api import edges, huts, tours
+from app.api import edges, huts, manual, tours
 from app.db import ROOT, connect
 
 
@@ -21,6 +21,7 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(title="HutHop", lifespan=lifespan)
 app.add_middleware(GZipMiddleware, minimum_size=1000)
+app.include_router(manual.router)
 app.include_router(huts.router)
 app.include_router(edges.router)
 app.include_router(tours.router)

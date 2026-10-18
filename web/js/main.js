@@ -4,6 +4,7 @@ import { reloadFromHash, setState, state } from "./state.js";
 import { addTrailLayer, initMap, setBaseStyle, setTrailsVisible } from "./map.js";
 import { addHutLayers, bindHutEvents, bindHutMap, closeDetail, loadHuts, renderControls, selectHut, syncControls, update } from "./huts.js";
 import { addEdgeLayers, bindConnectionEvents, redrawConnections } from "./connections.js";
+import { bindEditorEvents } from "./editor.js";
 import { addTourLayers, bindTourForm, clearTour, closeTour, hasResults, redrawTour, runTourSearch, syncTourForm } from "./tours.js";
 
 /** Our layers, bottom to top. Runs after every base-style (re)load. */
@@ -71,6 +72,7 @@ async function main() {
   bindHutEvents();
   bindConnectionEvents();
   bindTourForm();
+  bindEditorEvents();
   bindGlobalEvents();
   initMap(addLayers);
   bindHutMap();

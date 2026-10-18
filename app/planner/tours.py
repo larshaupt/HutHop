@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from collections.abc import Callable
 from datetime import date, timedelta
 
-from app.planner import opening
+from app.planner import opening, ranking
 from app.planner.availability import NightAvailability
 
 Catering = opening.Wanted
@@ -55,6 +55,7 @@ class Hut:
     self_service: str
     half_board: bool
     hrs_id: int | None = None
+    altitude: int | None = None
 
 
 @dataclass(frozen=True)
@@ -91,6 +92,8 @@ class TourRequest:
     loop: bool = False
     include_unknown: bool = True
     max_results: int = 10
+    sort: ranking.Sort = "best"
+    weights: dict[str, float] = field(default_factory=lambda: dict(ranking.DEFAULT_WEIGHTS))
 
 
 @dataclass(frozen=True)
@@ -106,10 +109,11 @@ class Night:
 class Tour:
     """stop → hut → … → hut → stop: one leg (stored edge) per day, one night per hut."""
 
-    score: float
+    score: float  # the "best" score (0–1) for the request's weights
     legs: tuple[Leg, ...]
     nights: tuple[Night, ...]
     start_date: date
+    metrics: ranking.Metrics | None = None
 
     @property
     def id(self) -> str:
@@ -137,10 +141,10 @@ def load_graph(conn: sqlite3.Connection, limit: int) -> Graph:
     them are kept as alternatives, so allowing harder trails only ever adds options."""
     huts = {}
     codes = opening.load_codes(conn)
-    for r in conn.execute("SELECT id, name, lat, lon, e_lv95, n_lv95, services, hrs_id FROM hut_effective"):
+    for r in conn.execute("SELECT id, name, lat, lon, e_lv95, n_lv95, services, hrs_id, altitude_m FROM hut_effective"):
         c, s = codes.get(r["id"], (opening.NO_DATA, opening.NO_DATA))
         huts[r["id"]] = Hut(r["id"], r["name"], r["lat"], r["lon"], r["e_lv95"], r["n_lv95"], c, s,
-                            json.loads(r["services"] or "{}").get("half_board", False), r["hrs_id"])
+                            json.loads(r["services"] or "{}").get("half_board", False), r["hrs_id"], r["altitude_m"])
     rows = conn.execute(
         "SELECT * FROM edge WHERE category_limit <= ? AND excluded = 0", (limit,)).fetchall()
     stop_ids = {r["from_place"] for r in rows if r["from_place"] not in huts} | \
@@ -237,21 +241,28 @@ def suggest(graph: Graph, req: TourRequest, availability: AvailabilityLookup | N
                     nxt.append((cost + day_cost(leg) + penalty(n), legs + (leg,), nights + (n,)))
         states = heapq.nsmallest(BEAM_WIDTH, nxt, key=lambda s: s[0])
 
-    # Last day: hut → stop
+    # Last day: hut → stop. Then order all complete tours by the requested sort (see ranking.py).
     tours = []
     for cost, legs, nights in states:
         start = graph.stops[legs[0].frm]
         ends = [leg for leg in graph.stop_out.get(legs[-1].to, ()) if lo <= leg.time_min <= hi and (
             not req.loop or math.hypot(graph.stops[leg.to].e - start.e, graph.stops[leg.to].n - start.n) <= LOOP_RADIUS_M)]
         for leg in heapq.nsmallest(END_LEGS_PER_STATE, ends, key=day_cost):
-            all_legs = legs + (leg,)
-            tours.append(Tour((cost + day_cost(leg)) / len(all_legs), all_legs, nights, req.start_date))
-    tours.sort(key=lambda t: t.score)
+            tours.append(scored(graph, legs + (leg,), nights, req.start_date, lo, hi, req.weights))
+    key = ranking.sort_key(req.sort, req.weights)
+    tours.sort(key=lambda t: key(t.metrics))
     return diversify(tours, req.max_results)
 
 
+def scored(graph: Graph, legs: tuple[Leg, ...], nights: tuple[Night, ...], start_date: date, lo: float, hi: float,
+           weights: dict[str, float]) -> Tour:
+    m = ranking.metrics(legs, nights, [graph.huts[n.hut].altitude for n in nights], lo, hi)
+    return Tour(m.best(weights), legs, nights, start_date, m)
+
+
 def build_tour(graph: Graph, start_date: date, places: list[int], limits: list[int], catering: Catering = "any",
-               availability: AvailabilityLookup | None = None) -> Tour:
+               availability: AvailabilityLookup | None = None, min_hours: float = 3, max_hours: float = 6,
+               weights: dict[str, float] | None = None) -> Tour:
     """Rebuild a tour from its places and per-day category limits (for export, sharing and, later, editing).
 
     Raises ValueError if the tour isn't stop → hut → … → stop or a connection no longer exists (e.g. excluded).
@@ -275,7 +286,7 @@ def build_tour(graph: Graph, start_date: date, places: list[int], limits: list[i
         combined = with_availability(n, hut, day, catering, avail) if avail else n
         # Keep nights that no longer fit, with what we know (e.g. availability 'full'), so callers can warn.
         nights.append(combined or Night(hut.id, day, n.status if n else "closed", n.partial if n else False, avail))
-    return Tour(0.0, legs, tuple(nights), start_date)
+    return scored(graph, legs, tuple(nights), start_date, min_hours * 60, max_hours * 60, weights or ranking.DEFAULT_WEIGHTS)
 
 
 def diversify(tours: list[Tour], k: int) -> list[Tour]:

@@ -98,16 +98,19 @@ def sync(conn: sqlite3.Connection, raw_huts: list[dict]) -> int:
     return len(raw_huts)
 
 
+def fetch_and_save() -> list[dict]:
+    """Fetch all huts from the SAC API and keep the raw response in data/raw/sac/huts.json."""
+    raw_huts = sac.fetch_huts()
+    RAW_DIR.mkdir(parents=True, exist_ok=True)
+    (RAW_DIR / "huts.json").write_text(json.dumps(raw_huts, ensure_ascii=False))
+    return raw_huts
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--from-file", type=Path, help="use a saved API response instead of fetching")
     args = parser.parse_args()
-    if args.from_file:
-        raw_huts = json.loads(args.from_file.read_text())
-    else:
-        raw_huts = sac.fetch_huts()
-        RAW_DIR.mkdir(parents=True, exist_ok=True)
-        (RAW_DIR / "huts.json").write_text(json.dumps(raw_huts, ensure_ascii=False))
+    raw_huts = json.loads(args.from_file.read_text()) if args.from_file else fetch_and_save()
     count = sync(connect(), raw_huts)
     print(f"synced {count} huts")
 

@@ -23,6 +23,16 @@ export async function loadHuts() {
   huts = await res.json();
 }
 
+/** Reload the hut list after manual changes. */
+export async function reloadHuts() {
+  await loadHuts();
+  update();
+}
+
+export function invalidateHut(id) {
+  details.delete(id);
+}
+
 /** Opening status in the selected month (from the API's per-month list), or "any" without a month filter. */
 const hutStatus = (hut) => (state.month ? hut.months[state.month - 1] : "any");
 
@@ -333,8 +343,9 @@ function renderDetail(d) {
         ${long ? `<button class="link" id="more">Show more</button>` : ""}</div>` : ""}
       ${routes.length ? `<div class="section"><h3>Access routes</h3><ul class="routes">${routes.join("")}</ul></div>` : ""}
       ${services.length ? `<div class="section"><h3>Services</h3><div class="services">${services.join("")}</div></div>` : ""}
-      <p class="source">Hut data © <a href="https://www.sac-cas.ch" target="_blank" rel="noopener">SAC-CAS</a>,
-        synced ${d.synced_at ? new Date(d.synced_at).toLocaleDateString("de-CH") : "–"}. Check conditions and official sources before you go.</p>
+      <p class="source">${d.source === "manual" ? "Hut added by hand" : `Hut data © <a href="https://www.sac-cas.ch" target="_blank" rel="noopener">SAC-CAS</a>,
+        synced ${d.synced_at ? new Date(d.synced_at).toLocaleDateString("de-CH") : "–"}`}. Check conditions and official sources before you go.
+        <a href="#" data-edit-hut="${d.id}">Edit hut data</a></p>
     </div>`;
   $("#back").addEventListener("click", closeDetail);
   $("#more")?.addEventListener("click", (ev) => {
