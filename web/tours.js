@@ -205,11 +205,21 @@ function tourCard(t, i) {
       ${t.uncertain_nights ? `<span class="flag" title="Opening data missing or only part of the month">${t.uncertain_nights} uncertain</span>` : ""}
     </div>
     <div class="tour-body">
-      <ol class="chain">${chain.map((p, k) => `<li class="${p.kind}">${k === 0 || k === chain.length - 1
-        ? `<span class="mode">${MODE_LABELS[mainMode(p.mode)]}</span> ` : ""}${esc(p.name)}</li>`).join("")}</ol>
+      <ol class="chain">${chainItems(chain)}</ol>
       <div class="daybars${t.days.length > 6 ? " dense" : ""}" style="--days:${t.days.length}">${bars}</div>
     </div>
   </article>`;
+}
+
+/** Start, huts and end of a tour card; long tours show the first two huts, "+ N more huts" and the last hut. */
+function chainItems(chain) {
+  const item = (p, end) => `<li class="${p.kind}">${end ? `<span class="mode">${MODE_LABELS[mainMode(p.mode)]}</span> ` : ""}` +
+    `${esc(p.name)}</li>`;
+  const huts = chain.slice(1, -1);
+  const shown = huts.length > 4
+    ? [...huts.slice(0, 2).map((p) => item(p)), `<li class="more">+ ${huts.length - 3} more huts</li>`, item(huts[huts.length - 1])]
+    : huts.map((p) => item(p));
+  return [item(chain[0], true), ...shown, item(chain[chain.length - 1], true)].join("");
 }
 
 // ---------- Tour detail ----------
