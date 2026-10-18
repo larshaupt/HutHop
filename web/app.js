@@ -29,20 +29,28 @@ const STYLES = {
     layers: [{ id: "topo", type: "raster", source: "topo" }],
   },
 };
+const CATEGORY = {
+  1: { label: "Yellow", name: "Hiking trail", color: "#e0a800" },
+  2: { label: "Red-white", name: "Mountain trail", color: "#d52b1e" },
+  3: { label: "Blue-white", name: "Alpine trail", color: "#1f5fbf" },
+};
+const MODE_LABELS = { cableway: "Cable car", chairlift: "Chairlift", funicular: "Funicular", rack_railway: "Rack railway",
+  train: "Train", boat: "Boat", tram: "Tram", metro: "Metro", elevator: "Lift", bus: "Bus" };
 const TRAILS_TILES = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swisstlm3d-wanderwege/default/current/3857/{z}/{x}/{y}.png";
 
 // ---------- State (mirrored in the URL hash, so views can be shared and bookmarked) ----------
 const DEFAULTS = {
   month: 0, openAs: "any", hb: false, kitchen: false, bookable: false,
   altMin: 0, altMax: ALT_MAX, minBeds: 0, operator: "all", q: "", sort: "name",
-  hut: 0, base: "light", trails: false,
+  hut: 0, base: "light", trails: false, limit: 2,
 };
 const HASH_KEYS = { month: "m", openAs: "open", hb: "hb", kitchen: "kitchen", bookable: "book", altMin: "amin",
-  altMax: "amax", minBeds: "beds", operator: "type", q: "q", sort: "sort", hut: "hut", base: "map", trails: "trails" };
+  altMax: "amax", minBeds: "beds", operator: "type", q: "q", sort: "sort", hut: "hut", base: "map", trails: "trails", limit: "tl" };
 let state = readHash();
 let huts = [];
 let visible = [];
 const details = new Map();
+const connections = new Map(); // "hutId:limit" → API response
 let map;
 
 function readHash() {
@@ -97,6 +105,36 @@ function formatDuration(min, max) {
   if (!min && !max) return null;
   if (min && max && min !== max) return `${fmt(min)}–${fmt(max)} h`;
   return `${fmt(max || min)} h`;
+}
+
+function formatMinutes(min) {
+  if (min == null) return "–";
+  const h = Math.floor(min / 60), m = min % 60;
+  return `${h}:${String(m).padStart(2, "0")} h`;
+}
+
+function decodePolyline(text) {
+  const points = [];
+  let index = 0, lat = 0, lon = 0;
+  while (index < text.length) {
+    for (const axis of [0, 1]) {
+      let shift = 0, result = 0, b;
+      do {
+        b = text.charCodeAt(index++) - 63;
+        result |= (b & 0x1f) << shift;
+        shift += 5;
+      } while (b >= 0x20);
+      const delta = result & 1 ? ~(result >> 1) : result >> 1;
+      if (axis === 0) lat += delta; else lon += delta;
+    }
+    points.push([lon / 1e5, lat / 1e5]);
+  }
+  return points;
+}
+
+function mainMode(mode) {
+  const modes = (mode || "").split(",");
+  return Object.keys(MODE_LABELS).find((m) => modes.includes(m)) || "bus";
 }
 
 function filterHuts() {
@@ -212,6 +250,38 @@ function addHutLayers() {
   map.addLayer({ id: "trails", type: "raster", source: "trails",
     paint: { "raster-opacity": ["interpolate", ["linear"], ["zoom"], 7, 0.45, 10, 0.9] },
     layout: { visibility: state.trails ? "visible" : "none" } });
+  const empty = { type: "FeatureCollection", features: [] };
+  map.addSource("edges", { type: "geojson", data: empty });
+  map.addSource("edge-stops", { type: "geojson", data: empty });
+  map.addLayer({
+    id: "edges-casing", type: "line", source: "edges", layout: { "line-cap": "round", "line-join": "round" },
+    paint: { "line-color": "#ffffff", "line-opacity": 0.85,
+      "line-width": ["case", ["boolean", ["feature-state", "hover"], false], 9, 5] },
+  });
+  // MapLibre 4 has no data-driven dash patterns, so excluded edges get their own dashed layer.
+  const edgePaint = {
+    "line-color": ["match", ["get", "category"], 1, CATEGORY[1].color, 2, CATEGORY[2].color, CATEGORY[3].color],
+    "line-width": ["case", ["boolean", ["feature-state", "hover"], false], 5, 2.5],
+  };
+  map.addLayer({
+    id: "edges", type: "line", source: "edges", filter: ["!", ["get", "excluded"]],
+    layout: { "line-cap": "round", "line-join": "round" },
+    paint: { ...edgePaint, "line-opacity": ["case", ["boolean", ["feature-state", "hover"], false], 1, 0.8] },
+  });
+  map.addLayer({
+    id: "edges-excluded", type: "line", source: "edges", filter: ["get", "excluded"],
+    paint: { ...edgePaint, "line-opacity": 0.45, "line-dasharray": [1.5, 2] },
+  });
+  map.addLayer({
+    id: "edge-stops", type: "circle", source: "edge-stops",
+    paint: { "circle-radius": 4.5, "circle-color": "#1d2521", "circle-stroke-color": "#fff", "circle-stroke-width": 1.5 },
+  });
+  map.addLayer({
+    id: "edge-stop-labels", type: "symbol", source: "edge-stops", minzoom: 10,
+    layout: { "text-field": ["get", "name"], "text-font": ["Frutiger Neue Condensed Regular"], "text-size": 11,
+      "text-variable-anchor": ["top", "bottom", "right", "left"], "text-radial-offset": 0.6, "text-optional": true },
+    paint: { "text-color": "#3b4540", "text-halo-color": "#fff", "text-halo-width": 1.4 },
+  });
   map.addSource("huts", { type: "geojson", data: hutsGeoJSON() });
   const statusColor = ["match", ["get", "status"], ...Object.entries(COLORS).flat(), COLORS.any];
   map.addLayer({
@@ -244,7 +314,11 @@ function addHutLayers() {
     },
     paint: { "text-color": "#1d2521", "text-halo-color": "#ffffff", "text-halo-width": 1.6 },
   });
-  if (state.hut) map.setFeatureState({ source: "huts", id: state.hut }, { selected: true });
+  if (state.hut) {
+    map.setFeatureState({ source: "huts", id: state.hut }, { selected: true });
+    const data = connections.get(`${state.hut}:${state.limit}`);
+    if (data) drawConnections(data);
+  }
 }
 
 // ---------- Detail view ----------
@@ -276,6 +350,7 @@ async function selectHut(id, { fly = true } = {}) {
   }
   if (state.hut !== id) return; // another hut was selected meanwhile
   renderDetail(d);
+  showConnections(id);
   $("#browse").hidden = true;
   $("#detail").hidden = false;
   $("#detail").scrollTop = 0;
@@ -285,6 +360,7 @@ async function selectHut(id, { fly = true } = {}) {
 function closeDetail() {
   if (state.hut && map.getSource("huts")) map.setFeatureState({ source: "huts", id: state.hut }, { selected: false });
   setState({ hut: 0 });
+  clearConnections();
   $("#detail").hidden = true;
   $("#browse").hidden = false;
 }
@@ -336,6 +412,19 @@ function renderDetail(d) {
           <span>Half-filled: part of the month</span>
         </div>
       </div>
+      <div class="section" id="connections">
+        <h3>Connections</h3>
+        <div class="seg trail-seg" id="limit" role="group" aria-label="Hardest trail allowed">
+          ${[1, 2, 3].map((c) => `<button data-v="${c}" aria-pressed="${c === state.limit}">` +
+            `<i class="trail-swatch c${c}"></i>${c === 1 ? "Yellow" : c === 2 ? "Red-white" : "Blue-white"}</button>`).join("")}
+        </div>
+        <p class="hint">Hardest trail allowed. Walking times use the Swiss hiking-time formula, without breaks.</p>
+        ${d.snap_m > 500 ? `<p class="warn">This hut is ${(d.snap_m / 1000).toFixed(1)} km from the nearest signposted
+          hiking trail. It is reached by alpine routes or across glaciers, so no walking connections are computed.</p>`
+          : d.snap_m > 200 ? `<p class="warn">This hut is ${Math.round(d.snap_m)} m from the nearest signposted trail,
+          so connection times may be inaccurate.</p>` : ""}
+        <div id="connList"><p class="hint">Loading…</p></div>
+      </div>
       ${d.description ? `<div class="section"><h3>About</h3><p class="desc ${long ? "clamped" : ""}" id="desc">${esc(d.description)}</p>
         ${long ? `<button class="link" id="more">Show more</button>` : ""}</div>` : ""}
       ${routes.length ? `<div class="section"><h3>Access routes</h3><ul class="routes">${routes.join("")}</ul></div>` : ""}
@@ -344,10 +433,124 @@ function renderDetail(d) {
         synced ${d.synced_at ? new Date(d.synced_at).toLocaleDateString("de-CH") : "–"}. Check conditions and official sources before you go.</p>
     </div>`;
   $("#back").addEventListener("click", closeDetail);
+  $("#limit").addEventListener("click", (ev) => {
+    const b = ev.target.closest("button");
+    if (!b) return;
+    setState({ limit: Number(b.dataset.v) });
+    document.querySelectorAll("#limit button").forEach((x) => x.setAttribute("aria-pressed", x === b));
+    showConnections(d.id);
+  });
   $("#more")?.addEventListener("click", (ev) => {
     $("#desc").classList.remove("clamped");
     ev.target.remove();
   });
+}
+
+// ---------- Connections (edges of the place graph) ----------
+async function loadConnections(hutId, limit) {
+  const key = `${hutId}:${limit}`;
+  if (!connections.has(key)) {
+    const res = await fetch(`/api/huts/${hutId}/edges?limit=${limit}`);
+    if (!res.ok) throw new Error(`edges ${hutId}: ${res.status}`);
+    connections.set(key, await res.json());
+  }
+  return connections.get(key);
+}
+
+async function showConnections(hutId) {
+  const limit = state.limit;
+  let data;
+  try {
+    data = await loadConnections(hutId, limit);
+  } catch (err) {
+    console.error(err);
+    if ($("#connList")) $("#connList").innerHTML = `<p class="hint">Could not load connections.</p>`;
+    return;
+  }
+  if (state.hut !== hutId || state.limit !== limit || !$("#connList")) return;
+  renderConnections(data);
+  drawConnections(data);
+}
+
+function edgeRow(e, label, kind) {
+  const cat = CATEGORY[e.max_category];
+  const meta = [`${(e.distance_m / 1000).toFixed(1)} km`, `↑ ${e.ascent_m} m`, `↓ ${e.descent_m} m`];
+  const sac = e.sac_time_min ? `<span class="sac" title="Time given by the SAC for this route">SAC ${formatMinutes(e.sac_time_min)}` +
+    `${e.sac_grade ? ` · ${esc(e.sac_grade)}` : ""}</span>` : "";
+  return `<li class="conn${e.excluded ? " excluded" : ""}" data-edge="${e.id}" data-place="${e.place.id}" data-kind="${kind}">
+    <i class="cat-bar" style="background:${cat.color}" title="${cat.name}"></i>
+    <div class="conn-main"><div class="conn-name">${label}</div>
+      <div class="conn-meta">${meta.join(" · ")} ${sac}</div></div>
+    <div class="conn-time">${formatMinutes(e.time_min)}</div>
+    <button class="conn-x" data-exclude="${e.id}" title="${e.excluded ? "Include this connection again" : "Exclude this connection (bad route)"}"
+      aria-label="${e.excluded ? "Include" : "Exclude"}">${e.excluded ? "↺" : "×"}</button>
+  </li>`;
+}
+
+const STOPS_SHOWN = 8;
+
+function renderConnections(data, showAllStops = false) {
+  const hutRows = data.huts.map((e) => edgeRow(e, esc(e.place.name), "hut"));
+  const stopRows = [];
+  for (const s of showAllStops ? data.stops : data.stops.slice(0, STOPS_SHOWN)) {
+    const mode = MODE_LABELS[mainMode(s.place.mode)];
+    for (const [dir, arrow] of [["to_hut", "from"], ["from_hut", "to"]]) {
+      const e = s[dir];
+      if (e) stopRows.push(edgeRow({ ...e, place: s.place }, `<span class="mode">${mode}</span> ${arrow} ${esc(s.place.name)}`, "stop"));
+    }
+  }
+  $("#connList").innerHTML = `
+    <h4>Huts within a day <span>${data.huts.length}</span></h4>
+    ${hutRows.length ? `<ul class="conns">${hutRows.join("")}</ul>` : `<p class="hint">No huts within 10 hours on these trails.</p>`}
+    <h4>Public transport <span>${data.stops.length}</span></h4>
+    ${stopRows.length ? `<ul class="conns">${stopRows.join("")}</ul>` : `<p class="hint">No stops within 10 hours on these trails.</p>`}
+    ${!showAllStops && data.stops.length > STOPS_SHOWN ? `<button class="link" id="allStops">Show all ${data.stops.length} stops</button>` : ""}`;
+  $("#allStops")?.addEventListener("click", () => renderConnections(data, true));
+}
+
+function drawConnections(data) {
+  if (!map.getSource("edges")) return;
+  const edges = [...data.huts, ...data.stops.flatMap((s) => [s.to_hut, s.from_hut].filter(Boolean))];
+  map.getSource("edges").setData({
+    type: "FeatureCollection",
+    features: edges.map((e) => ({
+      type: "Feature", id: e.id,
+      geometry: { type: "LineString", coordinates: decodePolyline(e.geometry) },
+      properties: { category: e.max_category, excluded: e.excluded },
+    })),
+  });
+  map.getSource("edge-stops").setData({
+    type: "FeatureCollection",
+    features: data.stops.map((s) => ({
+      type: "Feature", geometry: { type: "Point", coordinates: [s.place.lon, s.place.lat] },
+      properties: { name: s.place.name },
+    })),
+  });
+}
+
+function clearConnections() {
+  const empty = { type: "FeatureCollection", features: [] };
+  map.getSource("edges")?.setData(empty);
+  map.getSource("edge-stops")?.setData(empty);
+}
+
+async function toggleExcluded(edgeId) {
+  const data = connections.get(`${state.hut}:${state.limit}`);
+  const all = [...data.huts, ...data.stops.flatMap((s) => [s.to_hut, s.from_hut].filter(Boolean))];
+  const edge = all.find((e) => e.id === edgeId);
+  const res = await fetch(`/api/edges/${edgeId}`, {
+    method: "PATCH", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ excluded: !edge.excluded }),
+  });
+  if (!res.ok) return;
+  const { excluded } = await res.json();
+  for (const [key, cached] of connections) {  // the same edge can appear under several limits
+    for (const e of [...cached.huts, ...cached.stops.flatMap((s) => [s.to_hut, s.from_hut].filter(Boolean))]) {
+      if (e.id === edgeId) e.excluded = excluded;
+    }
+  }
+  renderConnections(data);
+  drawConnections(data);
 }
 
 // ---------- Layout helpers ----------
@@ -410,6 +613,27 @@ function bindEvents() {
   };
   list.addEventListener("mouseover", (e) => setHover(Number(e.target.closest(".hut")?.dataset.id) || null));
   list.addEventListener("mouseleave", () => setHover(null));
+
+  let hoveredEdge = null;
+  const setEdgeHover = (id) => {
+    if (hoveredEdge === id || !map.getSource("edges")) return;
+    if (hoveredEdge) map.setFeatureState({ source: "edges", id: hoveredEdge }, { hover: false });
+    hoveredEdge = id;
+    if (id) map.setFeatureState({ source: "edges", id }, { hover: true });
+  };
+  $("#detail").addEventListener("mouseover", (e) => setEdgeHover(Number(e.target.closest(".conn")?.dataset.edge) || null));
+  $("#detail").addEventListener("mouseleave", () => setEdgeHover(null));
+  $("#detail").addEventListener("click", (e) => {
+    const x = e.target.closest("[data-exclude]");
+    if (x) { toggleExcluded(Number(x.dataset.exclude)); return; }
+    const row = e.target.closest(".conn");
+    if (!row) return;
+    setEdgeHover(null);
+    if (row.dataset.kind === "hut") { selectHut(Number(row.dataset.place)); return; }
+    const data = connections.get(`${state.hut}:${state.limit}`);
+    const stop = data?.stops.find((s) => s.place.id === Number(row.dataset.place));
+    if (stop) map.flyTo({ center: [stop.place.lon, stop.place.lat], zoom: Math.max(map.getZoom(), 13), padding: mapPadding() });
+  });
 
   $("#base").addEventListener("click", (e) => {
     const b = e.target.closest("button");

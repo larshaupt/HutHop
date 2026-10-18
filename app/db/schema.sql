@@ -68,8 +68,9 @@ CREATE TABLE IF NOT EXISTS hut_override (
 
 CREATE TABLE IF NOT EXISTS stop (
   place_id  INTEGER PRIMARY KEY REFERENCES place(id),
-  sloid     TEXT UNIQUE,              -- official Swiss stop id
-  mode      TEXT                      -- 'train' | 'bus' | 'cableway' | 'lift' | 'boat' | ...
+  uic       INTEGER UNIQUE,           -- official stop number (DiDok/UIC, e.g. 8507492)
+  mode      TEXT                      -- comma list: bus, train, tram, metro, rack_railway, funicular,
+                                      -- cableway, chairlift, boat, elevator
 );
 
 CREATE TABLE IF NOT EXISTS edge (
@@ -110,7 +111,7 @@ CREATE VIEW hut_effective AS
 SELECT
   p.id, p.name AS source_name,
   COALESCE((SELECT json_extract(o.value, '$') FROM hut_override o WHERE o.hut_id = p.id AND o.field = 'name'), p.name) AS name,
-  p.lat, p.lon, p.e_lv95, p.n_lv95, p.altitude_m,
+  p.lat, p.lon, p.e_lv95, p.n_lv95, p.altitude_m, p.snap_m,
   h.sac_id, h.operator, h.owner, h.description, h.services, h.photos, h.routes, h.source, h.synced_at,
   COALESCE((SELECT json_extract(o.value, '$') FROM hut_override o WHERE o.hut_id = p.id AND o.field = 'hrs_id'), h.hrs_id) AS hrs_id,
   COALESCE((SELECT json_extract(o.value, '$') FROM hut_override o WHERE o.hut_id = p.id AND o.field = 'beds'), h.beds) AS beds,

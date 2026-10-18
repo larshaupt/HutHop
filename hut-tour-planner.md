@@ -2,7 +2,7 @@
 
 A private web app to browse and filter Swiss mountain huts (SAC plus selected non-SAC huts) and to **suggest multi-day summer hut tours** from user constraints, including availability checks and price estimates.
 
-> Status: Phase 0 and Phase 1 done, Phase 2 (route graph) next. Items marked **(verify)** are assumptions or partial observations and must be checked before relying on them.
+> Status: Phases 0–2 done, Phase 3 (tour suggestions) next. Items marked **(verify)** are assumptions or partial observations and must be checked before relying on them.
 
 ---
 
@@ -117,7 +117,7 @@ A private web app to browse and filter Swiss mountain huts (SAC plus selected no
 
 Decided in Phase 0 (see `spikes/routing_findings.md`): own routing on the official swissTLM3D hiking network.
 
-1. **Trail graph:** build a directed graph from the swissTLM3D hiking lines (3D) inside the build job. Snap every hut and stop to its nearest trail node, store the snap distance and flag snaps over ~200 m for review.
+1. **Trail graph:** build a directed graph from the swissTLM3D hiking lines (3D) inside the build job. Snap every hut and stop to its nearest trail node and store the snap distance. Snaps over ~200 m are flagged for review; huts over 500 m away (glacier/high-alpine huts, huts abroad) and stops over 300 m away get no edges.
 2. **Search outward from each hut**, not pair by pair: from every hut, run Dijkstra by hiking time up to a cutoff (e.g. 10 h), forward (hut → X) and on the reversed graph (X → hut). Every hut and stop reached becomes a directed edge. This covers hut→hut, stop→hut and hut→stop without a straight-line radius and without searches from the many stops.
 3. **Hiking time** with the Swiss hiking-time formula (Schweizer Wanderwege, "Wanderzeitberechnung" 2020.2): minutes per km as a polynomial of slope, applied per ~20 m piece using the swissTLM3D elevations.
 4. **Difficulty = trail category:** 1 = yellow (≈ T1), 2 = red-white (≈ T2–T3, sometimes T4), 3 = blue-white (≈ T4–T6). The searches run once per category limit (yellow only, up to red-white, up to blue-white), so each edge is the fastest path *within* that limit. An edge is only stored for a higher limit if it differs from the easier one.
@@ -201,8 +201,9 @@ CREATE TABLE hut_override (
 
 CREATE TABLE stop (
   place_id  INTEGER PRIMARY KEY REFERENCES place(id),
-  sloid     TEXT UNIQUE,               -- official Swiss stop id
-  mode      TEXT                       -- 'train' | 'bus' | 'cableway' | 'lift' | 'boat' | ...
+  uic       INTEGER UNIQUE,            -- official stop number (DiDok/UIC)
+  mode      TEXT                       -- comma list: bus, train, tram, metro, rack_railway, funicular,
+                                       -- cableway, chairlift, boat, elevator
 );
 
 CREATE TABLE edge (
@@ -331,7 +332,7 @@ Notes:
 ### 3.5 Public transport stops
 
 - Official stop list: GeoAdmin STAC collection `ch.bav.haltestellen-oev` (LV95 CSV export, `PointExploitation.csv`). See via-helvetica `docs/PUBLIC_TRANSPORT_DATA_PIPELINE.md`.
-- Used as tour start/end nodes. Includes cable car, gondola and lift stations, which are key for hut tours (start or end at a top station). The exact field for the transport mode: **(verify)**.
+- Used as tour start/end nodes. Includes cable car, gondola and lift stations, which are key for hut tours (start or end at a top station). GeoPackage layer `Betriebspunkt`: `Nummer` (stop number), `Betriebspunkttyp_Bezeichnung` (keep `Haltestelle*`), `Verkehrsmittel_Code` (A bus, B train, C tram, D metro, E rack railway, F funicular, G cable car, H chairlift, I boat, J elevator).
 
 ### 3.6 Coordinate conversion
 
@@ -357,10 +358,11 @@ Answer the open questions before building:
 
 ### Phase 2: Route graph
 
-- [ ] `load_stops`: official stop list (incl. cable cars and lifts) into `place`/`stop`.
-- [ ] `build_edges`: swissTLM3D trail graph → snap huts and stops → outward searches from every hut (forward + reverse, per category limit) → `edge` with route lines.
-- [ ] Show matching SAC route time and grade next to computed edges (name matching as in the spike).
-- [ ] Edge review in the frontend: show edges and long snaps on the map, toggle `excluded`.
+- [x] `load_stops`: official stop list (incl. cable cars and lifts) into `place`/`stop`. 27,325 passenger stops.
+- [x] `build_edges`: swissTLM3D trail graph → snap huts and stops → outward searches from every hut (forward + reverse, per category limit, SciPy Dijkstra) → `edge` with route lines. ~13,800 edges in ~90 s. Stop edges whose path passes another stop are dropped.
+- [x] Show matching SAC route time and grade next to computed edges (name matching as in the spike, 37 matches).
+- [x] Edge review in the frontend: connections of the selected hut on the map and in the detail view (per trail limit), toggle `excluded`; snap warnings for huts > 200 m from a trail.
+- Huts more than 500 m from a signposted trail (54, mostly glacier/high-alpine huts and huts abroad) get no computed edges.
 
 ### Phase 3: Tour suggestions
 

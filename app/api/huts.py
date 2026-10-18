@@ -121,6 +121,7 @@ def hut_detail(hut_id: int, conn: sqlite3.Connection = Depends(get_db)) -> dict:
         "months": [month_status(*codes, m) for m in range(1, 13)],
         "partial_months": [codes[0][m] == "1" or (codes[0][m] == "2" and codes[1][m] == "1") for m in range(12)],
         "lv95": [row["e_lv95"], row["n_lv95"]],
+        "snap_m": row["snap_m"],
         "source": row["source"],
         "synced_at": row["synced_at"],
     }

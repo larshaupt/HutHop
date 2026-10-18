@@ -8,6 +8,7 @@ dependencies = [
     "networkx>=3.7",
     "pyogrio>=0.13.0",
     "pyproj>=3.8.0",
+    "scipy>=1.18.1",
     "shapely>=2.2.0",
     "uvicorn[standard]>=0.54.0",
 ]
