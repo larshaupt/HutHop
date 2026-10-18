@@ -1,6 +1,10 @@
 # Lives on server2 (larsbox) at /opt/huthop/server/compose.yaml (cloned repo). See docs/deployment.md.
 # Only reachable on localhost; `tailscale serve` on the host publishes it to the tailnet.
 
+# Without a name the project would be "server", the same as /opt/website/server, and
+# `up --remove-orphans` in update.sh would remove the website's containers.
+name: huthop
+
 services:
   huthop:
     image: ghcr.io/larshaupt/huthop:latest
