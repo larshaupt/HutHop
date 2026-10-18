@@ -3,6 +3,13 @@
 // Loaded before app.js; uses its globals ($, esc, state, setState, map, …) only inside functions.
 
 const NIGHT_LABEL = { catered: "Catered", self_service: "Self-service", unknown: "No opening data" };
+const AVAIL_LABEL = {
+  available: (a) => `${a.free_beds} beds free`,
+  not_released: () => "Not bookable yet",
+  no_booking: () => "No online booking",
+  not_checked: () => "Free beds not checked",
+  error: () => "Could not check free beds",
+};
 const DAY_FMT = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short" });
 let tourResults = null;
 let stopSearch = { timer: null, seq: 0 };
@@ -43,6 +50,8 @@ function syncTourForm() {
   document.querySelectorAll("#tLoop button").forEach((b) => b.setAttribute("aria-pressed", (b.dataset.v === "1") === state.tLoop));
   $("#tLoop").style.opacity = state.tStart ? 1 : 0.5;
   $("#tLoop").title = state.tStart ? "" : "Back to start means: end within 3 km of where the tour starts";
+  $("#tPeopleLabel").textContent = state.tPeople;
+  $("#tAvail").checked = state.tAvail;
   $("#tArea").checked = state.tArea;
   $("#tUnknown").checked = state.tUnknown;
   $("#tStartPicked").hidden = !state.tStart;
@@ -73,6 +82,11 @@ function bindTourForm() {
       if (b) { setState({ [key]: parse(b.dataset.v) }); syncTourForm(); }
     });
   }
+  document.querySelectorAll("[data-people]").forEach((b) => b.addEventListener("click", () => {
+    setState({ tPeople: Math.min(30, Math.max(1, state.tPeople + Number(b.dataset.people))) });
+    syncTourForm();
+  }));
+  $("#tAvail").addEventListener("change", (e) => setState({ tAvail: e.target.checked }));
   $("#tArea").addEventListener("change", (e) => setState({ tArea: e.target.checked }));
   $("#tUnknown").addEventListener("change", (e) => setState({ tUnknown: e.target.checked }));
 
@@ -152,10 +166,11 @@ async function runTourSearch() {
     start_date: state.tDate, nights: state.tNights, min_hours: state.tMin, max_hours: state.tMax,
     limit: state.limit, catering: state.tCat, loop: state.tLoop && !!state.tStart,
     include_unknown: state.tUnknown, start_stop: state.tStart || null,
+    people: state.tPeople, check_availability: state.tAvail,
     bbox: state.tBox ? state.tBox.split(",").map(Number) : null,
   };
   $("#tFind").disabled = true;
-  $("#tFind").textContent = "Searching…";
+  $("#tFind").textContent = state.tAvail ? "Searching and checking free beds…" : "Searching…";
   $("#tourResults").innerHTML = "";
   try {
     const res = await fetch("/api/tours/suggest", {
@@ -202,13 +217,25 @@ function tourCard(t, i) {
   return `<article class="tour-card" data-n="${i + 1}" tabindex="0">
     <div class="tour-head">
       <div><b>${t.nights} night${t.nights > 1 ? "s" : ""}</b> · ${(t.distance_m / 1000).toFixed(0)} km · ↑ ${t.ascent_m.toLocaleString("de-CH")} m</div>
-      ${t.uncertain_nights ? `<span class="flag" title="Opening data missing or only part of the month">${t.uncertain_nights} uncertain</span>` : ""}
+      ${availBadge(t)}
     </div>
     <div class="tour-body">
       <ol class="chain">${chainItems(chain)}</ol>
       <div class="daybars${t.days.length > 6 ? " dense" : ""}" style="--days:${t.days.length}">${bars}</div>
     </div>
   </article>`;
+}
+
+/** Card badge: free beds on every night, or how many nights are not confirmed. */
+function availBadge(t) {
+  const a = t.availability || {};
+  const checked = tourResults?.query?.check_availability;
+  if (checked && a.available === t.nights) return `<span class="flag ok" title="Free beds on every night">Beds free</span>`;
+  const unsure = checked ? t.nights - (a.available || 0) : t.uncertain_nights;
+  if (!unsure) return "";
+  const title = checked ? "Nights without confirmed free beds (not bookable yet, no online booking or not checked)"
+    : "Opening data missing or only part of the month";
+  return `<span class="flag" title="${title}">${unsure} night${unsure > 1 ? "s" : ""} unconfirmed</span>`;
 }
 
 /** Start, huts and end of a tour card; long tours show the first two huts, "+ N more huts" and the last hut. */
@@ -267,6 +294,7 @@ function renderTourDetail(t) {
         <div><b><a href="#" data-hut="${d.to.id}">${esc(d.to.name)}</a></b>
           <div class="tl-meta">Night of ${formatDay(d.date)} ·
             <span class="night ${d.night.status}">${NIGHT_LABEL[d.night.status]}${d.night.partial ? ", part of the month – check dates" : ""}</span></div>
+          ${nightAvailability(d.night)}
         </div></li>` : "";
     return `<li class="tl-day" data-day="${d.day}">
         <div class="tl-dot" style="--c:${cat.color}"></div>
@@ -291,8 +319,18 @@ function renderTourDetail(t) {
     <div class="detail-body">
       <ol class="timeline">${rows}</ol>
       <p class="source">Walking times use the Swiss hiking-time formula without breaks. Opening data from the SAC;
-        availability is not checked yet. Check conditions, weather and official sources before you go.</p>
+        free beds from hut-reservation.org (cached up to 10 minutes; not a reservation). Check conditions, weather
+        and official sources before you go.</p>
     </div>`;
+}
+
+function nightAvailability(n) {
+  const a = n.availability;
+  if (!a) return "";
+  const ago = a.checked_at ? Math.max(0, Math.round((Date.now() - new Date(a.checked_at)) / 60000)) : null;
+  const when = ago === null ? "" : ago < 1 ? " · checked just now" : ` · checked ${ago} min ago`;
+  const book = n.booking_url ? ` <a class="book" href="${esc(n.booking_url)}" target="_blank" rel="noopener">Book</a>` : "";
+  return `<div class="tl-meta avail ${a.state}">${AVAIL_LABEL[a.state](a)}${a.state === "available" ? when : ""}${book}</div>`;
 }
 
 // ---------- Map ----------

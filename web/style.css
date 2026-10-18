@@ -257,6 +257,8 @@ label.field-label { display: flex; }
 .stepper output { flex: 1; text-align: center; font-weight: 600; }
 .check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-soft); margin: 4px 0 8px; cursor: pointer; }
 .check input { accent-color: var(--text); width: 15px; height: 15px; margin: 0; }
+.check.tall { align-self: end; align-items: flex-start; line-height: 1.25; margin: 0 0 2px; }
+.check.tall small { color: var(--text-faint); font-size: 11px; }
 .btn.wide { width: 100%; height: 42px; margin-top: 8px; font-size: 14.5px; }
 .btn:disabled { opacity: .6; cursor: progress; }
 .stop-picker { position: relative; }
@@ -284,6 +286,7 @@ label.field-label { display: flex; }
 .tour-card:hover, .tour-card:focus-visible { border-color: var(--text-soft); box-shadow: 0 2px 10px rgb(0 0 0 / .07); outline: none; }
 .tour-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--text-soft); font-size: 13px; }
 .tour-head b { color: var(--text); }
+.flag.ok { background: #e6f4ec; color: #1f6b43; }
 .flag { background: #fff6e0; color: #7a5200; border-radius: 99px; padding: 1px 8px; font-size: 11.5px; font-weight: 600; white-space: nowrap; }
 .tour-body { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: end; margin-top: 8px; }
 .chain { list-style: none; margin: 0; padding: 0; font-size: 13px; min-width: 0; }
@@ -323,6 +326,10 @@ label.field-label { display: flex; }
 .night.catered { color: var(--catered); }
 .night.self_service { color: var(--self-service); }
 .night.unknown { color: #a36a00; }
+.avail { font-weight: 500; }
+.avail.available { color: var(--catered); }
+.avail.not_released, .avail.no_booking, .avail.not_checked, .avail.error { color: #a36a00; }
+.book { margin-left: 6px; font-weight: 600; color: var(--accent) !important; border-bottom: 0 !important; }
 
 /* ---------- Connections ---------- */
 .trail-seg button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }

@@ -2,7 +2,7 @@
 
 A private web app to browse Swiss mountain huts (SAC plus selected non-SAC huts) and to suggest multi-day summer hut tours from your constraints, with availability checks and price estimates.
 
-**Status:** Phase 3 done: hut map, walking connections, and multi-day tour suggestions. Phase 0 findings are in [`spikes/`](spikes/). See [`hut-tour-planner.md`](hut-tour-planner.md) for the full project brief: requirements, system design, data model, known APIs and the development plan.
+**Status:** hut map, walking connections, multi-day tour suggestions with live free-bed checks (hut-reservation.org, cached 10 min). Prices postponed. Phase 0 findings are in [`spikes/`](spikes/). See [`hut-tour-planner.md`](hut-tour-planner.md) for the full project brief: requirements, system design, data model, known APIs and the development plan.
 
 ## Setup
 
@@ -29,8 +29,8 @@ app/
   api/       FastAPI routes (/api/huts, /api/huts/{id}/edges, /api/edges/{id}, /api/tours/suggest, /api/stops)
   db/        schema.sql and connection
   ingest/    offline jobs (sync_sac, load_stops, build_edges)
-  planner/   tour search, hiking time (Swiss formula), polyline encoding
-  clients/   external APIs (SAC)
+  planner/   tour search, availability cache, hiking time (Swiss formula), polyline encoding
+  clients/   external APIs (SAC, hut-reservation.org)
 web/         static frontend (MapLibre + swisstopo tiles, no build step): app.js (map, huts), tours.js (planner)
 spikes/      Phase 0 experiments and findings
 tests/

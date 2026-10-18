@@ -65,12 +65,14 @@ def test_unknown_hut(client):
 
 def test_suggest_one_night_tour(client):
     c, ids = client
-    body = {"start_date": "2027-07-10", "nights": 1, "min_hours": 1, "max_hours": 2, "limit": 2}
+    body = {"start_date": "2027-07-10", "nights": 1, "min_hours": 1, "max_hours": 2, "limit": 2,
+            "check_availability": False}
     tours = c.post("/api/tours/suggest", json=body).json()["tours"]
     assert len(tours) == 1
     days = tours[0]["days"]
     assert [d["from"]["id"] for d in days] == [ids["stop"], ids["a"]]
-    assert days[0]["night"] == {"status": "catered", "partial": False} and days[1]["night"] is None
+    assert days[0]["night"]["status"] == "catered" and not days[0]["night"]["partial"] and days[1]["night"] is None
+    assert days[0]["night"]["booking_url"].endswith("/book-hut/7/wizard")
     assert days[0]["geometry"] and tours[0]["time_min"] == 150
     assert c.post("/api/tours/suggest", json=body | {"min_hours": 3, "max_hours": 2}).status_code == 422
     assert c.post("/api/tours/suggest", json=body | {"start_date": "2020-07-10"}).status_code == 422
@@ -79,3 +81,44 @@ def test_suggest_one_night_tour(client):
 def test_stop_search(client):
     c, ids = client
     assert [s["id"] for s in c.get("/api/stops", params={"q": "valley"}).json()] == [ids["stop"]]
+
+
+def calendar(day: str, status: str, free: int | None, total: int) -> list[dict]:
+    return [{"date": day, "hut_status": status, "free_beds": free, "total_places": total}]
+
+
+@pytest.mark.parametrize(("status", "free", "total", "people", "expected"), [
+    ("SERVICED", 10, 40, 2, "available"),
+    ("SERVICED", 1, 40, 2, None),              # full for 2 people: the hut drops out
+    ("SERVICED", None, 0, 2, "not_released"),  # 0 of 0: falls back to SAC opening codes
+    ("CLOSED", None, 0, 2, "not_released"),
+    ("UNSERVICED", 12, 12, 2, "available"),    # winter room counts as self-service
+])
+def test_tour_uses_availability(client, monkeypatch, status, free, total, people, expected):
+    c, ids = client
+    calls = []
+    monkeypatch.setattr("app.clients.hut_reservation.fetch_calendar",
+                        lambda hrs_id, _client: calls.append(hrs_id) or calendar("2027-07-10", status, free, total))
+    body = {"start_date": "2027-07-10", "nights": 1, "min_hours": 1, "max_hours": 2, "people": people}
+    tours = c.post("/api/tours/suggest", json=body).json()["tours"]
+    assert calls == [7]  # hut A's hut-reservation.org id
+    if expected is None:
+        assert tours == []
+        return
+    night = tours[0]["days"][0]["night"]
+    assert night["availability"]["state"] == expected
+    if status == "UNSERVICED":
+        assert night["status"] == "self_service"
+    # Cached: a second search within the TTL doesn't fetch again
+    c.post("/api/tours/suggest", json=body)
+    assert calls == [7]
+
+
+def test_fetch_error_keeps_tour_marked(client, monkeypatch):
+    c, _ = client
+    def boom(hrs_id, _client):
+        raise RuntimeError("network down")
+    monkeypatch.setattr("app.clients.hut_reservation.fetch_calendar", boom)
+    body = {"start_date": "2027-07-10", "nights": 1, "min_hours": 1, "max_hours": 2}
+    night = c.post("/api/tours/suggest", json=body).json()["tours"][0]["days"][0]["night"]
+    assert night["availability"]["state"] == "error"

@@ -105,6 +105,14 @@ CREATE TABLE IF NOT EXISTS availability (
   PRIMARY KEY (hut_id, date)
 );
 
+-- Last calendar fetch per hut (successful or not), for the short availability cache
+CREATE TABLE IF NOT EXISTS availability_fetch (
+  hut_id      INTEGER PRIMARY KEY REFERENCES hut(place_id),
+  fetched_at  TEXT NOT NULL,
+  ok          INTEGER NOT NULL,
+  error       TEXT
+);
+
 -- Source data merged with manual overrides: "override if present, else source".
 DROP VIEW IF EXISTS hut_effective;
 CREATE VIEW hut_effective AS

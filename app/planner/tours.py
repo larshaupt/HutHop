@@ -10,8 +10,11 @@ import json
 import math
 import sqlite3
 from dataclasses import dataclass, field
+from collections.abc import Callable
 from datetime import date, timedelta
 from typing import Literal
+
+from app.planner.availability import NightAvailability
 
 Catering = Literal["any", "catered", "self_service"]
 BEAM_WIDTH = 3000
@@ -21,6 +24,9 @@ START_RADIUS_M = 1500  # a chosen start stop means "start around here" (nearby b
 UNKNOWN_PENALTY = 0.15
 PARTIAL_PENALTY = 0.05
 CATEGORY_PENALTY = 0.01  # per day and trail category above yellow: easier wins between otherwise equal tours
+# Nights without confirmed free beds rank lower (not bookable yet, no online booking, not checked).
+AVAILABILITY_PENALTY = {"available": 0.0, "not_released": 0.03, "no_booking": 0.03, "not_checked": 0.05, "error": 0.05}
+HRS_STATUS = {"SERVICED": "catered", "UNSERVICED": "self_service"}
 
 
 @dataclass(frozen=True)
@@ -47,6 +53,7 @@ class Hut:
     catering: str  # 12 SAC codes, one per month: 0 yes, 1 partly, 2 no
     self_service: str
     half_board: bool
+    hrs_id: int | None = None
 
 
 @dataclass(frozen=True)
@@ -90,6 +97,7 @@ class Night:
     date: date
     status: str  # 'catered' | 'self_service' | 'unknown'
     partial: bool
+    availability: NightAvailability | None = None
 
 
 @dataclass(frozen=True)
@@ -110,10 +118,10 @@ def load_graph(conn: sqlite3.Connection, limit: int) -> Graph:
         c, s = months.setdefault(r["hut_id"], ([], []))
         c.append(str(r["catering"] if r["catering"] is not None else 2))
         s.append(str(r["self_service"] if r["self_service"] is not None else 2))
-    for r in conn.execute("SELECT id, name, lat, lon, e_lv95, n_lv95, services FROM hut_effective"):
+    for r in conn.execute("SELECT id, name, lat, lon, e_lv95, n_lv95, services, hrs_id FROM hut_effective"):
         c, s = months.get(r["id"], (["2"] * 12, ["2"] * 12))
         huts[r["id"]] = Hut(r["id"], r["name"], r["lat"], r["lon"], r["e_lv95"], r["n_lv95"], "".join(c), "".join(s),
-                            json.loads(r["services"] or "{}").get("half_board", False))
+                            json.loads(r["services"] or "{}").get("half_board", False), r["hrs_id"])
     rows = conn.execute(
         "SELECT * FROM edge WHERE category_limit <= ? AND excluded = 0", (limit,)).fetchall()
     stop_ids = {r["from_place"] for r in rows if r["from_place"] not in huts} | \
@@ -149,7 +157,23 @@ def night_status(hut: Hut, day: date, catering: Catering, include_unknown: bool)
     return None
 
 
-def suggest(graph: Graph, req: TourRequest) -> list[Tour]:
+AvailabilityLookup = Callable[[Hut, date], NightAvailability]
+
+
+def with_availability(night: Night | None, hut: Hut, day: date, catering: Catering,
+                      avail: NightAvailability) -> Night | None:
+    """Combine the SAC monthly status with the hut's daily booking calendar (which wins where it is known)."""
+    if avail.state in ("full", "closed"):
+        return None
+    if avail.state == "available":
+        status = HRS_STATUS.get(avail.hut_status or "")
+        if status is None or (catering != "any" and status != catering):
+            return None
+        return Night(hut.id, day, status, False, avail)
+    return Night(night.hut, night.date, night.status, night.partial, avail) if night else None
+
+
+def suggest(graph: Graph, req: TourRequest, availability: AvailabilityLookup | None = None) -> list[Tour]:
     lo, hi = req.min_hours * 60, req.max_hours * 60
     target = (lo + hi) / 2
 
@@ -164,13 +188,16 @@ def suggest(graph: Graph, req: TourRequest) -> list[Tour]:
         return west <= h.lon <= east and south <= h.lat <= north
 
     def night(hut_id: int, i: int) -> Night | None:
-        return night_status(graph.huts[hut_id], req.start_date + timedelta(days=i), req.catering, req.include_unknown)
+        hut, day = graph.huts[hut_id], req.start_date + timedelta(days=i)
+        n = night_status(hut, day, req.catering, req.include_unknown)
+        return with_availability(n, hut, day, req.catering, availability(hut, day)) if availability else n
 
     def near(stop: Stop, point: tuple[float, float]) -> bool:
         return math.hypot(stop.e - point[0], stop.n - point[1]) <= START_RADIUS_M
 
     def penalty(n: Night) -> float:
-        return UNKNOWN_PENALTY if n.status == "unknown" else PARTIAL_PENALTY if n.partial else 0.0
+        p = UNKNOWN_PENALTY if n.status == "unknown" else PARTIAL_PENALTY if n.partial else 0.0
+        return p + (AVAILABILITY_PENALTY[n.availability.state] if n.availability else 0.0)
 
     # Day 1: stop → first hut. State: (cost, legs, nights)
     states = []

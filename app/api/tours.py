@@ -6,10 +6,13 @@ from datetime import date, timedelta
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field, model_validator
 
-from app.api.huts import get_db
-from app.planner.tours import Catering, TourRequest, load_graph, suggest
+from app.api.huts import HRS_BOOKING_URL, get_db
+from app.planner import availability
+from app.planner.tours import Catering, Tour, TourRequest, load_graph, suggest
 
 router = APIRouter(prefix="/api", tags=["tours"])
+AVAILABILITY_ROUNDS = 3  # search, fetch calendars of the huts in the best tours, search again
+CANDIDATES_PER_ROUND = 25
 
 
 class TourQuery(BaseModel):
@@ -23,6 +26,8 @@ class TourQuery(BaseModel):
     start_stop: int | None = None
     loop: bool = False
     include_unknown: bool = True
+    people: int = Field(2, ge=1, le=30)
+    check_availability: bool = True
 
     @model_validator(mode="after")
     def check_hours(self):
@@ -42,7 +47,8 @@ def suggest_tours(q: TourQuery, conn: sqlite3.Connection = Depends(get_db)) -> d
         if not row:
             raise HTTPException(404, "start stop not found")
         params["start_near"] = (row["e_lv95"], row["n_lv95"])
-    tours = suggest(graph, TourRequest(**params))
+    req = TourRequest(**{k: v for k, v in params.items() if k not in ("people", "check_availability")})
+    tours, fetched = search_with_availability(conn, graph, req, q) if q.check_availability else (suggest(graph, req), 0)
     edge_ids = sorted({leg.edge_id for t in tours for leg in t.legs})
     geometry = dict(conn.execute(f"SELECT id, geometry FROM edge WHERE id IN ({','.join('?' * len(edge_ids))})",
                                  edge_ids).fetchall()) if edge_ids else {}
@@ -68,7 +74,7 @@ def suggest_tours(q: TourQuery, conn: sqlite3.Connection = Depends(get_db)) -> d
                 **{k: getattr(leg, k) for k in ("time_min", "distance_m", "ascent_m", "descent_m", "max_category",
                                                 "sac_time_min")},
                 "geometry": geometry.get(leg.edge_id),
-                "night": {"status": night.status, "partial": night.partial} if night else None,
+                "night": night_json(night, graph.huts[leg.to].hrs_id) if night else None,
             })
         result.append({
             "score": round(t.score, 4),
@@ -79,9 +85,39 @@ def suggest_tours(q: TourQuery, conn: sqlite3.Connection = Depends(get_db)) -> d
             "descent_m": sum(leg.descent_m for leg in t.legs),
             "max_category": max(leg.max_category for leg in t.legs),
             "uncertain_nights": sum(1 for n in t.nights if n.status == "unknown" or n.partial),
+            "availability": {state: sum(1 for n in t.nights if n.availability and n.availability.state == state)
+                             for state in ("available", "not_released", "no_booking", "not_checked", "error")},
             "days": days,
         })
-    return {"query": q.model_dump(mode="json"), "tours": result}
+    return {"query": q.model_dump(mode="json"), "tours": result, "calendars_fetched": fetched}
+
+
+def search_with_availability(conn: sqlite3.Connection, graph, req: TourRequest, q: TourQuery) -> tuple[list[Tour], int]:
+    """Search, fetch the booking calendars of huts in the best candidates, and search again with them, so full
+    huts drop out. Calendars are cached for availability.CACHE_TTL_S; fetches per request are capped."""
+    end = q.start_date + timedelta(days=q.nights)
+    wide = TourRequest(**{**req.__dict__, "max_results": CANDIDATES_PER_ROUND})
+    fetched = 0
+    for _ in range(AVAILABILITY_ROUNDS):
+        snapshot = availability.Snapshot(conn, q.start_date, end, q.people)
+        tours = suggest(graph, wide, lambda hut, day: snapshot.night(hut.id, hut.hrs_id is not None, day))
+        needed = {n.hut for t in tours for n in t.nights if n.availability and n.availability.state == "not_checked"}
+        if not needed or fetched >= availability.MAX_FETCHES:
+            break
+        fetched += availability.refresh(conn, needed, availability.MAX_FETCHES - fetched)
+    snapshot = availability.Snapshot(conn, q.start_date, end, q.people)
+    return suggest(graph, req, lambda hut, day: snapshot.night(hut.id, hut.hrs_id is not None, day)), fetched
+
+
+def night_json(night, hrs_id: int | None) -> dict:
+    a = night.availability
+    return {
+        "status": night.status,
+        "partial": night.partial,
+        "availability": {"state": a.state, "free_beds": a.free_beds, "total_places": a.total_places,
+                         "checked_at": a.checked_at} if a else None,
+        "booking_url": HRS_BOOKING_URL.format(hrs_id) if hrs_id else None,
+    }
 
 
 @router.get("/stops")

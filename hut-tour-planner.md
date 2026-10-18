@@ -2,7 +2,7 @@
 
 A private web app to browse and filter Swiss mountain huts (SAC plus selected non-SAC huts) and to **suggest multi-day summer hut tours** from user constraints, including availability checks and price estimates.
 
-> Status: Phases 0–3 done, Phase 4 (availability and prices) next. Items marked **(verify)** are assumptions or partial observations and must be checked before relying on them.
+> Status: Phases 0–3 done; Phase 4 availability done, prices postponed. Items marked **(verify)** are assumptions or partial observations and must be checked before relying on them.
 
 ---
 
@@ -372,13 +372,16 @@ Answer the open questions before building:
 
 ### Phase 4: Prices + availability
 
-- [ ] Availability: season fetch per hut with a few hours' cache, used as a filter in tour search (daily status overrides monthly codes).
-- [ ] Price entry (start with YAML/CSV import, then a simple admin form).
-- [ ] Price estimator from user inputs.
+- [x] Availability: season calendar per hut from hut-reservation.org, **cached 10 minutes** (availability changes quickly). Tour search runs in up to 3 rounds: search, fetch the calendars of huts in the best 25 candidates (max 40 fetches, 2 in parallel), search again. Full or closed nights drop out; free-bed nights use the daily status (SERVICED = catered, UNSERVICED = self-service); not-yet-released (0 of 0) and huts without online booking fall back to SAC monthly codes and rank slightly lower. Typical search: 3–6 s with fresh fetches.
+- [x] Planner: number of people, "check free beds" option, card badge (beds free / N nights unconfirmed), free beds + "Book" link per night.
+- [ ] Price entry (start with YAML/CSV import, then a simple admin form). **Postponed.**
+- [ ] Price estimator from user inputs. **Postponed.**
 
 ### Later
 
 - GPX export, saved tours, non-SAC huts, PWA/offline, better ranking.
+- **Custom sorting and a "best" score** for tour suggestions (user-defined quality metric).
+- **Tour editor:** build a tour by hand or edit a suggestion (swap a hut, add/remove a night, change start/end). Each day is a stored edge, so editing = choosing another edge from the hut's connections; recheck opening and free beds after each change.
 - SAC times as automatic overrides (per-grade calibration for T4+).
 - **Public transport within a tour:** allow a day to include a bus/train/cable car ride, e.g. walk down from a hut, take the bus through the valley, walk up to the next hut. Approach: combine a hut→stop edge, a timetable ride (or a simple stop→stop transfer table from the official timetable data), and a stop→hut edge into one day, counting only the walking time against the daily limit. Needs timetable data (e.g. opentransportdata.swiss GTFS) and a cap on rides per day.
 - Warnings for official trail closures and military shooting zones (geo.admin layers, see via-helvetica).
