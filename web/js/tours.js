@@ -39,12 +39,11 @@ function todayIso() {
   return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 }
 
-/** Next Saturday, or the first Saturday from 20 June when today is outside the summer season. */
+/** The coming Saturday (today if it is a Saturday), as a local date. */
 function defaultTourDate() {
   const d = new Date();
-  if (d.getMonth() < 5 || d.getMonth() > 8) d.setFullYear(d.getMonth() > 8 ? d.getFullYear() + 1 : d.getFullYear(), 5, 20);
   d.setDate(d.getDate() + ((6 - d.getDay() + 7) % 7));
-  return d.toISOString().slice(0, 10);
+  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
 }
 
 // ---------- Form ----------
