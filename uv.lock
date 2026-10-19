@@ -353,7 +353,6 @@ source = { virtual = "." }
 dependencies = [
     { name = "fastapi" },
     { name = "httpx" },
-    { name = "networkx" },
     { name = "pyogrio" },
     { name = "pyproj" },
     { name = "scipy" },
@@ -364,6 +363,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "ipykernel" },
+    { name = "networkx" },
     { name = "pytest" },
 ]
 
@@ -371,7 +371,6 @@ dev = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.146.0" },
     { name = "httpx", specifier = ">=0.28.1" },
-    { name = "networkx", specifier = ">=3.7" },
     { name = "pyogrio", specifier = ">=0.13.0" },
     { name = "pyproj", specifier = ">=3.8.0" },
     { name = "scipy", specifier = ">=1.18.1" },
@@ -382,6 +381,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "ipykernel", specifier = ">=7.4.0" },
+    { name = "networkx", specifier = ">=3.7" },
     { name = "pytest", specifier = ">=9.1.1" },
 ]
 

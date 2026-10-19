@@ -7,11 +7,11 @@ import { clearConnections } from "./connections.js";
 import { loadInfo } from "./info.js";
 import { renderTourDetail } from "./tour-detail.js";
 
-const SORTS = { best: "Best", fit: "Day length", time: "Shortest", ascent: "Least ascent", altitude: "Highest huts",
+const SORTS = { best: "Best", time: "Shortest", ascent: "Least ascent", altitude: "Highest huts",
   beds: "Most free beds" };
 // The search returns a pool of varied tours ordered by "best"; other orders are applied here, without a new search.
 const SORT_KEYS = {
-  best: (t) => [-t.score], fit: (t) => [-t.metrics.fit, -t.score], time: (t) => [t.time_min, -t.score],
+  best: (t) => [-t.score], time: (t) => [t.time_min, -t.score],
   ascent: (t) => [t.ascent_m, -t.score], altitude: (t) => [-(t.hut_altitude || 0), -t.score],
   beds: (t) => [-t.metrics.beds, -t.score],
 };
@@ -246,9 +246,13 @@ function availBadge(t) {
   const a = t.availability || {};
   const checked = results?.query?.check_availability;
   if (checked && a.available === t.nights) return `<span class="flag ok" title="Free beds on every night">Beds free</span>`;
+  // Beyond the first candidates of a search, free beds are only checked when the tour is opened.
+  if (checked && a.not_checked) {
+    return `<span class="flag pending" title="Free beds not checked yet for ${a.not_checked} night${a.not_checked > 1 ? "s" : ""}. Open the tour to check them.">Beds: open to check</span>`;
+  }
   const unsure = checked ? t.nights - (a.available || 0) : t.uncertain_nights;
   if (!unsure) return "";
-  const title = checked ? "Nights without confirmed free beds (not bookable yet, no online booking or not checked)"
+  const title = checked ? "Nights without confirmed free beds (not bookable yet or no online booking)"
     : "Opening data missing or only part of the month";
   return `<span class="flag" title="${title}">${unsure} night${unsure > 1 ? "s" : ""} unconfirmed</span>`;
 }
@@ -288,6 +292,7 @@ async function checkTourBeds(t) {
   // Keep score and order (computed for the search's hours); take only the nights' availability.
   t.days.forEach((d, i) => { d.night = fresh.days[i].night; });
   t.availability = fresh.availability;
+  renderResults();  // the card's badge, for when the list is shown again
   if (selectedTour() === t && !$("#tourDetail").hidden) renderTourDetail(t);
 }
 
