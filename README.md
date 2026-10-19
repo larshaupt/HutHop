@@ -4,6 +4,12 @@ A private web app to browse Swiss mountain huts (SAC plus selected non-SAC huts)
 
 **Status:** hut map, walking connections, multi-day tour suggestions with live free-bed checks (hut-reservation.org, cached 10 min). Prices postponed. Phase 0 findings are in [`spikes/`](spikes/). See [`hut-tour-planner.md`](hut-tour-planner.md) for the full project brief: requirements, system design, data model, known APIs and the development plan.
 
+![Map of all huts with a line for each pair connected by trail within 10 hours, coloured by the hardest trail category](docs/hut-graph.svg)
+
+The route graph built by `build_edges`: one line per hut pair connected within 10 h, the longest connection it
+stores. Hollow huts have no trail connection, usually because they are too far from a signposted trail.
+Bus and train stops are left out. Regenerate the figure with `uv run python docs/graph_figure.py`.
+
 ## Setup
 
 Requires [uv](https://docs.astral.sh/uv/) and Python 3.12.
