@@ -5,8 +5,9 @@
 #   /opt/huthop/server/refresh.sh               huts + stops, trails if swisstopo has a new edition, rebuild if needed
 #   /opt/huthop/server/refresh.sh --rebuild     force a rebuild
 #
-# A rebuild needs about 2 GB of RAM for ~2 minutes and ~650 MB of disk in data/tlm/. A backup is taken first.
+# A full rebuild takes ~12 minutes on server2 (loading the trails ~5 min) and ~2 GB of RAM (capped at 3 GB, see the
+# refresh service in compose.yaml), plus ~400 MB of disk in data/tlm/. A backup is taken first.
 set -eu
 cd "$(dirname "$0")"
 docker compose exec -T huthop python -m app.backup
-docker compose run --rm --no-deps -T huthop python -m app.ingest.refresh "$@"
+docker compose run --rm -T refresh python -m app.ingest.refresh "$@"

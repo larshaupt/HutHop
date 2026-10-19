@@ -90,9 +90,11 @@ The server's database is the only live copy. Everything that changes it runs on 
 /opt/huthop/server/refresh.sh --rebuild  # force a rebuild (e.g. after adding huts by hand)
 ```
 
-`refresh.sh` takes a backup, then runs `python -m app.ingest.refresh` in a one-off container
-(`docker compose run --rm`). The first run downloads the swissTLM3D trails (about 200 MB, unpacked 651 MB) into
-`data/tlm/`. The running app notices the new data through `data_version` and reloads its route graph.
+`refresh.sh` takes a backup, then runs `python -m app.ingest.refresh` in a one-off container (the `refresh`
+service in `compose.yaml`: no web server, memory capped at 3 GB, progress printed live). The first run (19 Oct
+2026) downloaded the swissTLM3D trails (198 MB, 372 MB unpacked in `data/tlm/`) and rebuilt all 31,390 edges in
+12 minutes; at least 2.1 GB of RAM stayed free and the app kept serving. The running app notices the new data
+through `data_version`; its first search afterwards takes ~10 s while it loads the new graph, then ~2 s.
 
 For local development, copy a backup from `data/backups/` to the Mac.
 
