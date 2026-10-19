@@ -11,7 +11,7 @@ from app import config
 from app.api.deps import get_db
 from app.api.huts import HRS_BOOKING_URL
 from app.planner import availability, gpx, ranking
-from app.planner.tours import (Catering, Graph, Night, Tour, TourRequest, build_tour, load_graph, parse_tour_id,
+from app.planner.tours import (Catering, Graph, Night, Tour, TourRequest, build_tour, cached_graph, parse_tour_id,
                                suggest)
 
 router = APIRouter(prefix="/api", tags=["tours"])
@@ -46,7 +46,7 @@ class TourQuery(BaseModel):
 
 @router.post("/tours/suggest")
 def suggest_tours(q: TourQuery, conn: sqlite3.Connection = Depends(get_db)) -> dict:
-    graph = load_graph(conn, q.limit)
+    graph = cached_graph(conn, q.limit)
     params = q.model_dump(exclude={"start_stop", "people", "check_availability"})
     if q.start_stop:
         row = conn.execute("SELECT e_lv95, n_lv95 FROM place WHERE id = ? AND kind = 'stop'", (q.start_stop,)).fetchone()
@@ -83,7 +83,7 @@ def rebuild(conn: sqlite3.Connection, tour_id: str, people: int, check_availabil
         start, places, limits = parse_tour_id(tour_id)
     except ValueError:
         raise HTTPException(400, "malformed tour id") from None
-    graph = load_graph(conn, 3)  # all trail categories; a tour id names its edges explicitly
+    graph = cached_graph(conn, 3)  # all trail categories; a tour id names its edges explicitly
     lookup = None
     if check_availability:
         availability.refresh(conn, set(places[1:-1]))

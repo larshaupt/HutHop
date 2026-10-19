@@ -85,7 +85,7 @@ The Mac builds the database and the server owns it afterwards. Before each rebui
 
 **Yearly route graph rebuild (new swissTLM3D edition)**
 
-1. Stop the container, or take a SQLite `.backup` copy, and copy the server's `huthop.db` back to the Mac.
+1. Run `python -m app.backup` in the container and copy that file from `data/backups/` back to the Mac.
 2. Run `build_edges` against that copy. Manual `excluded` flags on edges already survive rebuilds.
 3. Copy the result back and restart.
 
@@ -96,9 +96,9 @@ The Mac builds the database and the server owns it afterwards. Before each rebui
 None of these touches the app's behaviour.
 
 - [x] `Dockerfile`, `server/compose.yaml`, `server/update.sh` and the GitHub Actions workflow (see Target setup).
-- [ ] SQLite WAL mode in `connect()` (`PRAGMA journal_mode=WAL`), so reads keep working while the availability cache writes.
-- [ ] `GET /api/health` for the Docker health check and monitoring.
-- [ ] Cache `load_graph()` per trail limit, cleared when edges are changed. It rebuilds on every `/api/tours/suggest` call today, which will be noticeable on a Pi.
+- [x] SQLite WAL mode in `connect()` (`PRAGMA journal_mode=WAL`), so reads keep working while the availability cache writes. The database is then more than one file (`huthop.db-wal`, `-shm`): copy it with `python -m app.backup` or with the container stopped, never with a plain `scp` while it runs.
+- [x] `GET /api/health` for the Docker health check and monitoring (answers with hut and edge counts).
+- [x] Cache the route graph per trail limit (`cached_graph`). Triggers bump `data_version` on every change to huts, overrides, stops and edges, from any process, and the next search reloads.
 
 ## Admin password
 
@@ -121,7 +121,7 @@ Deploying is a push to `main`; the rest is a few host cron jobs.
 | SAC sync | Weekly or monthly | Host cron: `docker compose -f /opt/huthop/server/compose.yaml exec huthop python -m app.ingest.sync_sac` |
 | Availability | On demand | Fetched per hut and cached for a few hours by the app (Phase 4); no job |
 | Route graph rebuild | Yearly, by hand | On the Mac, see Data workflow |
-| Backup | Nightly | `sqlite3 data/huthop.db ".backup ..."` to a dated file, keep about 14 copies, sometimes copy one off the server |
+| Backup | Nightly | Host cron: `cd /opt/huthop/server && docker compose exec -T huthop python -m app.backup >> /opt/huthop/backup.log 2>&1`. Writes `data/backups/huthop-YYYY-MM-DD.db`, keeps 14. Sometimes copy one off the server |
 | Monitoring | Ongoing | Docker health check; optionally a healthchecks.io ping after `update.sh`, like the website |
 
 ## Rollout steps

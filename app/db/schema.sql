@@ -137,3 +137,29 @@ SELECT
   COALESCE((SELECT json_extract(o.value, '$') FROM hut_override o
             WHERE o.hut_id = m.hut_id AND o.field = 'catering.' || m.month), m.catering) AS catering
 FROM hut_month m;
+
+-- Counter bumped by every change to what the tour search loads, so the cached route graph
+-- (app/planner/tours.py: cached_graph) notices changes from any process: the app, sync_sac, build_edges.
+CREATE TABLE IF NOT EXISTS data_version (
+  id       INTEGER PRIMARY KEY CHECK (id = 1),
+  version  INTEGER NOT NULL
+);
+INSERT OR IGNORE INTO data_version VALUES (1, 0);
+CREATE TRIGGER IF NOT EXISTS place_ins AFTER INSERT ON place BEGIN UPDATE data_version SET version = version + 1; END;
+CREATE TRIGGER IF NOT EXISTS place_upd AFTER UPDATE ON place BEGIN UPDATE data_version SET version = version + 1; END;
+CREATE TRIGGER IF NOT EXISTS place_del AFTER DELETE ON place BEGIN UPDATE data_version SET version = version + 1; END;
+CREATE TRIGGER IF NOT EXISTS hut_ins AFTER INSERT ON hut BEGIN UPDATE data_version SET version = version + 1; END;
+CREATE TRIGGER IF NOT EXISTS hut_upd AFTER UPDATE ON hut BEGIN UPDATE data_version SET version = version + 1; END;
+CREATE TRIGGER IF NOT EXISTS hut_del AFTER DELETE ON hut BEGIN UPDATE data_version SET version = version + 1; END;
+CREATE TRIGGER IF NOT EXISTS hut_month_ins AFTER INSERT ON hut_month BEGIN UPDATE data_version SET version = version + 1; END;
+CREATE TRIGGER IF NOT EXISTS hut_month_upd AFTER UPDATE ON hut_month BEGIN UPDATE data_version SET version = version + 1; END;
+CREATE TRIGGER IF NOT EXISTS hut_month_del AFTER DELETE ON hut_month BEGIN UPDATE data_version SET version = version + 1; END;
+CREATE TRIGGER IF NOT EXISTS hut_override_ins AFTER INSERT ON hut_override BEGIN UPDATE data_version SET version = version + 1; END;
+CREATE TRIGGER IF NOT EXISTS hut_override_upd AFTER UPDATE ON hut_override BEGIN UPDATE data_version SET version = version + 1; END;
+CREATE TRIGGER IF NOT EXISTS hut_override_del AFTER DELETE ON hut_override BEGIN UPDATE data_version SET version = version + 1; END;
+CREATE TRIGGER IF NOT EXISTS stop_ins AFTER INSERT ON stop BEGIN UPDATE data_version SET version = version + 1; END;
+CREATE TRIGGER IF NOT EXISTS stop_upd AFTER UPDATE ON stop BEGIN UPDATE data_version SET version = version + 1; END;
+CREATE TRIGGER IF NOT EXISTS stop_del AFTER DELETE ON stop BEGIN UPDATE data_version SET version = version + 1; END;
+CREATE TRIGGER IF NOT EXISTS edge_ins AFTER INSERT ON edge BEGIN UPDATE data_version SET version = version + 1; END;
+CREATE TRIGGER IF NOT EXISTS edge_upd AFTER UPDATE ON edge BEGIN UPDATE data_version SET version = version + 1; END;
+CREATE TRIGGER IF NOT EXISTS edge_del AFTER DELETE ON edge BEGIN UPDATE data_version SET version = version + 1; END;

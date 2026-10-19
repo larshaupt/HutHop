@@ -169,6 +169,23 @@ def load_graph(conn: sqlite3.Connection, limit: int) -> Graph:
     return graph
 
 
+_graph_cache: dict[tuple[str, int], tuple[int, Graph]] = {}  # (database file, limit) → (data version, graph)
+
+
+def cached_graph(conn: sqlite3.Connection, limit: int) -> Graph:
+    """load_graph, reused until anything it reads changes (data_version is bumped by triggers, see schema.sql).
+
+    The graph is read-only after loading, so requests can share it."""
+    version = conn.execute("SELECT version FROM data_version").fetchone()[0]
+    key = (conn.execute("PRAGMA database_list").fetchone()["file"], limit)
+    hit = _graph_cache.get(key)
+    if hit and hit[0] == version:
+        return hit[1]
+    graph = load_graph(conn, limit)
+    _graph_cache[key] = (version, graph)
+    return graph
+
+
 def night_status(hut: Hut, day: date, catering: Catering, include_unknown: bool) -> Night | None:
     """How the hut can be used on that night (SAC monthly codes), or None if it doesn't fit the request."""
     result = opening.usable(hut.catering, hut.self_service, day.month, catering)

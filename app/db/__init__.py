@@ -15,4 +15,6 @@ def connect(path: Path | str = DB_PATH, init: bool = True) -> sqlite3.Connection
     conn.row_factory = sqlite3.Row
     if init:
         conn.executescript(SCHEMA.read_text())
+        # Readers never wait for a writer (availability cache, edits). Stored in the file, so set once is enough.
+        conn.execute("PRAGMA journal_mode = WAL")
     return conn
