@@ -140,7 +140,7 @@ SELECT
 FROM hut_month m;
 
 -- Counter bumped by every change to what the tour search loads, so the cached route graph
--- (app/planner/tours.py: cached_graph) notices changes from any process: the app, sync_sac, build_edges.
+-- (app/planner/graph.py: cached_graph) notices changes from any process: the app, sync_sac, build_edges.
 CREATE TABLE IF NOT EXISTS data_version (
   id       INTEGER PRIMARY KEY CHECK (id = 1),
   version  INTEGER NOT NULL

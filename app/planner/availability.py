@@ -122,3 +122,21 @@ def classify(hut_status: str | None, free_beds: int | None, total_places: int, c
     if (free_beds or 0) >= people:
         return NightAvailability("available", **base)
     return NightAvailability("full", **base)
+
+
+def calendar(conn: sqlite3.Connection, hut_id: int, hrs_id: int, people: int) -> dict:
+    """A bookable hut's calendar from today, one entry per day classified for the group size (fetched if stale)."""
+    refresh(conn, {hut_id}, max_fetches=1)
+    fetch = conn.execute("SELECT fetched_at, ok FROM availability_fetch WHERE hut_id = ?", (hut_id,)).fetchone()
+    result = {"bookable": True, "booking_url": hut_reservation.BOOKING_URL.format(hrs_id), "people": people,
+              "checked_at": fetch["fetched_at"] if fetch else None, "error": not (fetch and fetch["ok"]), "days": []}
+    dates = [date.fromisoformat(r[0]) for r in conn.execute(
+        "SELECT date FROM availability WHERE hut_id = ? AND date >= ? ORDER BY date", (hut_id, date.today().isoformat()))]
+    if result["error"] or not dates:
+        return result
+    snapshot = Snapshot(conn, dates[0], dates[-1], people)
+    for day in dates:
+        a = snapshot.night(hut_id, True, day)
+        result["days"].append({"date": day.isoformat(), "state": a.state, "free_beds": a.free_beds,
+                               "total_places": a.total_places, "hut_status": a.hut_status})
+    return result

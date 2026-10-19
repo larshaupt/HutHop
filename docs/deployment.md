@@ -1,13 +1,15 @@
-# HutHop deployment plan
+# HutHop deployment
 
-As of 2026-10-18. Living version: [HutHop Deployment Plan](https://claude.ai/code/artifact/364c19c3-4694-41fd-be7b-312d31dc81ed).
+Live on server2 since 2026-10-18; this file is kept up to date (last: 2026-10-19). The original plan is in the
+artifact [HutHop Deployment Plan](https://claude.ai/code/artifact/364c19c3-4694-41fd-be7b-312d31dc81ed), which is
+not updated any more.
 
 ## Summary
 
-HutHop runs on the home server `server2` (larsbox) with Docker Compose and is reachable only over Tailscale (option A). It is deployed the same way as the website: GitHub Actions builds the image, and the server pulls it every 5 minutes. The design brief already planned a home server ("Docker Compose only once it is deployed to a home server"), and this keeps the SAC data private without any login code in the app.
+HutHop runs on the home server `server2` (larsbox) with Docker Compose and is reachable only over Tailscale (option A). It is deployed the same way as the website: GitHub Actions builds the image, and the server pulls it every 5 minutes. The design brief already planned a home server ("Docker Compose only once it is deployed to a home server"), and the network keeps the SAC data private. The app only has an admin password for changing data.
 
 - **Push to deploy.** A push to `main` runs the tests and publishes `ghcr.io/larshaupt/huthop:latest`. Cron on the server picks it up within 5 minutes.
-- **Serve at home, build data on the Mac.** The server runs one FastAPI container and a SQLite file. The heavy route graph build (`build_edges`, about 2 GB RAM) stays on the Mac.
+- **Everything on the server.** One FastAPI container and a SQLite file. Data refreshes and the route graph build (about 2 GB RAM for ~2 minutes) run in a one-off container from the same image (`server/refresh.sh`).
 - **Private by network.** The container listens on localhost only, and the host's Tailscale publishes it to the tailnet. Nothing is exposed to the internet.
 
 ## App profile
@@ -17,21 +19,23 @@ Serving HutHop takes little: a few hundred MB of RAM and a fraction of a CPU. On
 | Part | What it is | Why it matters for deployment |
 | --- | --- | --- |
 | Web app | One FastAPI/uvicorn process (`app/main.py`); the static frontend in `web/` needs no build step | One container is enough |
-| Database | SQLite `data/huthop.db`, about 21 MB; path set with `HUTHOP_DB` | One persistent volume; no database server |
+| Database | SQLite `data/huthop.db`, about 36 MB, WAL mode; path set with `HUTHOP_DB` | One persistent volume; no database server |
 | `sync_sac` | Fetches SAC huts, about 10 s and 5 requests | Can run on the server on a schedule |
-| `load_stops` | Public transport stops, about 5 MB download | Rare; run on the Mac |
-| `build_edges` | Route graph on swissTLM3D: about 90 s, about 2 GB RAM, 651 MB of input in `data/tlm/` | Yearly; run on the Mac |
-| Writes while running | `PATCH /api/edges/{id}` now; availability cache and price admin page in Phase 4 | The server's database is not read-only |
+| `load_stops` | Public transport stops, about 5 MB download | Rare; `server/refresh.sh` |
+| `build_edges` | Route graph on swissTLM3D: about 2 min, about 2 GB RAM, 651 MB of input in `data/tlm/` | Yearly (new trail edition) or after new huts; `server/refresh.sh` |
+| Writes while running | Availability cache; hut corrections, added huts and edge exclusions (admin password) | The server's database is not read-only, and it is the master copy |
+| Settings | `huthop.toml` ("best" weights, impressum), baked into the image | Changing it means a commit and deploy |
+| Memory | Route graph cached per trail limit, plus a bounded cache of route-line overlaps (~40 MB at most) | A few hundred MB in total |
 | Browser dependencies | MapLibre from unpkg, swisstopo tiles | The browser needs internet access; the server doesn't serve them |
-| Server calls out to | SAC API now; hut-reservation.org in Phase 4 | Outgoing internet only; nothing needs to accept calls from outside |
+| Server calls out to | SAC API (weekly sync), hut-reservation.org (free beds, on demand) | Outgoing internet only; nothing needs to accept calls from outside |
 
 ## Constraints
 
 Any deployment has to keep the app private, because the SAC terms allow private use only.
 
 1. **No public access.** SAC hut data may not be redistributed (brief §6). The network provides access control (tailnet only). Inside the tailnet, everyone can view and plan; **changing data needs the admin password** (`app/admin.py`, HTTP Basic auth over Tailscale's HTTPS). `server/compose.yaml` sets `HUTHOP_REQUIRE_ADMIN=1`, so changes are refused until a password is set.
-2. **Build and serving are separate.** `build_edges` needs 2 GB of RAM and 651 MB of input for a job that runs once a year. Building on the Mac and copying the finished `huthop.db` keeps the server small.
-3. **Server-side edits must survive a rebuild.** Edge exclusions, and later prices, are written on the server. Uploading a newly built database must not overwrite them (see Data workflow).
+2. **Build and serving share the database, not the process.** `build_edges` needs 2 GB of RAM and 651 MB of input for a job that runs about once a year. It runs in its own short-lived container, so the app's memory stays small, and it writes to the live database (WAL mode lets the app keep serving).
+3. **Server-side edits must survive a rebuild.** Hut corrections, added huts and edge exclusions (later prices) are written on the server. Rebuilds keep them (overrides are separate tables; exclusions are carried over by place pair).
 4. **Be a polite API consumer.** Use low request rates, caching and an identifiable User-Agent toward SAC and hut-reservation.org. That applies equally to the server.
 
 ## Target setup (option A)
@@ -50,11 +54,15 @@ Any deployment has to keep the app private, because the SAC terms allow private 
 │  └──────────────────┘    │  │ huthop container               │─────────▶ SAC API
 │                          │  │ FastAPI + web/, 127.0.0.1:8100 │─────────▶ hut-reservation.org
 │                          │  └─────────▲──────────────────────┘    │ │
-│  ┌──────────────────┐    │  ┌─────────▼──────────────────────┐    │ │
-│  │ Mac (build)      │◀──────▶ /opt/huthop/data               │    │ │
-│  │ build_edges,     │ scp│  │ huthop.db (SQLite)             │    │ │
-│  │ load_stops       │    │  └────────────────────────────────┘    │ │
-│  └──────────────────┘    └────────────────────────────────────────┘ │
+│                          │  ┌─────────▼──────────────────────┐    │ │
+│                          │  │ /opt/huthop/data               │    │ │
+│                          │  │ huthop.db, backups/, tlm/      │    │ │
+│                          │  └─────────▲──────────────────────┘    │ │
+│                          │  ┌─────────┴──────────────────────┐    │ │
+│                          │  │ refresh.sh: one-off container  │─────────▶ SAC, swisstopo, BAV
+│                          │  │ (data refresh, graph build)    │    │ │
+│                          │  └────────────────────────────────┘    │ │
+│                          └────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -75,30 +83,29 @@ The browser loads swisstopo tiles and MapLibre directly. The server only makes o
 
 ## Data workflow
 
-The Mac builds the database and the server owns it afterwards. Before each rebuild, the server's copy is pulled back so manual edits aren't lost.
+The server's database is the only live copy. Everything that changes it runs on the server:
 
-**First deploy**
+```sh
+/opt/huthop/server/refresh.sh            # backup, then huts + stops, trails if new, rebuild if needed
+/opt/huthop/server/refresh.sh --rebuild  # force a rebuild (e.g. after adding huts by hand)
+```
 
-1. Run `sync_sac`, `load_stops` and `build_edges` on the Mac, as today.
-2. Copy `data/huthop.db` to `/opt/huthop/data/` on the server (`scp` over Tailscale) while the container is stopped.
-3. Start the stack. From then on the server's copy is the live one.
+`refresh.sh` takes a backup, then runs `python -m app.ingest.refresh` in a one-off container
+(`docker compose run --rm`). The first run downloads the swissTLM3D trails (about 200 MB, unpacked 651 MB) into
+`data/tlm/`. The running app notices the new data through `data_version` and reloads its route graph.
 
-**Yearly route graph rebuild (new swissTLM3D edition)**
+For local development, copy a backup from `data/backups/` to the Mac.
 
-1. Run `python -m app.backup` in the container and copy that file from `data/backups/` back to the Mac.
-2. Run `build_edges` against that copy. Manual `excluded` flags on edges already survive rebuilds.
-3. Copy the result back and restart.
+**History:** until 2026-10-19 the graph was built on the Mac and the database copied to the server (first deploy
+on 2026-10-18; height profiles imported once on 2026-10-19).
 
-**Longer term:** move manual edits (edge exclusions, notes, prices) into override tables that a rebuild never touches, like `hut_override`. Then the server can receive a freshly built database, and the edits are re-applied on top. Only needed if the pull-back step gets annoying.
+## Server-related code
 
-## Code changes before deploy
-
-None of these touches the app's behaviour.
-
-- [x] `Dockerfile`, `server/compose.yaml`, `server/update.sh` and the GitHub Actions workflow (see Target setup).
-- [x] SQLite WAL mode in `connect()` (`PRAGMA journal_mode=WAL`), so reads keep working while the availability cache writes. The database is then more than one file (`huthop.db-wal`, `-shm`): copy it with `python -m app.backup` or with the container stopped, never with a plain `scp` while it runs.
-- [x] `GET /api/health` for the Docker health check and monitoring (answers with hut and edge counts).
-- [x] Cache the route graph per trail limit (`cached_graph`). Triggers bump `data_version` on every change to huts, overrides, stops and edges, from any process, and the next search reloads.
+- `Dockerfile`, `server/compose.yaml`, `server/update.sh` and the GitHub Actions workflow (see Target setup).
+- SQLite WAL mode in `connect()` (`PRAGMA journal_mode=WAL`), so reads keep working while the availability cache writes. The database is then more than one file (`huthop.db-wal`, `-shm`): copy it with `python -m app.backup` or with the container stopped, never with a plain `scp` while it runs.
+- `GET /api/health` for the Docker health check and monitoring (answers with hut and edge counts).
+- The frontend is served with `Cache-Control: no-cache`, so browsers pick up a deploy on a normal reload.
+- Cache the route graph per trail limit (`cached_graph`). Triggers bump `data_version` on every change to huts, overrides, stops and edges, from any process, and the next search reloads.
 
 ## Admin password
 
@@ -118,22 +125,22 @@ Deploying is a push to `main`; the rest is a few host cron jobs.
 | Task | How often | How |
 | --- | --- | --- |
 | App update | Every 5 min | Host cron: `/opt/huthop/server/update.sh >> /opt/huthop/update.log 2>&1`. The script waits 150 s so it doesn't overlap the website's update (whose `docker image prune` broke our pulls), retries the pull once, and prunes only HutHop images |
-| SAC sync | Weekly or monthly | Host cron: `docker compose -f /opt/huthop/server/compose.yaml exec huthop python -m app.ingest.sync_sac` |
-| Availability | On demand | Fetched per hut and cached for a few hours by the app (Phase 4); no job |
-| Route graph rebuild | Yearly, by hand | On the Mac, see Data workflow |
-| Height profiles for old edges | Once (2026-10) | On the Mac: `uv run python -m app.ingest.profiles --export data/edge_profiles.json`, copy the file to `/opt/huthop/data/`, then `docker compose exec -T huthop python -m app.ingest.profiles --import data/edge_profiles.json`. Matched by route line, so ids may differ. New builds include profiles |
-| Backup | Nightly | Host cron: `cd /opt/huthop/server && docker compose exec -T huthop python -m app.backup >> /opt/huthop/backup.log 2>&1`. Writes `data/backups/huthop-YYYY-MM-DD.db`, keeps 14. Sometimes copy one off the server |
-| Monitoring | Ongoing | Docker health check; optionally a healthchecks.io ping after `update.sh`, like the website |
+| SAC sync | Mondays 4:00 | Host cron: `docker compose -f /opt/huthop/server/compose.yaml exec -T huthop python -m app.ingest.sync_sac >> /opt/huthop/sync.log 2>&1` |
+| Availability | On demand | Fetched per hut and cached for 10 minutes by the app; no job |
+| Route graph rebuild | When swisstopo publishes new trails (about yearly), or after adding huts | By hand: `server/refresh.sh` (see Data workflow). Could replace the weekly SAC sync once a run has been watched |
+| Backup | Nightly 3:30 | Host cron: `cd /opt/huthop/server && docker compose exec -T huthop python -m app.backup >> /opt/huthop/backup.log 2>&1`. Writes `data/backups/huthop-YYYY-MM-DD.db`, keeps 14. Sometimes copy one off the server |
+| Monitoring | Ongoing | Docker health check on `/api/health`; optionally a healthchecks.io ping after `update.sh`, like the website |
 
 ## Rollout steps
 
 - [x] Machine: `server2` (larsbox) with Docker and Tailscale already installed
-- [ ] Commit and push the deploy files; check that the Actions run publishes the image
-- [ ] Clone the repo to `/opt/huthop` and copy `huthop.db` into `/opt/huthop/data/`
-- [ ] `docker compose pull && docker compose up -d` in `/opt/huthop/server`
-- [ ] `tailscale serve --bg --https=8443 http://127.0.0.1:8100`, then open the URL from a phone over mobile data
-- [ ] Check that the app can't be reached from the LAN IP or the public IP
-- [ ] Add the cron jobs for `update.sh`, SAC sync and backups
+- [x] Commit and push the deploy files; check that the Actions run publishes the image
+- [x] Clone the repo to `/opt/huthop` and copy `huthop.db` into `/opt/huthop/data/`
+- [x] `docker compose pull && docker compose up -d` in `/opt/huthop/server`
+- [x] `tailscale serve --bg --https=8443 http://127.0.0.1:8100`, then open the URL from a phone
+- [x] Check that the app can't be reached from the LAN IP or the public IP
+- [x] Add the cron jobs for `update.sh`, SAC sync and backups
+- [x] Set the admin password
 - [ ] Invite friends to the tailnet and add an ACL limiting them to `larsbox:8443`
 
 ## Alternatives considered
@@ -151,5 +158,4 @@ Moving from A to a VPS later is a matter of copying the Compose folder and the d
 ## Open questions
 
 - [ ] Is installing Tailscale fine for friends, or do they need a plain link with a password?
-- [ ] Deploy now, with Phases 0–3, or wait for Phase 4 (availability, prices)?
 - [ ] Should backups also go off the machine (external drive, cloud)?

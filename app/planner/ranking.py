@@ -1,13 +1,12 @@
-"""Tour quality: sub-scores (0–1, higher is better), the "best" score (weights from huthop.toml), and sort orders.
+"""Tour quality: sub-scores (0–1, higher is better) and the "best" score (weights from huthop.toml).
 
 The beam search finds valid tours; this module decides their order. METRIC_INFO describes each sub-score; the
-About dialog in the app shows it with the configured weights.
+About dialog in the app shows it with the configured weights. Other orders (shortest, least ascent, …) are
+applied in the browser (web/js/tours.js) to the pool of tours a search returns.
 """
 
 from dataclasses import dataclass
-from typing import Literal
 
-Sort = Literal["best", "fit", "time", "ascent", "altitude", "beds"]
 METRIC_INFO = {  # key: (label, what scores 1)
     "fit": ("Day length", "Every day is close to the middle of your hours per day."),
     "fresh": ("New trail", "No stretch of trail is walked twice (more than half walked twice scores 0)."),
@@ -76,15 +75,3 @@ def metrics(legs, nights, altitudes: list[int | None], min_minutes: float, max_m
         ascent_m=sum(leg.ascent_m for leg in legs),
         mean_altitude=mean_alt,
     )
-
-
-def sort_key(sort: Sort, weights: dict[str, float]):
-    """Key function on Metrics; smaller sorts first."""
-    return {
-        "best": lambda m: -m.best(weights),
-        "fit": lambda m: -m.fit,
-        "time": lambda m: m.time_min,
-        "ascent": lambda m: m.ascent_m,
-        "altitude": lambda m: -m.mean_altitude,
-        "beds": lambda m: (-m.beds, -m.best(weights)),
-    }[sort]

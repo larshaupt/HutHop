@@ -9,14 +9,12 @@ from pydantic import BaseModel, Field, model_validator
 
 from app import config
 from app.api.deps import get_db
-from app.api.huts import HRS_BOOKING_URL
-from app.planner import availability, gpx, ranking
-from app.planner.tours import (Catering, Graph, Night, Tour, TourRequest, build_tour, cached_graph, parse_tour_id,
-                               suggest)
+from app.clients import hut_reservation
+from app.planner import gpx, planning, ranking
+from app.planner.graph import Graph
+from app.planner.tours import Catering, Night, Tour, TourRequest
 
 router = APIRouter(prefix="/api", tags=["tours"])
-AVAILABILITY_ROUNDS = 3  # search, fetch calendars of the huts in the best tours, search again
-CANDIDATES_PER_ROUND = 25
 AVAILABILITY_STATES = ("available", "not_released", "no_booking", "not_checked", "error")
 
 
@@ -33,8 +31,6 @@ class TourQuery(BaseModel):
     include_unknown: bool = True
     people: int = Field(2, ge=1, le=30)
     check_availability: bool = True
-    sort: ranking.Sort = Field("best", description="order of the pool: best (weights from huthop.toml), fit, time, "
-                               "ascent, altitude, beds. The app always asks for best and re-sorts in the browser.")
 
     @model_validator(mode="after")
     def check_hours(self):
@@ -47,7 +43,7 @@ class TourQuery(BaseModel):
 
 @router.post("/tours/suggest")
 def suggest_tours(q: TourQuery, conn: sqlite3.Connection = Depends(get_db)) -> dict:
-    graph = cached_graph(conn, q.limit)
+    """A pool of up to tours.POOL_SIZE varied tours, ordered by "best"; the app sorts them otherwise itself."""
     params = q.model_dump(exclude={"start_stop", "people", "check_availability"})
     if q.start_stop:
         row = conn.execute("SELECT e_lv95, n_lv95 FROM place WHERE id = ? AND kind = 'stop'", (q.start_stop,)).fetchone()
@@ -55,18 +51,14 @@ def suggest_tours(q: TourQuery, conn: sqlite3.Connection = Depends(get_db)) -> d
             raise HTTPException(404, "start stop not found")
         params["start_near"] = (row["e_lv95"], row["n_lv95"])
     req = TourRequest(**params, weights=config.ranking_weights())
-    fetched = 0
-    if q.check_availability:
-        tours, fetched = search_with_availability(conn, graph, req, q.people)
-    else:
-        tours = suggest(graph, req)
+    graph, tours, fetched = planning.search_tours(conn, req, q.people, q.check_availability)
     return {"query": q.model_dump(mode="json"), "tours": tour_json(conn, graph, tours), "calendars_fetched": fetched}
 
 
 @router.get("/tours/{tour_id}")
 def get_tour(tour_id: str, people: int = Query(2, ge=1, le=30), check_availability: bool = False,
              conn: sqlite3.Connection = Depends(get_db)) -> dict:
-    """A tour rebuilt from its id (start date, places, per-day trail limits), e.g. for sharing or export."""
+    """A tour rebuilt from its id (start date, places, per-day trail limits, hours), e.g. for sharing or export."""
     graph, tour = rebuild(conn, tour_id, people, check_availability)
     return tour_json(conn, graph, [tour])[0]
 
@@ -81,37 +73,11 @@ def get_tour_gpx(tour_id: str, conn: sqlite3.Connection = Depends(get_db)) -> Re
 
 def rebuild(conn: sqlite3.Connection, tour_id: str, people: int, check_availability: bool) -> tuple[Graph, Tour]:
     try:
-        start, places, limits = parse_tour_id(tour_id)
+        return planning.rebuild_tour(conn, tour_id, people, check_availability, config.ranking_weights())
+    except LookupError as err:
+        raise HTTPException(404, str(err)) from None
     except ValueError:
         raise HTTPException(400, "malformed tour id") from None
-    graph = cached_graph(conn, 3)  # all trail categories; a tour id names its edges explicitly
-    lookup = None
-    if check_availability:
-        availability.refresh(conn, set(places[1:-1]))
-        snapshot = availability.Snapshot(conn, start, start + timedelta(days=len(limits) - 1), people)
-        lookup = lambda hut, day: snapshot.night(hut.id, hut.hrs_id is not None, day)  # noqa: E731
-    try:
-        return graph, build_tour(graph, start, places, limits, availability=lookup, weights=config.ranking_weights())
-    except ValueError as err:
-        raise HTTPException(404, str(err)) from None
-
-
-def search_with_availability(conn: sqlite3.Connection, graph: Graph, req: TourRequest,
-                             people: int) -> tuple[list[Tour], int]:
-    """Search, fetch the booking calendars of huts in the best candidates, and search again with them, so full
-    huts drop out. Calendars are cached for availability.CACHE_TTL_S; fetches per request are capped."""
-    end = req.start_date + timedelta(days=req.nights)
-    wide = TourRequest(**{**req.__dict__, "max_results": CANDIDATES_PER_ROUND})
-    fetched = 0
-    for _ in range(AVAILABILITY_ROUNDS):
-        snapshot = availability.Snapshot(conn, req.start_date, end, people)
-        tours = suggest(graph, wide, lambda hut, day: snapshot.night(hut.id, hut.hrs_id is not None, day))
-        needed = {n.hut for t in tours for n in t.nights if n.availability and n.availability.state == "not_checked"}
-        if not needed or fetched >= availability.MAX_FETCHES:
-            break
-        fetched += availability.refresh(conn, needed, availability.MAX_FETCHES - fetched)
-    snapshot = availability.Snapshot(conn, req.start_date, end, people)
-    return suggest(graph, req, lambda hut, day: snapshot.night(hut.id, hut.hrs_id is not None, day)), fetched
 
 
 # ---------- JSON ----------
@@ -165,7 +131,7 @@ def night_json(night: Night, hrs_id: int | None) -> dict:
         "partial": night.partial,
         "availability": {"state": a.state, "free_beds": a.free_beds, "total_places": a.total_places,
                          "checked_at": a.checked_at} if a else None,
-        "booking_url": HRS_BOOKING_URL.format(hrs_id) if hrs_id else None,
+        "booking_url": hut_reservation.BOOKING_URL.format(hrs_id) if hrs_id else None,
     }
 
 

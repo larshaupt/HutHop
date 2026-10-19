@@ -15,6 +15,7 @@ from app.planner import polyline
 CELL_M = 40.0
 STEP_M = 10.0
 SAMPLES = 8
+MAX_CACHED_PAIRS = 200_000  # edge-pair overlaps kept (~40 MB); the cache starts over when full
 M_PER_DEG_LAT = 111_200.0
 M_PER_DEG_LON = M_PER_DEG_LAT * math.cos(math.radians(46.6))  # local metres around the middle of Switzerland
 
@@ -56,6 +57,8 @@ class Footprints:
         """Grid cells shared by two edges' route lines."""
         key = (a, b) if a < b else (b, a)
         if key not in self._overlap:
+            if len(self._overlap) >= MAX_CACHED_PAIRS:
+                self._overlap.clear()  # pairs recur mostly within one search, so starting over costs little
             self._overlap[key] = len(np.intersect1d(self.cells(a), self.cells(b), assume_unique=True))
         return self._overlap[key]
 

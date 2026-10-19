@@ -1,8 +1,12 @@
 # HutHop
 
-A private web app to browse Swiss mountain huts (SAC plus selected non-SAC huts) and to suggest multi-day summer hut tours from your constraints, with availability checks and price estimates.
+A private web app to browse Swiss mountain huts (SAC plus huts added by hand) and to suggest multi-day summer hut tours from your constraints, with live free-bed checks.
 
-**Status:** hut map, walking connections, multi-day tour suggestions with live free-bed checks (hut-reservation.org, cached 10 min). Prices postponed. Phase 0 findings are in [`spikes/`](spikes/). See [`hut-tour-planner.md`](hut-tour-planner.md) for the full project brief: requirements, system design, data model, known APIs and the development plan.
+**Status (Oct 2026):** deployed on server2 (tailnet only). Hut map with filters, free-beds calendar and hand
+corrections; walking connections on swisstopo's trail network; multi-day tour suggestions ranked by a fixed "best"
+score (new trail, shape, free beds, opening data, …), sortable in the browser; height profiles; GPX export; About
+dialog. Prices are postponed. See [`hut-tour-planner.md`](hut-tour-planner.md) for the project brief (requirements,
+design, APIs, plan) and [`spikes/`](spikes/) for the Phase 0 findings.
 
 ![Map of all huts with a line for each pair connected by trail within 10 hours, coloured by the hardest trail category](docs/hut-graph.svg)
 
@@ -18,7 +22,7 @@ Requires [uv](https://docs.astral.sh/uv/) and Python 3.12.
 uv sync                                   # create .venv and install dependencies
 uv run python -m app.ingest.refresh       # huts, stops, trails (if new) and route graph (if needed)
 uv run uvicorn app.main:app --reload      # http://localhost:8000
-uv run pytest                             # tests
+uv run pytest                             # tests (use a throwaway database, see tests/conftest.py)
 ```
 
 `refresh` runs the individual jobs (`sync_sac`, `load_stops`, `build_edges`), downloads a new swissTLM3D edition
@@ -26,29 +30,44 @@ only when swisstopo publishes one, and rebuilds the route graph only when hut/st
 (`--rebuild` forces it). Each run is logged to `data/refresh_log.json`. Run it weekly during the season.
 `sync_sac --from-file data/raw/sac/huts.json` re-imports the last saved API response without fetching.
 
-Deployment (server2, tailnet only): see `docs/deployment.md`. Changing data needs the admin password once one is
-set (`python -m app.admin set-password`); on the server, changes are refused until then.
+Deployment (server2, tailnet only), backups and the data workflow: see [`docs/deployment.md`](docs/deployment.md).
+Changing data needs the admin password once one is set (`python -m app.admin set-password`); on the server,
+changes are refused until then.
 
-Settings: `huthop.toml` (weights of the "best" tour order). Manual corrections: "Edit hut data" in a hut's detail
-view, "+ Add hut" in the hut list; they survive re-syncs. New huts get walking connections at the next
-`refresh --rebuild`.
+Settings: `huthop.toml`, read on every request and baked into the Docker image: the weights of the "best" tour
+order (shown in the app's About dialog) and the impressum. Manual corrections: "Edit hut data" in a hut's detail
+view, "+ Add hut" in the hut list, and excluding a connection in a hut's connection list; all survive re-syncs and
+rebuilds. New huts get walking connections at the next `refresh --rebuild`.
 
-`build_edges` needs the swissTLM3D hiking network (swisstopo open data, about 200 MB) unpacked in `data/tlm/`:
-<https://data.geo.admin.ch/ch.swisstopo.swisstlm3d-wanderwege/swisstlm3d-wanderwege/swisstlm3d-wanderwege_2056_5728.gpkg.zip>. Manual `excluded` flags on edges survive rebuilds.
+`refresh` downloads the swissTLM3D hiking network (swisstopo open data, about 200 MB) into `data/tlm/` when needed.
+On server2, `server/refresh.sh` does the same in a one-off container (see the deployment doc). Edges built before
+height profiles existed get them with `python -m app.ingest.profiles`.
+
+Other commands: `python -m app.backup` (dated copy in `data/backups/`, keeps 14), `python -m app.admin set-password`.
 
 ## Layout
 
 ```
 app/
-  api/       FastAPI routes (/api/huts, /api/huts/{id}/edges, /api/huts/{id}/overrides, /api/edges/{id},
-             /api/tours/suggest, /api/tours/{id}, /api/tours/{id}/gpx, /api/stops)
-  db/        schema.sql and connection
-  ingest/    offline jobs (refresh, sync_sac, load_stops, build_edges)
-  planner/   tour search, ranking, opening rules, availability cache, GPX, hiking time, polyline
+  main.py    FastAPI app: routers, /api/health, static frontend (revalidated on every load)
+  admin.py   admin password (HTTP Basic) for data-changing routes; `python -m app.admin set-password`
+  backup.py  database backup; config.py: huthop.toml
+  api/       routes: huts (list, detail, /availability calendar), edges (connections, exclude), manual
+             (overrides, added huts), tours (/suggest, /{id}, /{id}/gpx, /stops), info (About dialog)
+  db/        schema.sql (tables, views, change-counter triggers) and connect() (migrations, WAL)
+  ingest/    offline jobs: refresh, sync_sac, load_stops, build_edges, profiles
+  planner/   graph (model, loading, cache), tours (beam search, scoring, rebuilding, diversity),
+             planning (search with free-bed rounds, rebuild by id: what the API calls), ranking (sub-scores,
+             "best"), geometry (retracing, shape), availability (cache, classification, calendar), opening,
+             gpx, hiking_time, polyline
   clients/   external APIs (SAC, hut-reservation.org)
 web/         static frontend (MapLibre + swisstopo tiles, no build step), ES modules in web/js/:
-             main (wiring), state (URL hash), map, huts, connections, tours, editor, util
-spikes/      Phase 0 experiments and findings
+             main (wiring), state (URL hash), map, huts (list, detail), beds (free-beds calendar),
+             connections, tours (form, results, sorting), tour-detail (timeline, profiles), editor,
+             info (About dialog), util
+server/      compose.yaml, update.sh (deploy) and refresh.sh (data refresh and graph build) for server2
+docs/        deployment plan, route graph figure
+spikes/      Phase 0 experiments and findings (historical)
 tests/
 ```
 

@@ -5,7 +5,7 @@ from datetime import date
 from app.backup import backup
 from app.db import connect
 from app.ingest.sync_sac import sync
-from app.planner.tours import cached_graph
+from app.planner.graph import cached_graph
 from tests.test_huts import HUTS
 
 
@@ -31,6 +31,7 @@ def test_graph_cache_follows_changes(tmp_path):
         conn.execute("INSERT INTO hut_override (hut_id, field, value, updated_at) VALUES (?, 'name', '\"New\"', 'now')", (a,))
     second = cached_graph(conn, 2)
     assert second is not first and second.huts[a].name == "New"
+    assert cached_graph(conn, 3).footprints is second.footprints  # one geometry cache for all trail limits
 
 
 def test_health(tmp_path):

@@ -8,6 +8,7 @@ from datetime import datetime
 import httpx
 
 BASE = "https://www.hut-reservation.org/api/v1"
+BOOKING_URL = "https://www.hut-reservation.org/reservation/book-hut/{}/wizard"  # page for users, by hrs id
 USER_AGENT = "HutHop/0.1 (private hut planner)"
 TIMEOUT_S = 20
 

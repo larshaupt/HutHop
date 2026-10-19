@@ -7,7 +7,8 @@ import pytest
 from app.planner import polyline
 from app.planner.geometry import M_PER_DEG_LAT, M_PER_DEG_LON, Footprints
 from app.planner.ranking import metrics
-from app.planner.tours import MAX_TOURS_PER_HUT, Graph, Hut, Leg, Night, Stop, Tour, TourRequest, diversify, suggest
+from app.planner.graph import Graph, Hut, Leg, Stop
+from app.planner.tours import MAX_TOURS_PER_HUT, Night, Tour, TourRequest, diversify, suggest
 
 LAT0, LON0 = 46.6, 8.0
 
@@ -110,3 +111,12 @@ def test_info_endpoint_lists_weights_and_impressum(tmp_path, monkeypatch):
     fresh = next(m for m in data["metrics"] if m["key"] == "fresh")
     assert fresh["weight"] == 5 and 0 < fresh["share"] < 1 and fresh["label"]
     assert data["impressum"] == {"name": "Someone"}  # empty fields are dropped
+
+
+def test_overlap_cache_is_bounded(monkeypatch):
+    monkeypatch.setattr("app.planner.geometry.MAX_CACHED_PAIRS", 3)
+    fp = footprints(**{f"e{i}": line((i, 0), (i + 1, 0)) for i in range(1, 7)})
+    for b in range(2, 7):
+        fp.overlap(1, b)
+    assert len(fp._overlap) <= 3
+    assert fp.overlap(1, 2) == fp.overlap(2, 1)  # recomputed after the cache started over

@@ -2,16 +2,15 @@
 
 import json
 import sqlite3
-from datetime import date
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.api.deps import get_db
+from app.clients import hut_reservation
 from app.planner import availability, opening
 
 router = APIRouter(prefix="/api/huts", tags=["huts"])
-HRS_BOOKING_URL = "https://www.hut-reservation.org/reservation/book-hut/{}/wizard"
 
 
 def summary(row: sqlite3.Row, codes: tuple[str, str]) -> dict:
@@ -84,7 +83,7 @@ def hut_detail(hut_id: int, conn: sqlite3.Connection = Depends(get_db)) -> dict:
         "owner": row["owner"],
         "description": row["description"],
         "website": row["website"],
-        "booking_url": HRS_BOOKING_URL.format(row["hrs_id"]) if row["hrs_id"] else None,
+        "booking_url": hut_reservation.BOOKING_URL.format(row["hrs_id"]) if row["hrs_id"] else None,
         "services": json.loads(row["services"] or "{}"),
         "photos": json.loads(row["photos"] or "[]"),
         "routes": routes,
@@ -103,17 +102,4 @@ def hut_availability(hut_id: int, people: int = Query(2, ge=1, le=30), conn: sql
         raise HTTPException(404, "hut not found")
     if not row["hrs_id"]:
         return {"bookable": False, "days": []}
-    availability.refresh(conn, {hut_id}, max_fetches=1)
-    fetch = conn.execute("SELECT fetched_at, ok FROM availability_fetch WHERE hut_id = ?", (hut_id,)).fetchone()
-    result = {"bookable": True, "booking_url": HRS_BOOKING_URL.format(row["hrs_id"]), "people": people,
-              "checked_at": fetch["fetched_at"] if fetch else None, "error": not (fetch and fetch["ok"]), "days": []}
-    dates = [date.fromisoformat(r[0]) for r in conn.execute(
-        "SELECT date FROM availability WHERE hut_id = ? AND date >= ? ORDER BY date", (hut_id, date.today().isoformat()))]
-    if result["error"] or not dates:
-        return result
-    snapshot = availability.Snapshot(conn, dates[0], dates[-1], people)
-    for day in dates:
-        a = snapshot.night(hut_id, True, day)
-        result["days"].append({"date": day.isoformat(), "state": a.state, "free_beds": a.free_beds,
-                               "total_places": a.total_places, "hut_status": a.hut_status})
-    return result
+    return availability.calendar(conn, hut_id, row["hrs_id"], people)

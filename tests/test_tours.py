@@ -8,7 +8,8 @@ from datetime import date
 
 import pytest
 
-from app.planner.tours import Graph, Hut, Leg, Stop, TourRequest, night_status, suggest
+from app.planner.graph import Graph, Hut, Leg, Stop
+from app.planner.tours import TourRequest, night_status, suggest
 
 SUMMER = "222221000122"   # catered June (partly) to October (partly)
 NONE = "2" * 12
@@ -91,26 +92,31 @@ def test_harder_limit_keeps_easier_alternative(graph):
 
 
 def test_tour_id_roundtrip_and_rebuild(graph):
-    from app.planner.tours import build_tour, parse_tour_id
+    from app.planner.tours import TourKey, build_tour, parse_tour_id
     graph.legs = {(leg.frm, leg.to, leg.category_limit): leg for legs in (
         *graph.stop_in.values(), *graph.hut_out.values(), *graph.stop_out.values()) for leg in legs}
-    tour = suggest(graph, TourRequest(date(2027, 7, 10), 2, 3, 6))[0]
-    assert tour.id == "2027-07-10_11-1-2-12_2-2-2"
-    start, places, limits = parse_tour_id(tour.id)
-    rebuilt = build_tour(graph, start, places, limits)
+    tour = suggest(graph, TourRequest(date(2027, 7, 10), 2, 3, 6.5))[0]
+    assert tour.id == "2027-07-10_11-1-2-12_2-2-2_3-6.5"
+    key = parse_tour_id(tour.id)
+    assert key.hours == (3, 6.5)
+    rebuilt = build_tour(graph, key)
     assert rebuilt.legs == tour.legs and [n.hut for n in rebuilt.nights] == [1, 2]
-    assert build_tour(graph, start, places, [3, 3, 3]).legs == tour.legs  # falls back to the stored easier variant
+    assert rebuilt.metrics == tour.metrics  # scored for the same hours as in the search
+    assert parse_tour_id("2027-07-10_11-1-2-12_2-2-2").hours == (3, 6)  # older links without hours
+    start = key.start_date
+    assert build_tour(graph, TourKey(start, key.places, [3, 3, 3])).legs == tour.legs  # falls back to an easier variant
     with pytest.raises(ValueError, match="no longer available"):
-        build_tour(graph, start, [11, 1, 12], [2, 2])   # there is no hut A → stop 12 edge
+        build_tour(graph, TourKey(start, [11, 1, 12], [2, 2]))   # there is no hut A → stop 12 edge
     with pytest.raises(ValueError, match="stop → hut"):
-        build_tour(graph, start, [1, 2, 12], [2, 2])    # must start at a stop
+        build_tour(graph, TourKey(start, [1, 2, 12], [2, 2]))    # must start at a stop
     with pytest.raises(ValueError, match="no longer available"):
-        build_tour(graph, start, [11, 2, 12], [2, 2])   # there is no stop 11 → hut B edge
-    for bad in ("2027-07-10_11-1", "2027-07-10_11-1-12_2", "2027-07-10_11-1-12_2-9", "nonsense"):
+        build_tour(graph, TourKey(start, [11, 2, 12], [2, 2]))   # there is no stop 11 → hut B edge
+    for bad in ("2027-07-10_11-1", "2027-07-10_11-1-12_2", "2027-07-10_11-1-12_2-9", "nonsense",
+                "2027-07-10_11-1-12_2-2_6-3", "2027-07-10_11-1-12_2-2_3-6_x"):
         with pytest.raises(ValueError):
             parse_tour_id(bad)
     # A night that doesn't fit any more is kept and marked: hut 3 is closed in August
-    late = build_tour(graph, date(2027, 7, 31), [11, 1, 3, 13], [2, 2, 2])
+    late = build_tour(graph, TourKey(date(2027, 7, 31), [11, 1, 3, 13], [2, 2, 2]))
     assert [n.status for n in late.nights] == ["catered", "closed"]
 
 
@@ -120,17 +126,15 @@ def test_gpx_filename_is_ascii():
     assert filename(tour) == "huthop-2027-06-26-elm-buelstafel-3n.gpx"
 
 
-def test_sort_orders_and_weights(graph):
+def test_best_follows_weights(graph):
     from app.planner import ranking
     base = dict(start_date=date(2027, 7, 10), nights=2, min_hours=3, max_hours=6)
     # Hut 2 (via B) is catered: certain opening data; hut 3 is self-service in July only (also certain).
-    # Make hut 3 higher so "altitude" prefers the C tour while "fit" ties.
+    # Make hut 3 higher so a weight on altitude alone prefers the C tour.
     graph.huts[3] = Hut(3, "Hut 3", 46.5, 8.5, 2_600_000, 1_150_000, NONE, SELF_JULY, False, None, 3000)
     graph.huts[2] = Hut(2, "Hut 2", 46.5, 7.8, 2_600_000, 1_150_000, SUMMER, NONE, True, None, 1600)
-    by_alt = suggest(graph, TourRequest(**base, sort="altitude"))
-    assert [t.nights[-1].hut for t in by_alt] == [3, 2]
     only_altitude = {m: 0 for m in ranking.METRICS} | {"altitude": 3}
-    best_alt = suggest(graph, TourRequest(**base, sort="best", weights=only_altitude))
+    best_alt = suggest(graph, TourRequest(**base, weights=only_altitude))
     assert [t.nights[-1].hut for t in best_alt] == [3, 2]
     assert 0 <= best_alt[0].score <= 1 and best_alt[0].metrics.altitude > best_alt[1].metrics.altitude
 
