@@ -57,9 +57,9 @@ button { cursor: pointer; }
 .logo { width: 30px; height: 30px; flex: none; }
 .logo path { fill: var(--accent); }
 .logo .logo-door { fill: #fff; }
-.about-btn { margin-left: auto; width: 32px; height: 32px; border: 0; border-radius: 50%; background: none; display: grid; place-items: center; }
-.about-btn:hover { background: var(--bg-soft); }
-.about-btn svg { width: 20px; height: 20px; fill: none; stroke: var(--text-soft); stroke-width: 1.8; stroke-linecap: round; }
+.about-btn { margin-left: auto; width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 50%; background: var(--bg); display: grid; place-items: center; }
+.about-btn:hover { background: var(--bg-soft); border-color: var(--text-faint); }
+.about-btn svg { width: 20px; height: 20px; fill: none; stroke: var(--text); stroke-width: 2; stroke-linecap: round; }
 
 /* ---------- About dialog ---------- */
 .about {
@@ -179,7 +179,7 @@ input[type="range"] { width: 100%; accent-color: var(--text); margin: 4px 0; }
 .range2-fill { position: absolute; top: 0; bottom: 0; background: var(--text); border-radius: 2px; }
 
 /* ---------- Results ---------- */
-.results-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 20px 6px; color: var(--text-soft); font-size: 13px; }
+.results-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 20px 6px; color: var(--text-soft); font-size: 13px; }
 .results-head strong { color: var(--text); font-size: 15px; }
 .sort { display: flex; align-items: center; gap: 6px; }
 .sort select { border: 0; background: transparent; font-weight: 500; color: var(--text); cursor: pointer; padding: 2px; }

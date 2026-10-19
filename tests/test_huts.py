@@ -106,3 +106,12 @@ def test_detail(client):
     assert detail["partial_months"][5] is True
     assert detail["booking_url"].endswith("/book-hut/7/wizard")
     assert client.get("/api/huts/999999").status_code == 404
+
+
+def test_frontend_is_revalidated():
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    for path in ("/", "/js/main.js", "/style.css"):
+        assert TestClient(app).get(path).headers["cache-control"] == "no-cache"

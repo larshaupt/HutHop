@@ -148,7 +148,7 @@ def test_metrics_values():
 def test_config_weights(tmp_path, monkeypatch):
     from app import config
     monkeypatch.setattr(config, "CONFIG_PATH", tmp_path / "huthop.toml")
-    assert config.ranking_weights()["fit"] == 3  # defaults without a file
+    assert config.ranking_weights()["fresh"] == 3  # defaults without a file
     (tmp_path / "huthop.toml").write_text("[ranking.weights]\naltitude = 5\n")
     assert config.ranking_weights() | {} == {**config.ranking.DEFAULT_WEIGHTS, "altitude": 5.0}
     (tmp_path / "huthop.toml").write_text("[ranking.weights]\naltitdue = 5\n")

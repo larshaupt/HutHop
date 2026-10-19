@@ -20,7 +20,7 @@ METRIC_INFO = {  # key: (label, what scores 1)
     "approach": ("Short approach", "Short first and last day: quick to the first hut and back to public transport."),
 }
 METRICS = tuple(METRIC_INFO)
-DEFAULT_WEIGHTS = {"fit": 3, "fresh": 3, "shape": 2, "beds": 2, "certainty": 2, "even": 1, "ease": 1, "altitude": 1,
+DEFAULT_WEIGHTS = {"fit": 0, "fresh": 3, "shape": 2, "beds": 2, "certainty": 2, "even": 1, "ease": 1, "altitude": 1,
                    "approach": 1}
 BED_VALUE = {"available": 1.0, "not_released": 0.5, "no_booking": 0.5, "not_checked": 0.3, "error": 0.3}
 

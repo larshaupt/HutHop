@@ -2,7 +2,7 @@
 
 [ranking.weights]
 # How much each sub-score counts towards the "best" tour order (0 = ignore). See app/planner/ranking.py.
-fit = 3        # days close to the middle of the requested hours per day
+fit = 0        # days close to the middle of the requested hours per day (off: the min–max hours are enough)
 fresh = 3      # no trail walked twice (e.g. up and down the same path)
 shape = 2      # a traverse (A to B) or a real loop, not out-and-back or zig-zag
 beds = 2       # free beds confirmed on hut-reservation.org

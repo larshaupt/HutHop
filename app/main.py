@@ -38,4 +38,14 @@ def health(conn: sqlite3.Connection = Depends(get_db)) -> dict:
     return {"status": "ok", "huts": hut_count, "edges": edge_count}
 
 
-app.mount("/", StaticFiles(directory=ROOT / "web", html=True), name="web")
+class Frontend(StaticFiles):
+    """The frontend files, revalidated on every load (cheap: 304 via ETag), so a deploy is never hidden behind a
+    stale browser cache."""
+
+    async def get_response(self, path, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+app.mount("/", Frontend(directory=ROOT / "web", html=True), name="web")

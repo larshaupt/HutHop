@@ -189,7 +189,8 @@ export async function runTourSearch() {
     }
     if (!res.ok) throw new Error(`${res.status}`);
     results = await res.json();
-    metricLabels = Object.fromEntries(((await loadInfo())?.metrics || []).map((m) => [m.key, m.label]));
+    // Only the criteria that count towards "best" (weight > 0) appear in the score tooltip.
+    metricLabels = Object.fromEntries(((await loadInfo())?.metrics || []).filter((m) => m.weight > 0).map((m) => [m.key, m.label]));
   } catch (err) {
     console.error(err);
     $("#tourResults").innerHTML = `<p class="empty">Search failed. Is the server running?</p>`;
