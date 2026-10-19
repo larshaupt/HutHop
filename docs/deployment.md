@@ -127,9 +127,9 @@ Deploying is a push to `main`; the rest is a few host cron jobs.
 | Task | How often | How |
 | --- | --- | --- |
 | App update | Every 5 min | Host cron: `/opt/huthop/server/update.sh >> /opt/huthop/update.log 2>&1`. The script waits 150 s so it doesn't overlap the website's update (whose `docker image prune` broke our pulls), retries the pull once, and prunes only HutHop images |
-| SAC sync | Mondays 4:00 | Host cron: `docker compose -f /opt/huthop/server/compose.yaml exec -T huthop python -m app.ingest.sync_sac >> /opt/huthop/sync.log 2>&1` |
+| Data refresh | Mondays 4:00 | Host cron (since 2026-10-19; before: SAC sync only): `/opt/huthop/server/refresh.sh >> /opt/huthop/refresh.log 2>&1`. Backup, SAC huts, stops, trails if swisstopo has a new edition, route graph rebuild only if something moved |
 | Availability | On demand | Fetched per hut and cached for 10 minutes by the app; no job |
-| Route graph rebuild | When swisstopo publishes new trails (about yearly), or after adding huts | By hand: `server/refresh.sh` (see Data workflow). Could replace the weekly SAC sync once a run has been watched |
+| Route graph rebuild | When swisstopo publishes new trails (about yearly), or after adding huts | Automatic in the Monday refresh when trails or positions changed; after adding huts by hand: `server/refresh.sh --rebuild` |
 | Backup | Nightly 3:30 | Host cron: `cd /opt/huthop/server && docker compose exec -T huthop python -m app.backup >> /opt/huthop/backup.log 2>&1`. Writes `data/backups/huthop-YYYY-MM-DD.db`, keeps 14. Sometimes copy one off the server |
 | Monitoring | Ongoing | Docker health check on `/api/health`; optionally a healthchecks.io ping after `update.sh`, like the website |
 
