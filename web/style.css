@@ -57,6 +57,36 @@ button { cursor: pointer; }
 .logo { width: 30px; height: 30px; flex: none; }
 .logo path { fill: var(--accent); }
 .logo .logo-door { fill: #fff; }
+.about-btn { margin-left: auto; width: 32px; height: 32px; border: 0; border-radius: 50%; background: none; display: grid; place-items: center; }
+.about-btn:hover { background: var(--bg-soft); }
+.about-btn svg { width: 20px; height: 20px; fill: none; stroke: var(--text-soft); stroke-width: 1.8; stroke-linecap: round; }
+
+/* ---------- About dialog ---------- */
+.about {
+  width: min(640px, calc(100vw - 32px)); max-height: min(86dvh, 820px); padding: 0; border: 0; border-radius: 16px;
+  box-shadow: var(--shadow); color: var(--text); background: var(--bg); overflow: hidden;
+}
+.about[open] { display: flex; flex-direction: column; }
+.about::backdrop { background: rgb(20 30 25 / .35); }
+.about-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px 8px; }
+.about-head h2 { margin: 0; font-size: 20px; }
+.about-close { width: 32px; height: 32px; border: 0; border-radius: 50%; background: var(--bg-soft); font-size: 20px; line-height: 1; }
+.about-close:hover { background: var(--bg-hover); }
+.about-body { padding: 0 20px 20px; overflow-y: auto; overscroll-behavior: contain; }
+.about-body h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-soft); margin: 22px 0 8px; }
+.about-body p, .about-body li { margin: 0 0 8px; }
+.about-body ul { padding-left: 18px; margin: 0; }
+.about-body a { color: var(--accent); }
+.about-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.about-table th { text-align: left; font-size: 12px; color: var(--text-soft); font-weight: 600; padding: 4px 6px 6px 0; border-bottom: 1px solid var(--line); }
+.about-table td { padding: 7px 6px 7px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+.about-table .num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.about-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12.5px; color: var(--text-soft); margin-bottom: 6px; }
+.about-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.about-legend .line { width: 16px; height: 4px; border-radius: 2px; display: inline-block; }
+@media (max-width: 720px) {
+  .about { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; }
+}
 
 .search { position: relative; margin: 0 16px 6px; }
 .search svg { position: absolute; left: 12px; top: 50%; width: 17px; height: 17px; transform: translateY(-50%);
@@ -80,7 +110,7 @@ button { cursor: pointer; }
 .tabs button:hover { color: var(--text); }
 .tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
 .tab { display: flex; flex-direction: column; min-height: 0; flex: 1; }
-.tab.scroll { overflow-y: auto; overscroll-behavior: contain; }
+.tab.scroll, #hutsTab { overflow-y: auto; overscroll-behavior: contain; }
 
 /* ---------- Filters ---------- */
 .filters { margin: 4px 16px 0; border-bottom: 1px solid var(--line); }
@@ -154,7 +184,8 @@ input[type="range"] { width: 100%; accent-color: var(--text); margin: 4px 0; }
 .sort { display: flex; align-items: center; gap: 6px; }
 .sort select { border: 0; background: transparent; font-weight: 500; color: var(--text); cursor: pointer; padding: 2px; }
 
-.list { list-style: none; margin: 0; padding: 0 8px 12px; overflow-y: auto; flex: 1; overscroll-behavior: contain; }
+/* The whole Huts tab scrolls (filters included), so the list never shrinks to a sliver on short screens. */
+.list { list-style: none; margin: 0; padding: 0 8px 12px; flex: none; }
 .hut {
   display: grid; grid-template-columns: 64px 1fr auto; gap: 12px; align-items: center;
   padding: 8px; border-radius: 10px; cursor: pointer; transition: background .1s;
@@ -437,6 +468,8 @@ code { font-size: 12px; background: var(--bg-soft); padding: 0 4px; border-radiu
   }
   .panel[data-sheet="half"] { transform: translateY(calc(92dvh - 55dvh)); }
   .panel[data-sheet="full"] { transform: translateY(0); }
+  /* Half open, the lower part of the panel is below the screen: leave room so the last items can scroll into view. */
+  .panel[data-sheet="half"] :is(#hutsTab, #toursTab, #detail, #tourDetail) { padding-bottom: calc(92dvh - 55dvh); }
   .sheet-handle {
     display: flex; justify-content: center; align-items: center; flex: none;
     height: 22px; border: 0; background: none; padding: 0;

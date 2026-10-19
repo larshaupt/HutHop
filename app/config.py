@@ -8,11 +8,19 @@ from app.planner import ranking
 CONFIG_PATH = ROOT / "huthop.toml"
 
 
+def _read() -> dict:
+    return tomllib.loads(CONFIG_PATH.read_text()) if CONFIG_PATH.exists() else {}
+
+
+def impressum() -> dict[str, str]:
+    """Operator details for the About dialog; empty fields are dropped."""
+    return {k: str(v).strip() for k, v in _read().get("impressum", {}).items() if str(v).strip()}
+
+
 def ranking_weights() -> dict[str, float]:
     """Weights for the "best" tour order. Unknown keys raise, so typos don't silently do nothing."""
     weights = dict(ranking.DEFAULT_WEIGHTS)
-    if CONFIG_PATH.exists():
-        configured = tomllib.loads(CONFIG_PATH.read_text()).get("ranking", {}).get("weights", {})
+    if configured := _read().get("ranking", {}).get("weights", {}):
         unknown = set(configured) - set(ranking.METRICS)
         if unknown:
             raise ValueError(f"{CONFIG_PATH.name}: unknown ranking weights {sorted(unknown)}")

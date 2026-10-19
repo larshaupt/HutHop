@@ -3,8 +3,17 @@
 [ranking.weights]
 # How much each sub-score counts towards the "best" tour order (0 = ignore). See app/planner/ranking.py.
 fit = 3        # days close to the middle of the requested hours per day
+fresh = 3      # no trail walked twice (e.g. up and down the same path)
+shape = 2      # a traverse (A to B) or a real loop, not out-and-back or zig-zag
 beds = 2       # free beds confirmed on hut-reservation.org
 certainty = 2  # full-month SAC opening data for every night (no unknown or partly-open months)
+even = 1       # days of similar length
 ease = 1       # easier trails (yellow over red-white over blue-white)
 altitude = 1   # higher huts, a simple proxy for scenery
 approach = 1   # short first and last day (to the first hut, back to public transport)
+
+[impressum]
+# Shown at the bottom of the About dialog (ⓘ next to the app name). Empty fields are left out.
+name = ""
+contact = ""   # e.g. an email address
+note = "Private, non-commercial project for planning hut tours. No guarantee for correctness of the data."

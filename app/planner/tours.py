@@ -14,16 +14,21 @@ from collections.abc import Callable
 from datetime import date, timedelta
 
 from app.planner import opening, ranking
+from app.planner.geometry import Footprints
 from app.planner.availability import NightAvailability
 
 Catering = opening.Wanted
 BEAM_WIDTH = 3000
 END_LEGS_PER_STATE = 2
+POOL_SIZE = 40  # varied tours returned per search; the browser sorts them
+MAX_TOURS_PER_HUT = 3  # in one result list, so the list isn't the same few huts in different orders
+MIN_RESULTS = 10
 LOOP_RADIUS_M = 3000
 START_RADIUS_M = 1500  # a chosen start stop means "start around here" (nearby bus stops, stations)
 UNKNOWN_PENALTY = 0.15
 PARTIAL_PENALTY = 0.05
 CATEGORY_PENALTY = 0.01  # per day and trail category above yellow: easier wins between otherwise equal tours
+RETRACE_PENALTY = 0.5  # per day, times the share of that day on trail already walked (a full day ≈ 3 h off target)
 # Nights without confirmed free beds rank lower (not bookable yet, no online booking, not checked).
 AVAILABILITY_PENALTY = {"available": 0.0, "not_released": 0.03, "no_booking": 0.03, "not_checked": 0.05, "error": 0.05}
 HRS_STATUS = {"SERVICED": "catered", "UNSERVICED": "self_service"}
@@ -77,6 +82,7 @@ class Graph:
     hut_out: dict[int, list[Leg]] = field(default_factory=dict)   # hut → hut
     stop_in: dict[int, list[Leg]] = field(default_factory=dict)   # stop → hut, keyed by hut
     stop_out: dict[int, list[Leg]] = field(default_factory=dict)  # hut → stop, keyed by hut
+    footprints: Footprints = field(default_factory=lambda: Footprints({}))  # route lines, for retracing and shape
 
 
 @dataclass(frozen=True)
@@ -91,7 +97,7 @@ class TourRequest:
     start_near: tuple[float, float] | None = None  # LV95 point; tours start within START_RADIUS_M of it
     loop: bool = False
     include_unknown: bool = True
-    max_results: int = 10
+    max_results: int = POOL_SIZE
     sort: ranking.Sort = "best"
     weights: dict[str, float] = field(default_factory=lambda: dict(ranking.DEFAULT_WEIGHTS))
 
@@ -155,7 +161,7 @@ def load_graph(conn: sqlite3.Connection, limit: int) -> Graph:
         for r in conn.execute(f"SELECT p.id, p.name, p.lat, p.lon, p.e_lv95, p.n_lv95, s.mode FROM place p "
                               f"JOIN stop s ON s.place_id = p.id WHERE p.id IN ({','.join('?' * len(ids))})", ids):
             stops[r["id"]] = Stop(r["id"], r["name"], r["lat"], r["lon"], r["e_lv95"], r["n_lv95"], r["mode"])
-    graph = Graph(huts, stops)
+    graph = Graph(huts, stops, footprints=Footprints({r["id"]: r["geometry"] for r in rows}))
     for r in rows:
         leg = Leg(r["id"], r["from_place"], r["to_place"], r["time_min"], r["distance_m"], r["ascent_m"],
                   r["descent_m"], r["max_category"], r["sac_time_min"], r["category_limit"])
@@ -236,6 +242,9 @@ def suggest(graph: Graph, req: TourRequest, availability: AvailabilityLookup | N
         p = UNKNOWN_PENALTY if n.status == "unknown" else PARTIAL_PENALTY if n.partial else 0.0
         return p + (AVAILABILITY_PENALTY[n.availability.state] if n.availability else 0.0)
 
+    def retrace_cost(legs: tuple[Leg, ...], leg: Leg) -> float:
+        return RETRACE_PENALTY * graph.footprints.repeated([x.edge_id for x in legs], leg.edge_id)
+
     # Day 1: stop → first hut. State: (cost, legs, nights)
     states = []
     for hut_id, legs in graph.stop_in.items():
@@ -255,7 +264,7 @@ def suggest(graph: Graph, req: TourRequest, availability: AvailabilityLookup | N
                 if leg.to in visited or not (lo <= leg.time_min <= hi) or not in_region(leg.to):
                     continue
                 if n := night(leg.to, i):
-                    nxt.append((cost + day_cost(leg) + penalty(n), legs + (leg,), nights + (n,)))
+                    nxt.append((cost + day_cost(leg) + retrace_cost(legs, leg) + penalty(n), legs + (leg,), nights + (n,)))
         states = heapq.nsmallest(BEAM_WIDTH, nxt, key=lambda s: s[0])
 
     # Last day: hut → stop. Then order all complete tours by the requested sort (see ranking.py).
@@ -264,7 +273,7 @@ def suggest(graph: Graph, req: TourRequest, availability: AvailabilityLookup | N
         start = graph.stops[legs[0].frm]
         ends = [leg for leg in graph.stop_out.get(legs[-1].to, ()) if lo <= leg.time_min <= hi and (
             not req.loop or math.hypot(graph.stops[leg.to].e - start.e, graph.stops[leg.to].n - start.n) <= LOOP_RADIUS_M)]
-        for leg in heapq.nsmallest(END_LEGS_PER_STATE, ends, key=day_cost):
+        for leg in heapq.nsmallest(END_LEGS_PER_STATE, ends, key=lambda x: day_cost(x) + retrace_cost(legs, x)):
             tours.append(scored(graph, legs + (leg,), nights, req.start_date, lo, hi, req.weights))
     key = ranking.sort_key(req.sort, req.weights)
     tours.sort(key=lambda t: key(t.metrics))
@@ -273,7 +282,9 @@ def suggest(graph: Graph, req: TourRequest, availability: AvailabilityLookup | N
 
 def scored(graph: Graph, legs: tuple[Leg, ...], nights: tuple[Night, ...], start_date: date, lo: float, hi: float,
            weights: dict[str, float]) -> Tour:
-    m = ranking.metrics(legs, nights, [graph.huts[n.hut].altitude for n in nights], lo, hi)
+    edge_ids = [leg.edge_id for leg in legs]
+    m = ranking.metrics(legs, nights, [graph.huts[n.hut].altitude for n in nights], lo, hi,
+                        retraced=graph.footprints.retraced(edge_ids), shape=graph.footprints.shape(edge_ids))
     return Tour(m.best(weights), legs, nights, start_date, m)
 
 
@@ -307,12 +318,22 @@ def build_tour(graph: Graph, start_date: date, places: list[int], limits: list[i
 
 
 def diversify(tours: list[Tour], k: int) -> list[Tour]:
-    """Best tours first, skipping ones that share most of their huts with an already chosen tour."""
+    """Best tours first, skipping ones that share most of their huts with an already chosen tour, or that use a
+    hut already in MAX_TOURS_PER_HUT chosen tours. The hut cap is lifted when it leaves fewer than MIN_RESULTS
+    (small areas with few huts)."""
     chosen: list[Tour] = []
-    for tour in tours:
-        huts = {n.hut for n in tour.nights}
-        if all(len(huts & {n.hut for n in c.nights}) / len(huts | {n.hut for n in c.nights}) < 0.6 for c in chosen):
-            chosen.append(tour)
-            if len(chosen) == k:
-                break
+    uses: dict[int, int] = {}
+    for capped in (True, False):
+        for tour in tours:
+            huts = {n.hut for n in tour.nights}
+            if tour in chosen or (capped and any(uses.get(h, 0) >= MAX_TOURS_PER_HUT for h in huts)):
+                continue
+            if all(len(huts & {n.hut for n in c.nights}) / len(huts | {n.hut for n in c.nights}) < 0.6 for c in chosen):
+                chosen.append(tour)
+                for h in huts:
+                    uses[h] = uses.get(h, 0) + 1
+                if len(chosen) == k:
+                    return chosen
+        if len(chosen) >= MIN_RESULTS:
+            break
     return chosen

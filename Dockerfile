@@ -16,6 +16,7 @@ RUN --mount=type=cache,target=/root/.cache/uv \
 
 COPY app ./app
 COPY web ./web
+COPY huthop.toml ./
 
 ENV PATH="/app/.venv/bin:$PATH" \
     HUTHOP_DB=/app/data/huthop.db

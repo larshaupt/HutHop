@@ -11,7 +11,7 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.api import edges, huts, manual, tours
+from app.api import edges, huts, info, manual, tours
 from app.api.deps import get_db
 from app.db import ROOT, connect
 
@@ -28,6 +28,7 @@ app.include_router(manual.router)
 app.include_router(huts.router)
 app.include_router(edges.router)
 app.include_router(tours.router)
+app.include_router(info.router)
 
 
 @app.get("/api/health", tags=["health"])

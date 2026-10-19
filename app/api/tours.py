@@ -33,7 +33,8 @@ class TourQuery(BaseModel):
     include_unknown: bool = True
     people: int = Field(2, ge=1, le=30)
     check_availability: bool = True
-    sort: ranking.Sort = Field("best", description="best (weights from huthop.toml), fit, time, ascent, altitude, beds")
+    sort: ranking.Sort = Field("best", description="order of the pool: best (weights from huthop.toml), fit, time, "
+                               "ascent, altitude, beds. The app always asks for best and re-sorts in the browser.")
 
     @model_validator(mode="after")
     def check_hours(self):
@@ -124,6 +125,7 @@ def tour_json(conn: sqlite3.Connection, graph: Graph, tours: list[Tour]) -> list
         "id": t.id,
         "score": round(t.score, 3),
         "metrics": {m: round(getattr(t.metrics, m), 3) for m in ranking.METRICS} if t.metrics else None,
+        "hut_altitude": round(t.metrics.mean_altitude) if t.metrics else None,  # for sorting in the browser
         "nights": len(t.nights),
         "time_min": sum(leg.time_min for leg in t.legs),
         "distance_m": sum(leg.distance_m for leg in t.legs),

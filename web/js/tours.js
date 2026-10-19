@@ -5,6 +5,7 @@ import { setState, state } from "./state.js";
 import { fitCoords, map, visibleBox } from "./map.js";
 import { selectHut } from "./huts.js";
 import { clearConnections } from "./connections.js";
+import { loadInfo } from "./info.js";
 
 const NIGHT_LABEL = { catered: "Catered", self_service: "Self-service", unknown: "No opening data", closed: "Closed" };
 const AVAIL_LABEL = {
@@ -18,13 +19,31 @@ const AVAIL_LABEL = {
 };
 const SORTS = { best: "Best", fit: "Day length", time: "Shortest", ascent: "Least ascent", altitude: "Highest huts",
   beds: "Most free beds" };
-const METRIC_LABEL = { fit: "Day length", beds: "Free beds", certainty: "Opening data", ease: "Easy trails",
-  altitude: "Hut altitude", approach: "Short approach" };
+// The search returns a pool of varied tours ordered by "best"; other orders are applied here, without a new search.
+const SORT_KEYS = {
+  best: (t) => [-t.score], fit: (t) => [-t.metrics.fit, -t.score], time: (t) => [t.time_min, -t.score],
+  ascent: (t) => [t.ascent_m, -t.score], altitude: (t) => [-(t.hut_altitude || 0), -t.score],
+  beds: (t) => [-t.metrics.beds, -t.score],
+};
+const PAGE = 10;
 const DAY_FMT = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short" });
 let results = null;
+let order = []; // results.tours in the chosen sort order; state.tour is a 1-based index into it
+let shown = PAGE;
+let metricLabels = {};
 const stopSearch = { timer: null, seq: 0 };
 
-const selectedTour = () => results?.tours[state.tour - 1];
+const selectedTour = () => order[state.tour - 1];
+
+function sortResults() {
+  const key = SORT_KEYS[state.tSort] || SORT_KEYS.best;
+  const cmp = (a, b) => {
+    const ka = key(a), kb = key(b);
+    for (let i = 0; i < ka.length; i++) if (ka[i] !== kb[i]) return ka[i] - kb[i];
+    return 0;
+  };
+  order = results ? results.tours.slice().sort(cmp) : [];
+}
 const formatDay = (iso) => DAY_FMT.format(new Date(`${iso}T12:00:00`));
 
 function todayIso() {
@@ -100,7 +119,7 @@ export function bindTourForm() {
   });
   $("#tourResults").addEventListener("mouseover", (e) => {
     const card = e.target.closest(".tour-card");
-    if (card && results) drawTour(results.tours[Number(card.dataset.n) - 1], { fit: false });
+    if (card && results) drawTour(order[Number(card.dataset.n) - 1], { fit: false });
   });
   $("#tourResults").addEventListener("mouseleave", () => clearTour());
   $("#tourDetail").addEventListener("click", (e) => {
@@ -152,7 +171,7 @@ export async function runTourSearch() {
     start_date: state.tDate, nights: state.tNights, min_hours: state.tMin, max_hours: state.tMax,
     limit: state.limit, catering: state.tCat, loop: state.tLoop && !!state.tStart,
     include_unknown: state.tUnknown, start_stop: state.tStart || null,
-    people: state.tPeople, check_availability: state.tAvail, sort: state.tSort,
+    people: state.tPeople, check_availability: state.tAvail, sort: "best",
     bbox: state.tBox ? state.tBox.split(",").map(Number) : null,
   };
   const button = $("#tFind");
@@ -170,6 +189,7 @@ export async function runTourSearch() {
     }
     if (!res.ok) throw new Error(`${res.status}`);
     results = await res.json();
+    metricLabels = Object.fromEntries(((await loadInfo())?.metrics || []).map((m) => [m.key, m.label]));
   } catch (err) {
     console.error(err);
     $("#tourResults").innerHTML = `<p class="empty">Search failed. Is the server running?</p>`;
@@ -178,12 +198,14 @@ export async function runTourSearch() {
     button.disabled = false;
     button.textContent = "Find tours";
   }
+  sortResults();
+  shown = Math.max(PAGE, Math.ceil(state.tour / PAGE) * PAGE);
   renderResults();
   if (selectedTour()) selectTour(state.tour);
 }
 
 function renderResults() {
-  const tours = results.tours;
+  const tours = order;
   if (!tours.length) {
     $("#tourResults").innerHTML = `<div class="empty"><b>No tours found.</b><br>Try a wider range of hours, a harder trail,
       fewer nights, ${state.tStart ? "another start, " : "a larger map area, "}or including huts without opening data.</div>`;
@@ -192,10 +214,17 @@ function renderResults() {
   $("#tourResults").innerHTML = `<div class="results-head"><span><strong>${tours.length}</strong> tours</span>
     <label class="sort">Sort <select id="tSort">${Object.entries(SORTS).map(([v, label]) =>
       `<option value="${v}"${v === state.tSort ? " selected" : ""}>${label}</option>`).join("")}</select></label></div>` +
-    tours.map(tourCard).join("");
+    tours.slice(0, shown).map(tourCard).join("") +
+    (tours.length > shown ? `<button class="btn wide" id="tMore">Show ${Math.min(PAGE, tours.length - shown)} more</button>` : "");
   $("#tSort").addEventListener("change", (e) => {
     setState({ tSort: e.target.value, tour: 0 });
-    runTourSearch();
+    sortResults();
+    shown = PAGE;
+    renderResults();
+  });
+  $("#tMore")?.addEventListener("click", () => {
+    shown += PAGE;
+    renderResults();
   });
 }
 
@@ -220,7 +249,7 @@ function tourCard(t, i) {
 /** "Best" score as a percentage; the tooltip lists the sub-scores (weights come from huthop.toml). */
 function scoreBadge(t) {
   if (!t.metrics) return "";
-  const parts = Object.entries(METRIC_LABEL).map(([k, label]) => `${label}: ${Math.round(t.metrics[k] * 100)}%`).join("\n");
+  const parts = Object.entries(metricLabels).map(([k, label]) => `${label}: ${Math.round(t.metrics[k] * 100)}%`).join("\n");
   return `<span class="score" title="Best score\n${parts}">${Math.round(t.score * 100)}%</span>`;
 }
 
@@ -248,7 +277,7 @@ function chainItems(chain) {
 
 // ---------- Tour detail ----------
 function selectTour(n) {
-  const t = results?.tours[n - 1];
+  const t = order[n - 1];
   if (!t) return;
   setState({ tour: n });
   renderTourDetail(t);
@@ -259,6 +288,19 @@ function selectTour(n) {
   clearConnections();
   drawTour(t);
   revealPanel();
+  checkTourBeds(t);
+}
+
+/** Tours beyond the first candidates of a search weren't checked for free beds; check them when opened. */
+async function checkTourBeds(t) {
+  if (!results.query.check_availability || !t.days.some((d) => d.night?.availability?.state === "not_checked")) return;
+  const res = await fetch(`/api/tours/${encodeURIComponent(t.id)}?people=${results.query.people}&check_availability=true`);
+  if (!res.ok) return;
+  const fresh = await res.json();
+  // Keep score and order (computed for the search's hours); take only the nights' availability.
+  t.days.forEach((d, i) => { d.night = fresh.days[i].night; });
+  t.availability = fresh.availability;
+  if (selectedTour() === t && !$("#tourDetail").hidden) renderTourDetail(t);
 }
 
 export function closeTour() {

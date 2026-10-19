@@ -24,6 +24,9 @@
           <h1>HutHop</h1>
           <p>Swiss mountain huts</p>
         </div>
+        <button class="about-btn" id="aboutBtn" aria-label="About HutHop" title="About HutHop, how tours are scored, impressum">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg>
+        </button>
       </header>
 
       <nav class="tabs" id="tabs" role="tablist">
@@ -195,6 +198,8 @@
     <span><i class="dot closed"></i>Closed</span>
     <span><i class="dot unknown"></i>No data</span>
   </div>
+
+  <dialog id="about" class="about" aria-label="About HutHop"></dialog>
 
   <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
   <script type="module" src="js/main.js"></script>
