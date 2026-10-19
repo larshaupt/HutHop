@@ -223,7 +223,7 @@ Notes:
   - booking endpoints (`preBook`, `submit`, `myReservations`, …) exist but are undocumented
 - Availability: `GET /api/v1/reservation/getHutAvailability?hutId=X&step=WIZARD` (no login, no CSRF) returns the whole booking window per day: `freeBeds`, `totalSleepingPlaces`, `freeBedsPerCategory`, `hutStatus` (SERVICED / UNSERVICED / CLOSED). `0/0` = dates not released yet, not "full".
 - Hut info: `GET /api/v1/reservation/hutInfo/{id}` (beds, categories, website). **No prices** in public responses. Details: `spikes/hut_reservation_findings.md`.
-- Booking is out of scope. Only read availability.
+- Booking is out of scope. Only read availability. (A booking helper that opens the booking pages is on the "Later" list.)
 
 ### 3.3 Routing: swissTLM3D hiking network
 
@@ -300,6 +300,9 @@ Answer the open questions before building:
 - **Tour editor:** build a tour by hand or edit a suggestion (swap a hut, add/remove a night, change start/end). Each day is a stored edge, so editing = choosing another edge from the hut's connections; recheck opening and free beds after each change.
 - SAC times as automatic overrides (per-grade calibration for T4+).
 - **Fewer redundant stops in a hut's connections:** the connection list (and the stored stop edges) shows every stop within reach, often several stops of the same bus line in a row. Keep only the closest stop per line/service, but keep stops served by different lines or modes (another bus line, a train, a cable car). Needs line information per stop (e.g. from the GTFS timetable data, which the public-transport-within-a-tour item needs anyway); the official stop list only has transport modes.
+- **Book all huts of a tour together:** one "Book this tour" step instead of a "Book" link per night. Two levels:
+  1. *Booking helper (small, safe):* a checklist of the tour's nights that opens each hut's hut-reservation.org booking page in turn (with the dates prefilled if the site accepts them in the link; to check), marks nights as booked by hand, and re-checks free beds right before. Huts without online booking show their website/phone instead.
+  2. *Real booking through hut-reservation.org (large, risky):* its booking endpoints (`preBook`, `submit`, …) are undocumented and need the user's own login, and the site's terms likely don't allow automated bookings. That would mean storing credentials and changing §3.2's "booking is out of scope". Only with the operator's permission; otherwise stay with level 1.
 - **Public transport within a tour:** allow a day to include a bus/train/cable car ride, e.g. walk down from a hut, take the bus through the valley, walk up to the next hut. Approach: combine a hut→stop edge, a timetable ride (or a simple stop→stop transfer table from the official timetable data), and a stop→hut edge into one day, counting only the walking time against the daily limit. Needs timetable data (e.g. opentransportdata.swiss GTFS) and a cap on rides per day.
 - Warnings for official trail closures and military shooting zones (geo.admin layers, see via-helvetica).
 - ~~Docker Compose for a home server~~ done (server2, see `docs/deployment.md`).
