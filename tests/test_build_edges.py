@@ -103,3 +103,24 @@ def test_huts_far_from_trails_get_no_edges(network, places):
     places = places + [{"id": 3, "kind": "hut", "node": places[0]["node"], "snap_m": 2000.0}]
     edges = search(network, places)
     assert not any(3 in (e["from_place"], e["to_place"]) for e in edges)
+
+
+def test_values_roundtrip():
+    heights = [1520, 1523, 1498, 2950, 2950, 0]
+    assert polyline.decode_values(polyline.encode_values(heights)) == heights
+
+
+def test_elevation_profile_per_point(network, places):
+    edges = edges_by_key(search(network, places))
+    e = edges[(1, 2, 1)]
+    assert polyline.decode_values(e["elevation"]) == [1000, 1000, 1000]  # one height per route point
+
+
+def test_added_column_on_old_database(tmp_path):
+    from app.db import connect
+
+    old = connect(tmp_path / "old.db")
+    old.execute("ALTER TABLE edge DROP COLUMN elevation")  # as deployed before profiles
+    old.close()
+    conn = connect(tmp_path / "old.db")
+    assert "elevation" in {r["name"] for r in conn.execute("PRAGMA table_info(edge)")}

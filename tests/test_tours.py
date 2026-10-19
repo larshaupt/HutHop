@@ -154,3 +154,15 @@ def test_config_weights(tmp_path, monkeypatch):
     (tmp_path / "huthop.toml").write_text("[ranking.weights]\naltitdue = 5\n")
     with pytest.raises(ValueError, match="altitdue"):
         config.ranking_weights()
+
+
+def test_gpx_has_heights():
+    from app.planner import polyline
+    from app.planner.gpx import to_gpx
+    stop = {"name": "S", "lat": 46.5, "lon": 7.8}
+    day = {"day": 1, "date": "2027-07-17", "from": stop, "to": stop, "time_min": 60, "distance_m": 1000,
+           "ascent_m": 10, "descent_m": 0, "max_category": 1,
+           "geometry": polyline.encode([(46.5, 7.8), (46.501, 7.801)]), "elevation": polyline.encode_values([1500, 1510])}
+    xml = to_gpx({"nights": 0, "days": [day]})
+    assert "<ele>1500</ele>" in xml and "<ele>1510</ele>" in xml
+    assert "<ele>" not in to_gpx({"nights": 0, "days": [day | {"elevation": None}]})

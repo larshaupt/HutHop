@@ -28,6 +28,7 @@ import shapely
 from pyproj import Transformer
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import dijkstra
+from scipy.spatial import cKDTree
 
 from app.db import ROOT, connect
 from app.planner import hiking_time, polyline
@@ -49,6 +50,7 @@ SIMPLIFY_M = 10.0
 SAME_EDGE_MIN = 1.0  # a higher category limit must save at least this much time to store a separate edge
 BATCH = 32
 LV95_TO_WGS84 = Transformer.from_crs("EPSG:2056", "EPSG:4326", always_xy=True)
+WGS84_TO_LV95 = Transformer.from_crs("EPSG:4326", "EPSG:2056", always_xy=True)
 
 
 @dataclass
@@ -187,6 +189,23 @@ def path_geometry(network: TrailNetwork, limit: int, nodes: list[int]) -> str:
     return polyline.encode(list(zip(lat, lon)))
 
 
+class Heights:
+    """Height (m) of route line points, from the nearest vertex of the 3D trail lines.
+
+    Route lines are simplified trail lines, so every point is a trail vertex (to within the polyline's ~1 m
+    rounding)."""
+
+    def __init__(self, network: TrailNetwork):
+        coords = np.concatenate([c for c in network.lines if len(c)])
+        self.tree, self.z = cKDTree(coords[:, :2]), coords[:, 2]
+
+    def profile(self, geometry: str) -> str:
+        """Encoded heights, one per point of the encoded route line."""
+        lat, lon = np.array(polyline.decode(geometry)).T
+        _, idx = self.tree.query(np.column_stack(WGS84_TO_LV95.transform(lon, lat)))
+        return polyline.encode_values([round(float(z)) for z in self.z[idx]])
+
+
 def search(network: TrailNetwork, places: list[dict], cutoff: float = CUTOFF_MIN) -> list[dict]:
     """All hut→hut, hut→stop and stop→hut edges within the cutoff, per category limit."""
     max_snap = {"hut": HUT_MAX_SNAP_M, "stop": STOP_MAX_SNAP_M}
@@ -212,8 +231,10 @@ def search(network: TrailNetwork, places: list[dict], cutoff: float = CUTOFF_MIN
             print(f"  limit {limit} {'reverse' if reverse else 'forward'}: {len(found)} edges so far", flush=True)
 
     edges = []
+    heights = Heights(network)
     for (_, _, limit), e in found.items():
         e["geometry"] = path_geometry(network, limit, e.pop("_nodes"))
+        e["elevation"] = heights.profile(e["geometry"])
         edges.append(e)
     return edges
 
@@ -306,9 +327,9 @@ def store(conn: sqlite3.Connection, places: list[dict], edges: list[dict], netwo
         conn.execute("DELETE FROM edge WHERE source = 'tlm_routed'")
         conn.executemany(
             "INSERT INTO edge (from_place, to_place, distance_m, ascent_m, descent_m, time_min, max_category, "
-            "category_limit, source, geometry, excluded, note, computed_at) VALUES (:from_place, :to_place, "
-            ":distance_m, :ascent_m, :descent_m, :time_min, :max_category, :category_limit, 'tlm_routed', "
-            ":geometry, :excluded, :note, :computed_at)",
+            "category_limit, source, geometry, elevation, excluded, note, computed_at) VALUES (:from_place, "
+            ":to_place, :distance_m, :ascent_m, :descent_m, :time_min, :max_category, :category_limit, 'tlm_routed', "
+            ":geometry, :elevation, :excluded, :note, :computed_at)",
             [e | dict(zip(("excluded", "note"), kept.get((e["from_place"], e["to_place"], e["category_limit"]),
                                                           (0, None))))
              | {"computed_at": computed_at} for e in edges],

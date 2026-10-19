@@ -2,12 +2,13 @@
 
 import json
 import sqlite3
+from datetime import date
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.api.deps import get_db
-from app.planner import opening
+from app.planner import availability, opening
 
 router = APIRouter(prefix="/api/huts", tags=["huts"])
 HRS_BOOKING_URL = "https://www.hut-reservation.org/reservation/book-hut/{}/wizard"
@@ -92,3 +93,27 @@ def hut_detail(hut_id: int, conn: sqlite3.Connection = Depends(get_db)) -> dict:
         "source": row["source"],
         "synced_at": row["synced_at"],
     }
+
+
+@router.get("/{hut_id}/availability")
+def hut_availability(hut_id: int, people: int = Query(2, ge=1, le=30), conn: sqlite3.Connection = Depends(get_db)) -> dict:
+    """The hut's booking calendar (hut-reservation.org, cached like tour checks), one entry per day."""
+    row = conn.execute("SELECT hrs_id FROM hut_effective WHERE id = ?", (hut_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "hut not found")
+    if not row["hrs_id"]:
+        return {"bookable": False, "days": []}
+    availability.refresh(conn, {hut_id}, max_fetches=1)
+    fetch = conn.execute("SELECT fetched_at, ok FROM availability_fetch WHERE hut_id = ?", (hut_id,)).fetchone()
+    result = {"bookable": True, "booking_url": HRS_BOOKING_URL.format(row["hrs_id"]), "people": people,
+              "checked_at": fetch["fetched_at"] if fetch else None, "error": not (fetch and fetch["ok"]), "days": []}
+    dates = [date.fromisoformat(r[0]) for r in conn.execute(
+        "SELECT date FROM availability WHERE hut_id = ? AND date >= ? ORDER BY date", (hut_id, date.today().isoformat()))]
+    if result["error"] or not dates:
+        return result
+    snapshot = availability.Snapshot(conn, dates[0], dates[-1], people)
+    for day in dates:
+        a = snapshot.night(hut_id, True, day)
+        result["days"].append({"date": day.isoformat(), "state": a.state, "free_beds": a.free_beds,
+                               "total_places": a.total_places, "hut_status": a.hut_status})
+    return result

@@ -121,6 +121,7 @@ Deploying is a push to `main`; the rest is a few host cron jobs.
 | SAC sync | Weekly or monthly | Host cron: `docker compose -f /opt/huthop/server/compose.yaml exec huthop python -m app.ingest.sync_sac` |
 | Availability | On demand | Fetched per hut and cached for a few hours by the app (Phase 4); no job |
 | Route graph rebuild | Yearly, by hand | On the Mac, see Data workflow |
+| Height profiles for old edges | Once (2026-10) | On the Mac: `uv run python -m app.ingest.profiles --export data/edge_profiles.json`, copy the file to `/opt/huthop/data/`, then `docker compose exec -T huthop python -m app.ingest.profiles --import data/edge_profiles.json`. Matched by route line, so ids may differ. New builds include profiles |
 | Backup | Nightly | Host cron: `cd /opt/huthop/server && docker compose exec -T huthop python -m app.backup >> /opt/huthop/backup.log 2>&1`. Writes `data/backups/huthop-YYYY-MM-DD.db`, keeps 14. Sometimes copy one off the server |
 | Monitoring | Ongoing | Docker health check; optionally a healthchecks.io ping after `update.sh`, like the website |
 

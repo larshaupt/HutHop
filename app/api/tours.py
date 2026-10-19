@@ -118,8 +118,8 @@ def search_with_availability(conn: sqlite3.Connection, graph: Graph, req: TourRe
 def tour_json(conn: sqlite3.Connection, graph: Graph, tours: list[Tour]) -> list[dict]:
     """The one serialisation of tours for the frontend (and for GPX export)."""
     edge_ids = sorted({leg.edge_id for t in tours for leg in t.legs})
-    geometry = dict(conn.execute(f"SELECT id, geometry FROM edge WHERE id IN ({','.join('?' * len(edge_ids))})",
-                                 edge_ids).fetchall()) if edge_ids else {}
+    lines = {r["id"]: r for r in conn.execute(
+        f"SELECT id, geometry, elevation FROM edge WHERE id IN ({','.join('?' * len(edge_ids))})", edge_ids)}
     return [{
         "id": t.id,
         "score": round(t.score, 3),
@@ -141,7 +141,8 @@ def tour_json(conn: sqlite3.Connection, graph: Graph, tours: list[Tour]) -> list
             "edge_id": leg.edge_id,
             **{k: getattr(leg, k) for k in ("time_min", "distance_m", "ascent_m", "descent_m", "max_category",
                                             "sac_time_min")},
-            "geometry": geometry.get(leg.edge_id),
+            "geometry": lines[leg.edge_id]["geometry"] if leg.edge_id in lines else None,
+            "elevation": lines[leg.edge_id]["elevation"] if leg.edge_id in lines else None,  # heights per point
             "night": night_json(t.nights[i], graph.huts[leg.to].hrs_id) if i < len(t.nights) else None,
         } for i, leg in enumerate(t.legs)],
     } for t in tours]

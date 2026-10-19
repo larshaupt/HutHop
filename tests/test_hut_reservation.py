@@ -26,3 +26,38 @@ def test_classify():
     assert classify("CLOSED", None, 0, None, 1, released_later=True).state == "closed"
     assert classify("CLOSED", None, 0, None, 1, released_later=False).state == "not_released"
     assert classify("SERVICED", None, 0, None, 1, released_later=True).state == "not_released"
+
+
+def test_hut_calendar_endpoint(tmp_path, monkeypatch):
+    from datetime import date, timedelta
+
+    from fastapi.testclient import TestClient
+
+    from app.api.deps import get_db
+    from app.db import connect
+    from app.ingest.sync_sac import sync
+    from app.main import app
+    from tests.test_huts import HUTS
+
+    conn = connect(tmp_path / "test.db")
+    sync(conn, HUTS[:2])
+    bookable, other = (r[0] for r in conn.execute("SELECT place_id FROM hut ORDER BY sac_id"))
+    with conn:
+        conn.execute("UPDATE hut SET hrs_id = 99 WHERE place_id = ?", (bookable,))
+        conn.execute("UPDATE hut SET hrs_id = NULL WHERE place_id = ?", (other,))
+    today = date.today()
+    rows = [{"date": (today + timedelta(days=i)).isoformat(), "hut_status": s, "free_beds": f, "total_places": t}
+            for i, (s, f, t) in enumerate([("SERVICED", 12, 40), ("SERVICED", 1, 40), ("CLOSED", 0, 0)])]
+    calls = []
+    monkeypatch.setattr("app.clients.hut_reservation.fetch_calendar", lambda hrs_id, client: calls.append(hrs_id) or rows)
+    app.dependency_overrides[get_db] = lambda: conn
+    try:
+        c = TestClient(app)
+        data = c.get(f"/api/huts/{bookable}/availability", params={"people": 2}).json()
+        assert [d["state"] for d in data["days"]] == ["available", "full", "not_released"]
+        assert data["days"][0]["free_beds"] == 12 and not data["error"]
+        c.get(f"/api/huts/{bookable}/availability")
+        assert calls == [99]  # second call served from the cache
+        assert c.get(f"/api/huts/{other}/availability").json() == {"bookable": False, "days": []}
+    finally:
+        app.dependency_overrides.clear()

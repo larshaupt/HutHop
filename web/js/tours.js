@@ -1,5 +1,6 @@
 // Tour planner: form, search, result cards, tour detail, GPX export and tour drawing on the map.
-import { $, CATEGORY, EMPTY, categoryColor, decodePolyline, esc, formatMinutes, modeLabel, revealPanel } from "./util.js";
+import { $, CATEGORY, EMPTY, categoryColor, decodePolyline, decodeValues, distanceM, esc, formatMinutes, modeLabel,
+  revealPanel } from "./util.js";
 import { setState, state } from "./state.js";
 import { fitCoords, map, visibleBox } from "./map.js";
 import { selectHut } from "./huts.js";
@@ -280,9 +281,39 @@ function stopLabel(p) {
   return `<span class="mode">${modeLabel(p.mode)}</span> ${esc(p.name)}`;
 }
 
+/** Distance (m) and height (m) of each route point of a day, or null without a height profile. */
+function dayProfile(d) {
+  const points = decodePolyline(d.geometry || ""), heights = decodeValues(d.elevation || "");
+  if (points.length < 2 || heights.length !== points.length) return null;
+  let dist = 0;
+  return points.map((p, i) => [(dist += i ? distanceM(points[i - 1], p) : 0), heights[i]]);
+}
+
+/** Small height profile of one day. All days share the height scale, and widths follow the day's distance. */
+function profileChart(profile, scale, color) {
+  if (!profile) return "";
+  const W = 300, H = 52, length = profile[profile.length - 1][0];
+  const x = (m) => ((m / length) * W).toFixed(1);
+  const y = (z) => (H - 2 - ((z - scale.min) / (scale.max - scale.min || 1)) * (H - 4)).toFixed(1);
+  const line = profile.map(([m, z], i) => `${i ? "L" : "M"}${x(m)},${y(z)}`).join("");
+  const zs = profile.map(([, z]) => z);
+  const hi = Math.max(...zs), lo = Math.min(...zs);
+  return `<div class="profile" title="Height profile: ${lo.toLocaleString("de-CH")}–${hi.toLocaleString("de-CH")} m">
+      <div class="profile-plot"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:${Math.max(30, (length / scale.length) * 100)}%">
+        <path d="${line}L${W},${H}L0,${H}Z" fill="${color}" opacity=".14"/>
+        <path d="${line}" fill="none" stroke="${color}" stroke-width="1.6" vector-effect="non-scaling-stroke"/>
+      </svg></div>
+      <div class="profile-axis"><span>${hi.toLocaleString("de-CH")} m</span><span>${lo.toLocaleString("de-CH")} m</span></div>
+    </div>`;
+}
+
 function renderTourDetail(t) {
   const start = t.days[0].from, end = t.days[t.days.length - 1].to;
-  const rows = t.days.map((d) => {
+  const profiles = t.days.map(dayProfile);
+  const heights = profiles.filter(Boolean).flatMap((p) => p.map(([, z]) => z));
+  const scale = { min: Math.min(...heights), max: Math.max(...heights),
+    length: Math.max(...profiles.filter(Boolean).map((p) => p[p.length - 1][0])) };
+  const rows = t.days.map((d, i) => {
     const cat = CATEGORY[d.max_category];
     const sac = d.sac_time_min ? ` · SAC ${formatMinutes(d.sac_time_min)}` : "";
     const from = d.from.kind === "stop" ? stopLabel(d.from) : esc(d.from.name);
@@ -300,6 +331,7 @@ function renderTourDetail(t) {
           <div>${from} → ${to}</div>
           <div class="tl-meta"><b>${formatMinutes(d.time_min)}</b> · ${(d.distance_m / 1000).toFixed(1)} km ·
             ↑ ${d.ascent_m} m · ↓ ${d.descent_m} m · <span style="color:${cat.color}">${cat.name}</span>${sac}</div>
+          ${profileChart(profiles[i], scale, cat.color)}
         </div></li>${night}`;
   }).join("");
   $("#tourDetail").innerHTML = `

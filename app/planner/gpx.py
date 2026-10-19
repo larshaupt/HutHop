@@ -1,7 +1,8 @@
 """GPX 1.1 export of a tour: one track per day, waypoints for start, huts and end.
 
 Works on the tour JSON produced by the API (`tour_json`), so the file matches what the user sees. Route lines
-are the simplified edge geometries (10 m tolerance) without elevation; swisstopo and most apps add it on import.
+are the simplified edge geometries (10 m tolerance) with swissTLM3D heights, so Komoot and the swisstopo app show
+the right ascent.
 """
 
 import re
@@ -45,8 +46,12 @@ def to_gpx(tour: dict) -> str:
                 f"hardest: {CATEGORY_NAME[d['max_category']]}")
         name = f"Day {d['day']}: {d['from']['name']} → {d['to']['name']}"
         points = polyline.decode(d["geometry"] or "")
+        heights = polyline.decode_values(d.get("elevation") or "")
+        if len(heights) != len(points):  # no profile (edges built before profiles, or drawn by hand)
+            heights = [None] * len(points)
         out.append(f"  <trk><name>{escape(name)}</name><desc>{escape(desc)}</desc><type>hiking</type><trkseg>")
-        out.extend(f'    <trkpt lat="{lat:.5f}" lon="{lon:.5f}"/>' for lat, lon in points)
+        out.extend(f'    <trkpt lat="{lat:.5f}" lon="{lon:.5f}"><ele>{z}</ele></trkpt>' if z is not None
+                   else f'    <trkpt lat="{lat:.5f}" lon="{lon:.5f}"/>' for (lat, lon), z in zip(points, heights))
         out.append("  </trkseg></trk>")
     out.append("</gpx>")
     return "\n".join(out) + "\n"

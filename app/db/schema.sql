@@ -88,6 +88,7 @@ CREATE TABLE IF NOT EXISTS edge (
   sac_time_min   INTEGER,
   sac_grade      TEXT,
   geometry       TEXT,                -- simplified encoded polyline
+  elevation      TEXT,                -- height (m) of each geometry point, encoded (polyline.encode_values)
   excluded       INTEGER DEFAULT 0,
   note           TEXT,
   computed_at    TEXT,

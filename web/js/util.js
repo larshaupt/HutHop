@@ -62,6 +62,30 @@ export function decodePolyline(text) {
   return points;
 }
 
+/** Encoded whole numbers (heights in metres, one per route point; see app/planner/polyline.py) → [z, …]. */
+export function decodeValues(text) {
+  const values = [];
+  let index = 0, v = 0;
+  while (index < text.length) {
+    let shift = 0, result = 0, b;
+    do {
+      b = text.charCodeAt(index++) - 63;
+      result |= (b & 0x1f) << shift;
+      shift += 5;
+    } while (b >= 0x20);
+    v += result & 1 ? ~(result >> 1) : result >> 1;
+    values.push(v);
+  }
+  return values;
+}
+
+/** Distance in metres between two [lon, lat] points (haversine). */
+export function distanceM([lon1, lat1], [lon2, lat2]) {
+  const rad = Math.PI / 180, dLat = (lat2 - lat1) * rad, dLon = (lon2 - lon1) * rad;
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLon / 2) ** 2;
+  return 12742000 * Math.asin(Math.sqrt(h));
+}
+
 /** The most relevant transport mode of a stop, for labels. */
 export function mainMode(mode) {
   const modes = (mode || "").split(",");
