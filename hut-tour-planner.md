@@ -382,6 +382,7 @@ Answer the open questions before building:
 
 - ~~GPX export~~ done: `GET /api/tours/{id}/gpx`, one track per day + waypoints. Tour ids are `date_places_limits` (e.g. `2027-07-17_123-45-67-89_2-2-3`), stable across edge rebuilds, so they also serve sharing, saved tours and the editor.
 - Saved tours, non-SAC huts, PWA/offline, better ranking. Elevation in GPX (from swissTLM3D Z).
+- **Export to Komoot and the swisstopo app.** Neither seems to have a public import API (Komoot's API is for partners only; no documented import link for the swisstopo app; check both before building), so both go through GPX files. Komoot: one GPX per day (it imports one tour per file), then its upload page (komoot.com/upload). swisstopo app: on a phone, "share" the GPX to the app, which imports it as a track. map.geo.admin.ch can show a GPX by URL only if the file is publicly reachable, which HutHop isn't (tailnet only). Needs elevation in the GPX, so both apps show correct ascent.
 - **Custom sorting and a "best" score** for tour suggestions (user-defined quality metric).
 - **Tour editor:** build a tour by hand or edit a suggestion (swap a hut, add/remove a night, change start/end). Each day is a stored edge, so editing = choosing another edge from the hut's connections; recheck opening and free beds after each change.
 - SAC times as automatic overrides (per-grade calibration for T4+).
