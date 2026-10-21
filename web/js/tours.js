@@ -5,7 +5,7 @@ import { fitCoords, map, visibleBox } from "./map.js";
 import { selectHut } from "./huts.js";
 import { clearConnections } from "./connections.js";
 import { loadInfo } from "./info.js";
-import { renderTourDetail } from "./tour-detail.js";
+import { renderStopOptions, renderTourDetail } from "./tour-detail.js";
 
 const SORTS = { best: "Best", time: "Shortest", ascent: "Least ascent", altitude: "Highest huts",
   beds: "Most free beds" };
@@ -64,6 +64,7 @@ export function syncTourForm() {
   $("#tLoopField").hidden = !state.tStart;
   $("#tAvail").checked = state.tAvail;
   $("#tUnknown").checked = state.tUnknown;
+  $("#tLifts").checked = state.tLifts;
   $("#tStartPicked").hidden = !state.tStart;
   $("#tStartInput").hidden = !!state.tStart;
   $("#tStartName").textContent = state.tStartName;
@@ -91,6 +92,7 @@ export function bindTourForm() {
   }
   $("#tAvail").addEventListener("change", (e) => setState({ tAvail: e.target.checked }));
   $("#tUnknown").addEventListener("change", (e) => setState({ tUnknown: e.target.checked }));
+  $("#tLifts").addEventListener("change", (e) => setState({ tLifts: e.target.checked }));
   bindStopPicker();
 
   $("#tourForm").addEventListener("submit", (e) => {
@@ -111,6 +113,10 @@ export function bindTourForm() {
   $("#tourResults").addEventListener("mouseleave", () => clearTour());
   $("#tourDetail").addEventListener("click", (e) => {
     if (e.target.closest("#tourBack")) { closeTour(); return; }
+    const stops = e.target.closest("[data-stops]");
+    if (stops) { showStopOptions(stops.dataset.stops); return; }
+    const pick = e.target.closest("[data-tour-id]");
+    if (pick) { switchStops(pick.dataset.tourId); return; }
     const hut = e.target.closest("[data-hut]");
     if (hut) { e.preventDefault(); selectHut(Number(hut.dataset.hut)); return; }
     const day = e.target.closest("[data-day]");
@@ -157,7 +163,7 @@ export async function runTourSearch() {
   const body = {
     start_date: state.tDate, nights: state.tNights, min_hours: state.tMin, max_hours: state.tMax,
     limit: state.limit, catering: state.tCat, loop: state.tLoop && !!state.tStart,
-    include_unknown: state.tUnknown, start_stop: state.tStart || null,
+    include_unknown: state.tUnknown, start_stop: state.tStart || null, avoid_lifts: state.tLifts,
     people: state.tPeople, check_availability: state.tAvail,
     bbox: state.tBox ? state.tBox.split(",").map(Number) : null,
   };
@@ -225,7 +231,7 @@ function tourCard(t, i) {
   return `<article class="tour-card" data-n="${i + 1}" tabindex="0">
     <div class="tour-head">
       <div><b>${t.nights} night${t.nights > 1 ? "s" : ""}</b> · ${(t.distance_m / 1000).toFixed(0)} km · ↑ ${t.ascent_m.toLocaleString("de-CH")} m</div>
-      <div class="tour-flags">${availBadge(t)}${scoreBadge(t)}</div>
+      <div class="tour-flags">${transitBadge(t)}${availBadge(t)}${scoreBadge(t)}</div>
     </div>
     <div class="tour-body">
       <ol class="chain">${chainItems(chain)}</ol>
@@ -239,6 +245,14 @@ function scoreBadge(t) {
   if (!t.metrics) return "";
   const parts = Object.entries(metricLabels).map(([k, label]) => `${label}: ${Math.round(t.metrics[k] * 100)}%`).join("\n");
   return `<span class="score" title="Best score\n${parts}">${Math.round(t.score * 100)}%</span>`;
+}
+
+/** Card badge when the first connection reaches the first hut late, or the last one leaves early. */
+function transitBadge(t) {
+  const late = t.access?.late, early = t.exit?.early;
+  if (!late && !early) return "";
+  const why = [late && `first connection: at the hut from ${t.access.hut_from}`, early && `last connection: leave the last hut by ${t.exit.leave_by}`];
+  return `<span class="flag" title="${why.filter(Boolean).join("; ")}">Tight connection</span>`;
 }
 
 /** Card badge: free beds on every night, or how many nights are not confirmed. */
@@ -294,6 +308,33 @@ async function checkTourBeds(t) {
   t.availability = fresh.availability;
   renderResults();  // the card's badge, for when the list is shown again
   if (selectedTour() === t && !$("#tourDetail").hidden) renderTourDetail(t);
+}
+
+/** Other stops for the start or end of the selected tour, loaded when asked for. */
+async function showStopOptions(role) {
+  const box = $(`#stopOptions-${role}`);
+  if (!box) return;
+  if (!box.hidden) { box.hidden = true; return; }
+  box.hidden = false;
+  box.innerHTML = `<p class="hint">Loading…</p>`;
+  const res = await fetch(`/api/tours/${encodeURIComponent(selectedTour().id)}/stops`);
+  if (!res.ok) { box.innerHTML = `<p class="hint">Could not load other stops.</p>`; return; }
+  renderStopOptions(role, (await res.json())[role]);
+}
+
+/** Replace the selected tour by the same huts with another start or end stop (keeps its place in the list). */
+async function switchStops(tourId) {
+  const t = selectedTour();
+  if (!t || tourId === t.id) return;
+  const q = results.query;
+  const res = await fetch(`/api/tours/${encodeURIComponent(tourId)}?people=${q.people}&check_availability=${q.check_availability}`);
+  if (!res.ok) return;
+  const fresh = await res.json();
+  results.tours[results.tours.indexOf(t)] = fresh;
+  order[state.tour - 1] = fresh;
+  renderResults();
+  renderTourDetail(fresh);
+  drawTour(fresh);
 }
 
 export function closeTour() {

@@ -1,11 +1,16 @@
-"""Load the official Swiss timetable (GTFS, opentransportdata.swiss): which lines serve each stop, and how often.
+"""Load the official Swiss timetable (GTFS, opentransportdata.swiss): which lines serve each stop, how often, and on
+which days from when to when.
 
-    uv run python -m app.ingest.load_timetable                # download if a new edition is out (~90 MB), then load
+    uv run python -m app.ingest.load_timetable                # download new editions (~90 MB each), then load
     uv run python -m app.ingest.load_timetable --no-download
 
-Uses next year's timetable as soon as it is published (in autumn), so the summer departures are for the coming
-season. Reads the zip directly (stop_times.txt alone is 1.2 GB unpacked) in one streaming pass: ~30 s, ~250 MB RAM.
-build_edges keeps only the closest stop of each line per hut; the connection list shows lines and departures.
+Keeps this year's and (once published, in autumn) next year's timetable, so tours can be planned for any date
+from now to the end of next season. Reads each zip directly (stop_times.txt alone is 1.2 GB unpacked) in one
+streaming pass: ~25 s and ~600 MB RAM per year. Stores
+  - stop_line: lines per stop with summer departures (newest timetable), for build_edges (closest stop of each
+    line per hut) and the connection list;
+  - timetable, timetable_service, stop_service: per stop and service pattern the first and last time and number
+    of calls, and the days each pattern runs, so the planner knows whether a stop is served on a date.
 """
 
 import argparse
@@ -19,7 +24,9 @@ import sqlite3
 import zipfile
 from collections import defaultdict
 from collections.abc import Iterator
+from dataclasses import dataclass, field
 from datetime import date, timedelta
+from pathlib import Path
 
 import httpx
 
@@ -27,39 +34,67 @@ from app.db import ROOT, connect
 
 PERMALINK = "https://data.opentransportdata.swiss/en/dataset/timetable-{year}-gtfs2020/permalink"
 GTFS_DIR = ROOT / "data/gtfs"
-GTFS_ZIP = GTFS_DIR / "gtfs.zip"
-EDITION = GTFS_DIR / "edition.json"
 USER_AGENT = "HutHop/0.1 (private hut planner)"
-SUMMER = ((7, 1), (8, 31))  # departures are averaged over the hut season of the timetable year
+SUMMER = ((7, 1), (8, 31))  # summer departures per line are averaged over the hut season of the timetable year
+
+
+def feed_path(year: int) -> Path:
+    return GTFS_DIR / f"gtfs_{year}.zip"
+
+
+def _edition_path(year: int) -> Path:
+    return GTFS_DIR / f"edition_{year}.json"
 
 
 def download(force: bool = False, today: date | None = None) -> bool:
-    """Download the newest timetable (next year's if already published, else this year's) if its edition changed.
-    Returns True if a new file was downloaded."""
+    """Download this year's and next year's timetable (if published yet) where a new edition is out, and delete
+    older years. Returns True if anything was downloaded."""
     year = (today or date.today()).year
-    client = httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=300)
-    href = None
-    for y in (year + 1, year):
-        res = client.get(PERMALINK.format(year=y))  # redirects to the current dated file
-        if res.is_redirect:
-            href = res.headers["location"]
-            break
-    if href is None:
-        raise RuntimeError(f"no GTFS timetable found for {year} or {year + 1}")
-    known = json.loads(EDITION.read_text()) if EDITION.exists() else None
-    if known == {"href": href} and GTFS_ZIP.exists() and not force:
-        print(f"timetable: up to date ({href.rsplit('/', 1)[-1]})")
-        return False
-    print(f"timetable: downloading {href}")
     GTFS_DIR.mkdir(parents=True, exist_ok=True)
-    partial = GTFS_ZIP.with_suffix(".part")
-    with client.stream("GET", href, follow_redirects=True) as res, partial.open("wb") as f:
-        res.raise_for_status()
-        for chunk in res.iter_bytes(1 << 20):
-            f.write(chunk)
-    partial.replace(GTFS_ZIP)
-    EDITION.write_text(json.dumps({"href": href}, indent=1))
-    return True
+    _adopt_legacy_file()
+    client = httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=300)
+    updated, found = False, False
+    for y in (year, year + 1):
+        res = client.get(PERMALINK.format(year=y))  # redirects to the current dated file
+        if not res.is_redirect:
+            continue
+        found = True
+        href = res.headers["location"]
+        known = json.loads(_edition_path(y).read_text()) if _edition_path(y).exists() else None
+        if known == {"href": href} and feed_path(y).exists() and not force:
+            print(f"timetable {y}: up to date ({href.rsplit('/', 1)[-1]})")
+            continue
+        print(f"timetable {y}: downloading {href}")
+        partial = feed_path(y).with_suffix(".part")
+        with client.stream("GET", href, follow_redirects=True) as res, partial.open("wb") as f:
+            res.raise_for_status()
+            for chunk in res.iter_bytes(1 << 20):
+                f.write(chunk)
+        partial.replace(feed_path(y))
+        _edition_path(y).write_text(json.dumps({"href": href}, indent=1))
+        updated = True
+    if not found:
+        raise RuntimeError(f"no GTFS timetable found for {year} or {year + 1}")
+    for old in GTFS_DIR.glob("gtfs_*.zip"):
+        if int(old.stem.split("_")[1]) < year:
+            old.unlink()
+            _edition_path(int(old.stem.split("_")[1])).unlink(missing_ok=True)
+    return updated
+
+
+def _adopt_legacy_file() -> None:
+    """Before both years were kept, one timetable was stored as gtfs.zip: keep it under its year's name."""
+    legacy, edition = GTFS_DIR / "gtfs.zip", GTFS_DIR / "edition.json"
+    if legacy.exists() and edition.exists():
+        match = re.search(r"gtfs_fp(\d{4})", json.loads(edition.read_text())["href"])
+        if match and not feed_path(int(match[1])).exists():
+            legacy.replace(feed_path(int(match[1])))
+            edition.replace(_edition_path(int(match[1])))
+
+
+def feed_files() -> list[Path]:
+    """The timetables on disk, oldest first."""
+    return sorted(GTFS_DIR.glob("gtfs_*.zip"))
 
 
 def _rows(z: zipfile.ZipFile, name: str) -> Iterator[dict[str, str]]:
@@ -68,9 +103,9 @@ def _rows(z: zipfile.ZipFile, name: str) -> Iterator[dict[str, str]]:
     return csv.DictReader(io.TextIOWrapper(z.open(name), encoding="utf-8-sig"))
 
 
-def _seconds(hms: str) -> int:
-    h, m, s = (int(x) for x in hms.split(":"))
-    return h * 3600 + m * 60 + s
+def _minutes(hms: str) -> int:
+    """'25:10:00' → 1510 (times after midnight belong to the service day before)."""
+    return int(hms[:-6]) * 60 + int(hms[-5:-3])
 
 
 def _day(yyyymmdd: str) -> date:
@@ -89,77 +124,155 @@ def line_label(category: str, short_name: str) -> str:
     return f"{category} {short_name}".strip()
 
 
-def service_days(z: zipfile.ZipFile, first: date, last: date) -> dict[str, int]:
-    """Days each service runs between first and last (calendar.txt weekdays plus calendar_dates.txt exceptions)."""
-    window = [first + timedelta(d) for d in range((last - first).days + 1)]
-    weekly = {r["service_id"]: (r, _day(r["start_date"]), _day(r["end_date"])) for r in _rows(z, "calendar.txt")}
+def service_days(z: zipfile.ZipFile, start: date, end: date) -> dict[str, int]:
+    """The days each service runs, as a bit mask: bit i = start + i days (calendar.txt weekdays within its date
+    range, plus and minus the exceptions in calendar_dates.txt)."""
+    n = (end - start).days + 1
+    by_weekday = [0] * 7
+    for i in range(n):
+        by_weekday[(start + timedelta(i)).weekday()] |= 1 << i
     names = ("monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday")
-
-    def by_calendar(service: str, d: date) -> bool:
-        row = weekly.get(service)
-        return bool(row) and row[1] <= d <= row[2] and row[0][names[d.weekday()]] == "1"
-
-    days = {s: sum(by_calendar(s, d) for d in window) for s in weekly}
+    days: dict[str, int] = {}
+    for r in _rows(z, "calendar.txt"):
+        first = max(0, (_day(r["start_date"]) - start).days)
+        last = min(n - 1, (_day(r["end_date"]) - start).days)
+        in_range = ((1 << (last + 1)) - 1) ^ ((1 << first) - 1) if first <= last else 0
+        weekly = 0
+        for k, name in enumerate(names):
+            if r[name] == "1":
+                weekly |= by_weekday[k]
+        days[r["service_id"]] = weekly & in_range
     for r in _rows(z, "calendar_dates.txt"):
-        d = _day(r["date"])
-        if not first <= d <= last:
-            continue
-        s = r["service_id"]
-        if r["exception_type"] == "1" and not by_calendar(s, d):
-            days[s] = days.get(s, 0) + 1
-        elif r["exception_type"] == "2" and by_calendar(s, d):
-            days[s] -= 1
+        i = (_day(r["date"]) - start).days
+        if 0 <= i < n:
+            bits = days.get(r["service_id"], 0)
+            days[r["service_id"]] = bits | (1 << i) if r["exception_type"] == "1" else bits & ~(1 << i)
     return days
 
 
-def read(path=GTFS_ZIP) -> list[dict]:
-    """One row per official stop number and line: {uic, line, label, departures (calls per day in summer)}."""
+@dataclass
+class Feed:
+    """One year's timetable, as read from its zip."""
+
+    year: int
+    version: str
+    start: date
+    end: date
+    lines: list[dict] = field(default_factory=list)  # {uic, line, label, departures (summer calls per day)}
+    services: dict[str, int] = field(default_factory=dict)  # service id → day bits (bit i = start + i days)
+    stop_services: list[tuple] = field(default_factory=list)  # (uic, service id, first min, last min, calls)
+
+
+def read(path: Path, since: date | None = None) -> Feed:
+    """One year's timetable from its zip. Days before `since` (default today) are dropped: tours are never planned
+    in the past, and the current year's file holds many past service patterns (e.g. for construction work)."""
+    since = since or date.today()
     with zipfile.ZipFile(path) as z:
-        feed = next(_rows(z, "feed_info.txt"))
-        feed_start, feed_end = _day(feed["feed_start_date"]), _day(feed["feed_end_date"])
-        year = feed_end.year
-        first, last = max(feed_start, date(year, *SUMMER[0])), min(feed_end, date(year, *SUMMER[1]))
+        info = next(_rows(z, "feed_info.txt"))
+        start, end = _day(info["feed_start_date"]), _day(info["feed_end_date"])
+        feed = Feed(end.year, info["feed_version"], start, end)
+        days = service_days(z, start, end)
+        if since > start:
+            past = (1 << (since - start).days) - 1
+            days = {s: bits & ~past for s, bits in days.items()}
+        first, last = max(start, date(end.year, *SUMMER[0])), min(end, date(end.year, *SUMMER[1]))
         if first > last:  # a feed that doesn't cover the summer: average over all of it
-            first, last = feed_start, feed_end
-        n_days = (last - first).days + 1
-        days = service_days(z, first, last)
+            first, last = start, end
+        summer_mask = ((1 << ((last - start).days + 1)) - 1) ^ ((1 << (first - start).days) - 1)
+        summer_days = {s: (bits & summer_mask).bit_count() for s, bits in days.items()}
+        n_summer = (last - first).days + 1
 
         uic = {r["stop_id"]: int(r["didok"]) for r in _rows(z, "stops.txt") if r.get("didok", "").isdigit()}
         lines, labels = {}, {}
         for r in _rows(z, "routes.txt"):
             lines[r["route_id"]] = key = line_key(r["route_id"])
             labels.setdefault(key, line_label(r["route_desc"], r["route_short_name"]))
-        runs: dict[str, int] = defaultdict(int)  # trips given as "every N minutes from … to …"
+        # Trips given as "every N minutes from … to …": runs, first and last start (minutes)
+        frequency: dict[str, list[int]] = {}
         for r in _rows(z, "frequencies.txt"):
-            span = _seconds(r["end_time"]) - _seconds(r["start_time"])
-            runs[r["trip_id"]] += max(1, math.ceil(span / int(r["headway_secs"])))
+            begin, stop = _minutes(r["start_time"]), _minutes(r["end_time"])
+            headway = int(r["headway_secs"]) / 60
+            runs = max(1, math.ceil((stop - begin) / headway))
+            f = frequency.setdefault(r["trip_id"], [0, begin, begin])
+            f[0] += runs
+            f[1] = min(f[1], begin)
+            f[2] = max(f[2], round(begin + (runs - 1) * headway))
         trips = {}
         for r in _rows(z, "trips.txt"):
-            weight = days.get(r["service_id"], 0) * runs.get(r["trip_id"], 1)
-            if weight:
-                trips[r["trip_id"]] = (lines[r["route_id"]], weight)
+            if days.get(r["service_id"]):
+                trips[r["trip_id"]] = (lines[r["route_id"]], r["service_id"], frequency.get(r["trip_id"]))
 
-        calls: dict[tuple[int, str], int] = defaultdict(int)
+        line_calls: dict[tuple[int, str], int] = defaultdict(int)
+        service_calls: dict[tuple[int, str], list[int]] = {}
         reader = csv.reader(io.TextIOWrapper(z.open("stop_times.txt"), encoding="utf-8-sig"))
         header = next(reader)
-        i_trip, i_stop = header.index("trip_id"), header.index("stop_id")
+        i_trip, i_stop, i_time = header.index("trip_id"), header.index("stop_id"), header.index("departure_time")
+        current, trip_start = None, 0
         for row in reader:
-            trip, stop = trips.get(row[i_trip]), uic.get(row[i_stop])
-            if trip and stop:
-                calls[(stop, trip[0])] += trip[1]
-    print(f"timetable {feed['feed_version']}: {len(calls):,} stop/line pairs, summer {first} to {last}")
-    return [{"uic": s, "line": line, "label": labels[line], "departures": round(n / n_days, 2)}
-            for (s, line), n in calls.items()]
+            trip_id = row[i_trip]
+            trip = trips.get(trip_id)
+            if trip is None:
+                continue
+            t = _minutes(row[i_time]) if row[i_time] else None
+            if trip_id != current:  # rows are grouped by trip, in stop order
+                current, trip_start = trip_id, t or 0
+            stop = uic.get(row[i_stop])
+            if stop is None:
+                continue
+            line, service, freq = trip
+            runs, t_first, t_last = (1, t, t) if freq is None else \
+                (freq[0], freq[1] + (t or trip_start) - trip_start, freq[2] + (t or trip_start) - trip_start)
+            line_calls[(stop, line)] += summer_days[service] * runs
+            agg = service_calls.get((stop, service))
+            if agg is None:
+                service_calls[(stop, service)] = [t_first, t_last, runs]
+            else:
+                if t_first is not None and (agg[0] is None or t_first < agg[0]):
+                    agg[0] = t_first
+                if t_last is not None and (agg[1] is None or t_last > agg[1]):
+                    agg[1] = t_last
+                agg[2] += runs
+    feed.lines = [{"uic": s, "line": line, "label": labels[line], "departures": round(n / n_summer, 2)}
+                  for (s, line), n in line_calls.items() if n]
+    used = {service for _, service in service_calls}
+    feed.services = {s: bits for s, bits in days.items() if s in used}
+    feed.stop_services = [(s, service, *agg) for (s, service), agg in service_calls.items()]
+    print(f"timetable {feed.year} ({feed.version}, {start} to {end}): {len(feed.lines):,} stop/line pairs, "
+          f"{len(feed.stop_services):,} stop/service pairs, {len(feed.services):,} services")
+    return feed
 
 
-def load(conn: sqlite3.Connection, rows: list[dict]) -> int:
-    """Replace all stop lines. Rows for stop numbers not in the stop table (e.g. abroad) are skipped."""
+def read_all() -> list[Feed]:
+    return [read(path) for path in feed_files()]
+
+
+def load(conn: sqlite3.Connection, feeds: list[Feed]) -> int:
+    """Replace the timetable data with these feeds (stop lines from the newest). Rows for stop numbers not in the
+    stop table (e.g. abroad) are skipped. Returns the number of stop lines."""
     places = dict(conn.execute("SELECT uic, place_id FROM stop").fetchall())
     with conn:
         conn.execute("DELETE FROM stop_line")
-        conn.executemany("INSERT INTO stop_line (stop_place, line, label, departures) VALUES (?, ?, ?, ?)",
-                         [(places[r["uic"]], r["line"], r["label"], r["departures"]) for r in rows
-                          if r["uic"] in places])
+        conn.execute("DELETE FROM stop_service")
+        conn.execute("DELETE FROM timetable_service")
+        conn.execute("DELETE FROM timetable")
+        if feeds:
+            newest = max(feeds, key=lambda f: f.year)
+            conn.executemany("INSERT INTO stop_line (stop_place, line, label, departures) VALUES (?, ?, ?, ?)",
+                             [(places[r["uic"]], r["line"], r["label"], r["departures"]) for r in newest.lines
+                              if r["uic"] in places])
+        for f in feeds:
+            conn.execute("INSERT INTO timetable (feed, version, start_date, end_date) VALUES (?, ?, ?, ?)",
+                         (f.year, f.version, f.start.isoformat(), f.end.isoformat()))
+            number = {s: i for i, s in enumerate(sorted(f.services))}
+            n_bytes = ((f.end - f.start).days + 8) // 8
+            conn.executemany("INSERT INTO timetable_service (feed, service, days) VALUES (?, ?, ?)",
+                             [(f.year, number[s], bits.to_bytes(n_bytes, "little")) for s, bits in f.services.items()])
+            conn.executemany(
+                "INSERT INTO stop_service (feed, stop_place, service, first_min, last_min, calls) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                [(f.year, places[uic], number[s], first, last, calls) for uic, s, first, last, calls in f.stop_services
+                 if uic in places and s in number])
+        conn.execute("UPDATE data_version SET version = version + 1")  # the planner caches the timetable
     return conn.execute("SELECT COUNT(*) FROM stop_line").fetchone()[0]
 
 
@@ -171,11 +284,11 @@ def lines_fingerprint(conn: sqlite3.Connection) -> str:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--no-download", action="store_true", help="use the timetable in data/gtfs/")
+    parser.add_argument("--no-download", action="store_true", help="use the timetables in data/gtfs/")
     args = parser.parse_args()
     if not args.no_download:
         download()
-    print(f"loaded {load(connect(), read())} stop lines")
+    print(f"loaded {load(connect(), read_all())} stop lines")
 
 
 if __name__ == "__main__":

@@ -45,6 +45,42 @@ function profileChart(profile, scale, color) {
     </div>`;
 }
 
+/** First or last connection of the day at the tour's start or end stop, with a warning when it is tight. */
+function connectionLine(s, role) {
+  if (!s) return "";
+  if (!s.known) return `<div class="tl-meta transit warn-text">No timetable for this date yet – check connections</div>`;
+  if (!s.calls) return `<div class="tl-meta transit warn-text">No public transport on this day</div>`;
+  if (role === "access") {
+    return `<div class="tl-meta transit${s.late ? " warn-text" : ""}">First connection ${s.first} · at the hut from about
+      ${s.hut_from}${s.late ? " – late for dinner, plan an earlier arrival" : ""}</div>`;
+  }
+  return `<div class="tl-meta transit${s.early ? " warn-text" : ""}">Last connection ${s.last} · leave the hut by
+    ${s.leave_by}${s.early ? " – a very early start" : ""}</div>`;
+}
+
+function stopChooser(role) {
+  return `<button class="link inline" data-stops="${role}">Other stops</button>
+    <ul class="stop-options" id="stopOptions-${role}" hidden></ul>`;
+}
+
+/** The list of other start or end stops (from /api/tours/{id}/stops); a click switches the tour to that stop. */
+export function renderStopOptions(role, options) {
+  const box = $(`#stopOptions-${role}`);
+  if (!box) return;
+  if (!options.length) { box.innerHTML = `<li class="hint">No other stop with public transport on this day.</li>`; return; }
+  box.innerHTML = options.map((o) => {
+    const s = o.service;
+    const when = !s.known ? "no timetable yet"
+      : role === "access" ? `${s.calls} connections · first ${s.first}${s.late ? " (late)" : ""}`
+        : `${s.calls} connections · last ${s.last}${s.early ? " (early)" : ""}`;
+    return `<li><button class="stop-opt${o.current ? " current" : ""}" data-tour-id="${esc(o.tour_id)}"${o.current ? " aria-current=\"true\"" : ""}>
+      <span class="stop-opt-name">${stopLabel(o.stop)}</span>
+      <span class="stop-opt-meta">${formatMinutes(o.walk.time_min)} walk · ↑ ${o.walk.ascent_m} m · ↓ ${o.walk.descent_m} m ·
+        <span style="color:${CATEGORY[o.walk.max_category].color}">${CATEGORY[o.walk.max_category].name}</span> · ${when} ·
+        score ${Math.round(o.score * 100)}%</span></button></li>`;
+  }).join("");
+}
+
 export function renderTourDetail(t) {
   const start = t.days[0].from, end = t.days[t.days.length - 1].to;
   const profiles = t.days.map(dayProfile);
@@ -69,6 +105,8 @@ export function renderTourDetail(t) {
           <div>${from} → ${to}</div>
           <div class="tl-meta"><b>${formatMinutes(d.time_min)}</b> · ${(d.distance_m / 1000).toFixed(1)} km ·
             ↑ ${d.ascent_m} m · ↓ ${d.descent_m} m · <span style="color:${cat.color}">${cat.name}</span>${sac}</div>
+          ${i === 0 ? connectionLine(t.access, "access") + stopChooser("access") : ""}
+          ${i === t.days.length - 1 ? connectionLine(t.exit, "exit") + stopChooser("exit") : ""}
           ${profileChart(profiles[i], scale, cat.color)}
         </div></li>${night}`;
   }).join("");

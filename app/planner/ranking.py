@@ -13,7 +13,8 @@ METRIC_INFO = {  # key: (label, what scores 1)
     "shape": ("Shape", "The tour goes from A to B or makes a real loop, instead of out and back or zig-zag."),
     "beds": ("Free beds", "Free beds confirmed on hut-reservation.org for every night (unknown counts half)."),
     "certainty": ("Opening data", "The SAC lists every night's hut as open for the whole month."),
-    "even": ("Even days", "All days take about the same time."),
+    "even": ("Even days", "All days between huts take about the same time (the first and last day count for "
+                          "short approach)."),
     "ease": ("Easy trails", "Only yellow hiking trails (red-white counts half, blue-white zero)."),
     "altitude": ("Hut altitude", "Huts at 3000 m or higher on average (1500 m and lower scores 0); a proxy for views."),
     "approach": ("Short approach", "Short first and last day: quick to the first hut and back to public transport."),
@@ -56,8 +57,9 @@ def metrics(legs, nights, altitudes: list[int | None], min_minutes: float, max_m
     walked twice) and `shape` come from geometry.Footprints."""
     target = (min_minutes + max_minutes) / 2
     deviation = sum(((leg.time_min - target) / target) ** 2 for leg in legs) / len(legs)
-    times = [leg.time_min for leg in legs]
-    mean_time = sum(times) / len(times)
+    # Even days: only the days between huts; the first and last day (to and from public transport) can be short
+    times = [leg.time_min for leg in legs[1:-1]]
+    mean_time = sum(times) / len(times) if times else 0.0
     spread = (sum((t - mean_time) ** 2 for t in times) / len(times)) ** 0.5 / mean_time if mean_time else 0.0
     known = [a for a in altitudes if a]
     mean_alt = sum(known) / len(known) if known else 0.0

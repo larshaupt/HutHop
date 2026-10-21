@@ -60,10 +60,15 @@ def leg(edge_id, frm, to, minutes):
 
 def test_metrics_fresh_and_even():
     nights = [Night(1, date(2027, 7, 10), "catered", False)]
-    even = metrics([leg(1, 0, 1, 270), leg(2, 1, 0, 270)], nights, [2000], 180, 360, retraced=0.0, shape=1.0)
-    uneven = metrics([leg(1, 0, 1, 180), leg(2, 1, 0, 360)], nights, [2000], 180, 360, retraced=0.3, shape=0.4)
+    # Even days counts the days between huts; short days from and to public transport don't make a tour uneven
+    even = metrics([leg(1, 0, 1, 60), leg(2, 1, 2, 270), leg(3, 2, 3, 270), leg(4, 3, 0, 90)], nights * 3, [2000] * 3,
+                   180, 360, retraced=0.0, shape=1.0)
+    uneven = metrics([leg(1, 0, 1, 60), leg(2, 1, 2, 180), leg(3, 2, 3, 360), leg(4, 3, 0, 60)], nights * 3,
+                     [2000] * 3, 180, 360, retraced=0.3, shape=0.4)
     assert even.even == 1.0 and even.fresh == 1.0 and even.shape == 1.0
     assert uneven.even == pytest.approx(1 - 2 / 3) and uneven.fresh == pytest.approx(0.4) and uneven.shape == 0.4
+    one_night = metrics([leg(1, 0, 1, 60), leg(2, 1, 0, 300)], nights, [2000], 180, 360)
+    assert one_night.even == 1.0  # no days between huts
 
 
 def test_search_avoids_retracing():

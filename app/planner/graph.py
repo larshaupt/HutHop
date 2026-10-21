@@ -9,7 +9,7 @@ import json
 import sqlite3
 from dataclasses import dataclass, field
 
-from app.planner import opening
+from app.planner import opening, transit
 from app.planner.geometry import Footprints
 
 
@@ -62,9 +62,11 @@ class Graph:
     stop_in: dict[int, list[Leg]] = field(default_factory=dict)   # stop → hut, keyed by hut
     stop_out: dict[int, list[Leg]] = field(default_factory=dict)  # hut → stop, keyed by hut
     footprints: Footprints = field(default_factory=lambda: Footprints({}))  # route lines, for retracing and shape
+    timetable: transit.Timetable = field(default_factory=lambda: transit.Timetable([]))  # empty: every stop served
 
 
-def load_graph(conn: sqlite3.Connection, limit: int, footprints: Footprints | None = None) -> Graph:
+def load_graph(conn: sqlite3.Connection, limit: int, footprints: Footprints | None = None,
+               timetable: transit.Timetable | None = None) -> Graph:
     """Huts, stops and all non-excluded edges up to a trail category limit.
 
     A place pair can have one edge per category limit (only stored when the harder trail is faster). All of
@@ -90,7 +92,7 @@ def load_graph(conn: sqlite3.Connection, limit: int, footprints: Footprints | No
     footprints = footprints or Footprints({})
     footprints.packed.update({r["id"]: (r["footprint"], r["samples"]) for r in rows if r["footprint"]})
     footprints.geometry.update({r["id"]: r["geometry"] for r in rows if not r["footprint"]})
-    graph = Graph(huts, stops, footprints=footprints)
+    graph = Graph(huts, stops, footprints=footprints, timetable=timetable or transit.load(conn))
     for r in rows:
         leg = Leg(r["id"], r["from_place"], r["to_place"], r["time_min"], r["distance_m"], r["ascent_m"],
                   r["descent_m"], r["max_category"], r["sac_time_min"], r["category_limit"])
@@ -104,8 +106,8 @@ def load_graph(conn: sqlite3.Connection, limit: int, footprints: Footprints | No
     return graph
 
 
-# database file → (data version, shared footprints, {limit: graph})
-_cache: dict[str, tuple[int, Footprints, dict[int, Graph]]] = {}
+# database file → (data version, shared footprints, {limit: graph}, shared timetable)
+_cache: dict[str, tuple[int, Footprints, dict[int, Graph], transit.Timetable]] = {}
 
 
 def cached_graph(conn: sqlite3.Connection, limit: int) -> Graph:
@@ -114,10 +116,10 @@ def cached_graph(conn: sqlite3.Connection, limit: int) -> Graph:
     version = conn.execute("SELECT version FROM data_version").fetchone()[0]
     db = conn.execute("PRAGMA database_list").fetchone()["file"]
     if db not in _cache or _cache[db][0] != version:
-        _cache[db] = (version, Footprints({}), {})
-    _, footprints, graphs = _cache[db]
+        _cache[db] = (version, Footprints({}), {}, transit.load(conn))
+    _, footprints, graphs, timetable = _cache[db]
     if limit not in graphs:
-        graphs[limit] = load_graph(conn, limit, footprints)
+        graphs[limit] = load_graph(conn, limit, footprints, timetable)
     return graphs[limit]
 
 

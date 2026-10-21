@@ -49,8 +49,11 @@ def test_two_nights_any_catering(graph):
 
 
 def test_day_length_limits(graph):
-    assert suggest(graph, TourRequest(date(2027, 7, 10), 2, 4.5, 6)) == []   # first day is only 4 h
     assert suggest(graph, TourRequest(date(2027, 7, 10), 2, 3, 4.5)) == []   # hut-to-hut days are 5 h
+    assert suggest(graph, TourRequest(date(2027, 7, 10), 2, 5.5, 6)) == []   # … and need 5.5 h here
+    # The days to the first and from the last hut (4 h) only have a maximum
+    assert len(suggest(graph, TourRequest(date(2027, 7, 10), 2, 4.5, 6))) == 2
+    assert suggest(graph, TourRequest(date(2027, 7, 10), 1, 1, 3.5)) == []
 
 
 def test_catering_and_month(graph):
@@ -251,3 +254,27 @@ def test_warm_up_loads_everything_once(tmp_path):
     conn.execute("UPDATE edge SET time_min = 70")
     conn.commit()
     assert graph_mod.warm_up(conn)  # data changed: loaded again
+
+
+def test_stops_served_on_the_day_and_connections_that_fit(graph):
+    """Access stops: S1 (4 h walk) only gets you to the hut at 19:00, S3 (4 h 10) has a 07:00 connection; S4 is a
+    cable car station with no service on the start date; S5 is a cable car that runs."""
+    from app.planner import transit
+    from app.planner.tours import access_options
+
+    graph.stops[14] = Stop(14, "Stop 14", 46.5, 7.8, 2_600_500, 1_150_000, "cableway")
+    graph.stops[15] = Stop(15, "Stop 15", 46.5, 7.8, 2_600_600, 1_150_000, "cableway")
+    graph.stop_in[1] = [Leg(1, 11, 1, 240, 12_000, 500, 400, 2, None, 2), Leg(9, 13, 1, 250, 12_000, 500, 400, 2, None, 2),
+                        Leg(10, 14, 1, 100, 5_000, 500, 400, 2, None, 2), Leg(11, 15, 1, 120, 5_000, 500, 400, 2, None, 2)]
+    start = date(2027, 7, 10)
+    day = (start - date(2026, 12, 13)).days
+    every_day, never = (1 << 400) - 1, 0
+    graph.timetable = transit.Timetable([(date(2026, 12, 13), date(2027, 12, 11), {0: every_day, 1: never}, {
+        11: [(0, 15 * 60, 18 * 60, 5)], 13: [(0, 7 * 60, 18 * 60, 5)], 14: [(1, 8 * 60, 17 * 60, 50)],
+        15: [(0, 8 * 60, 17 * 60, 50)], 12: [(0, 6 * 60, 20 * 60, 9)]})])
+    assert graph.timetable.day(14, start).calls == 0 and day > 0
+    options = [leg.frm for leg in access_options(graph, 1, start, 360)]
+    assert options == [15, 13, 11]  # S4 not running; S1 last (too late for the hut); S5 closest that works
+    assert [leg.frm for leg in access_options(graph, 1, start, 360, avoid_lifts=True)] == [13, 11]
+    tours = suggest(graph, TourRequest(start, 2, 3, 6, avoid_lifts=True))
+    assert tours and all(t.legs[0].frm == 13 for t in tours)

@@ -82,6 +82,30 @@ CREATE TABLE IF NOT EXISTS stop_line (
   PRIMARY KEY (stop_place, line)
 );
 
+-- Timetables per year (load_timetable.py): which days each service pattern runs, and per stop and pattern the
+-- first and last time and the number of calls. Together: is a stop served on a date, and from when to when.
+CREATE TABLE IF NOT EXISTS timetable (
+  feed       INTEGER PRIMARY KEY,     -- timetable year, e.g. 2027 (valid mid-December 2026 to mid-December 2027)
+  version    TEXT,
+  start_date TEXT NOT NULL,
+  end_date   TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS timetable_service (
+  feed    INTEGER NOT NULL,
+  service INTEGER NOT NULL,           -- numbered per feed
+  days    BLOB NOT NULL,              -- bit i (little-endian) = runs on start_date + i days
+  PRIMARY KEY (feed, service)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS stop_service (
+  feed       INTEGER NOT NULL,
+  stop_place INTEGER NOT NULL,
+  service    INTEGER NOT NULL,
+  first_min  INTEGER,                 -- first call of the day, minutes after midnight (can exceed 1440)
+  last_min   INTEGER,                 -- last call of the day
+  calls      INTEGER NOT NULL,
+  PRIMARY KEY (feed, stop_place, service)
+) WITHOUT ROWID;
+
 CREATE TABLE IF NOT EXISTS edge (
   id             INTEGER PRIMARY KEY,
   from_place     INTEGER NOT NULL REFERENCES place(id),

@@ -484,3 +484,14 @@ code { font-size: 12px; background: var(--bg-soft); padding: 0 4px; border-radiu
   .legend { top: 56px; bottom: auto; left: 10px; right: auto; flex-direction: column; gap: 3px; padding: 6px 10px; font-size: 11.5px; }
   .maplibregl-ctrl-bottom-right { bottom: var(--peek); }
 }
+
+/* ---------- Start and end stops of a tour ---------- */
+.tl-meta.transit { margin-top: 4px; }
+.warn-text { color: #7a5200; }
+.link.inline { order: 0; margin: 2px 0 0; font-size: 12.5px; }
+.stop-options { list-style: none; margin: 6px 0 4px; padding: 0; display: grid; gap: 4px; }
+.stop-opt { display: grid; gap: 1px; width: 100%; text-align: left; background: var(--bg-soft); border: 1px solid transparent;
+  border-radius: 8px; padding: 6px 8px; font: inherit; color: var(--text); cursor: pointer; }
+.stop-opt:hover { background: var(--bg-hover); }
+.stop-opt.current { border-color: var(--accent); background: var(--accent-soft); cursor: default; }
+.stop-opt-meta { color: var(--text-soft); font-size: 12px; }

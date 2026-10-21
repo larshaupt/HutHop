@@ -10,12 +10,23 @@ from pydantic import BaseModel, Field, model_validator
 from app import config
 from app.api.deps import get_db
 from app.clients import hut_reservation
-from app.planner import gpx, planning, ranking
+from app.planner import gpx, planning, ranking, transit
 from app.planner.graph import Graph
-from app.planner.tours import Catering, Night, Tour, TourRequest
+from app.planner.tours import (
+    Catering,
+    Night,
+    Tour,
+    TourKey,
+    TourRequest,
+    access_options,
+    build_tour,
+    exit_options,
+    parse_tour_id,
+)
 
 router = APIRouter(prefix="/api", tags=["tours"])
 AVAILABILITY_STATES = ("available", "not_released", "no_booking", "not_checked", "error")
+STOP_ALTERNATIVES = 6  # other stops offered per end of a tour
 
 
 class TourQuery(BaseModel):
@@ -29,6 +40,8 @@ class TourQuery(BaseModel):
     start_stop: int | None = None
     loop: bool = False
     include_unknown: bool = True
+    avoid_lifts: bool = Field(False, description="no access or exit stop served only by cable cars, chairlifts or "
+                                                 "funiculars")
     people: int = Field(2, ge=1, le=30)
     check_availability: bool = True
 
@@ -61,6 +74,34 @@ def get_tour(tour_id: str, people: int = Query(2, ge=1, le=30), check_availabili
     """A tour rebuilt from its id (start date, places, per-day trail limits, hours), e.g. for sharing or export."""
     graph, tour = rebuild(conn, tour_id, people, check_availability)
     return tour_json(conn, graph, [tour])[0]
+
+
+@router.get("/tours/{tour_id}/stops")
+def tour_stops(tour_id: str, conn: sqlite3.Connection = Depends(get_db)) -> dict:
+    """Other stops to start from (first hut) and to end at (last hut), closest first, served on that day: each
+    with its walk, its service that day and the tour id (and score) with that stop instead."""
+    graph, tour = rebuild(conn, tour_id, people=1, check_availability=False)
+    key = parse_tour_id(tour_id)
+    first_hut, last_hut = tour.legs[0].to, tour.legs[-1].frm
+    end_day = tour.start_date + timedelta(days=len(tour.legs) - 1)
+    max_minutes = key.hours[1] * 60
+    weights = config.ranking_weights()
+
+    def option(leg, role: str) -> dict:
+        places, limits = list(key.places), list(key.limits)
+        i, stop_id, day = (0, leg.frm, tour.start_date) if role == "access" else (-1, leg.to, end_day)
+        places[i], limits[i] = stop_id, leg.category_limit
+        variant = build_tour(graph, TourKey(key.start_date, places, limits, key.hours), weights=weights)
+        return {"tour_id": variant.id, "score": round(variant.score, 3), "current": variant.id == tour.id,
+                "stop": place_json(graph, stop_id),
+                "walk": {k: getattr(leg, k) for k in ("time_min", "distance_m", "ascent_m", "descent_m",
+                                                      "max_category")},
+                "service": service_json(graph, stop_id, day, leg.time_min, role)}
+
+    return {"access": [option(leg, "access") for leg in
+                       access_options(graph, first_hut, tour.start_date, max_minutes)[:STOP_ALTERNATIVES]],
+            "exit": [option(leg, "exit") for leg in
+                     exit_options(graph, last_hut, end_day, max_minutes)[:STOP_ALTERNATIVES]]}
 
 
 @router.get("/tours/{tour_id}/gpx")
@@ -99,6 +140,9 @@ def tour_json(conn: sqlite3.Connection, graph: Graph, tours: list[Tour]) -> list
         "descent_m": sum(leg.descent_m for leg in t.legs),
         "max_category": max(leg.max_category for leg in t.legs),
         "uncertain_nights": sum(1 for n in t.nights if n.status == "unknown" or n.partial),
+        "access": service_json(graph, t.legs[0].frm, t.start_date, t.legs[0].time_min, "access"),
+        "exit": service_json(graph, t.legs[-1].to, t.start_date + timedelta(days=len(t.legs) - 1),
+                             t.legs[-1].time_min, "exit"),
         "availability": {s: sum(1 for n in t.nights if n.availability and n.availability.state == s)
                          for s in AVAILABILITY_STATES},
         "days": [{
@@ -114,6 +158,20 @@ def tour_json(conn: sqlite3.Connection, graph: Graph, tours: list[Tour]) -> list
             "night": night_json(t.nights[i], graph.huts[leg.to].hrs_id) if i < len(t.nights) else None,
         } for i, leg in enumerate(t.legs)],
     } for t in tours]
+
+
+def service_json(graph: Graph, stop_id: int, day: date, walk_min: int, role: str) -> dict:
+    """A tour's access or exit stop on its day: departures, first and last call, and when you'd reach the first hut
+    (access) or have to leave the last hut (exit) with them; `late` / `early` flag tight connections."""
+    d = graph.timetable.day(stop_id, day)
+    out = {"known": d.known, "calls": d.calls, "first": transit.hhmm(d.first_min), "last": transit.hhmm(d.last_min)}
+    if role == "access" and d.first_min is not None:
+        out["hut_from"] = transit.hhmm(d.first_min + walk_min)
+        out["late"] = d.first_min + walk_min > transit.LATEST_HUT_ARRIVAL
+    if role == "exit" and d.last_min is not None:
+        out["leave_by"] = transit.hhmm(d.last_min - walk_min)
+        out["early"] = d.last_min - walk_min < transit.EARLIEST_HUT_DEPARTURE
+    return out
 
 
 def place_json(graph: Graph, pid: int) -> dict:

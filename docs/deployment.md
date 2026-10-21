@@ -22,7 +22,7 @@ Serving HutHop takes little: a few hundred MB of RAM and a fraction of a CPU. On
 | Database | SQLite `data/huthop.db`, about 36 MB, WAL mode; path set with `HUTHOP_DB` | One persistent volume; no database server |
 | `sync_sac` | Fetches SAC huts, about 10 s and 5 requests | Can run on the server on a schedule |
 | `load_stops` | Public transport stops, about 5 MB download | Rare; `server/refresh.sh` |
-| `load_timetable` | Lines and summer departures per stop (GTFS), about 90 MB download when a new weekly edition is out, ~20 s and ~200 MB RAM to read | Weekly; `server/refresh.sh` (rebuilds the graph only if lines changed) |
+| `load_timetable` | Lines, summer departures and service days per stop (GTFS, this year's and next year's timetable), about 90 MB download each when a new weekly edition is out, ~95 s and ~600 MB RAM to read both (locally; slower on server2) | Weekly; `server/refresh.sh` (rebuilds the graph only if lines changed) |
 | `build_edges` | Route graph on swissTLM3D: about 2 min, about 2 GB RAM, 651 MB of input in `data/tlm/` | Yearly (new trail edition) or after new huts; `server/refresh.sh` |
 | Writes while running | Availability cache; hut corrections, added huts and edge exclusions (admin password) | The server's database is not read-only, and it is the master copy |
 | Settings | `huthop.toml` ("best" weights, impressum), baked into the image | Changing it means a commit and deploy |

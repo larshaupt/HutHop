@@ -40,9 +40,10 @@ view, "+ Add hut" in the hut list, and excluding a connection in a hut's connect
 rebuilds. New huts get walking connections at the next `refresh --rebuild`.
 
 `refresh` downloads the swissTLM3D hiking network (swisstopo open data, about 200 MB) into `data/tlm/` when needed,
-and the official timetable (GTFS, opentransportdata.swiss, about 90 MB) into `data/gtfs/` when a new edition is out.
-The timetable gives the lines and summer departures of each stop; a hut only gets a connection to the closest stop
-of each line.
+and the official timetables (GTFS, opentransportdata.swiss, about 90 MB each: this year's and, from autumn, next
+year's) into `data/gtfs/` when a new edition is out. They give the lines and summer departures of each stop (a hut
+only gets a connection to the closest stop of each line) and on which days and from when to when each stop is
+served: tours start and end at the closest stop that runs on that day.
 On server2, `server/refresh.sh` does the same in a one-off container (see the deployment doc). Edges built before
 height profiles existed get them with `python -m app.ingest.profiles`; edges without a stored footprint (grid cells
 and shape samples for the tour search) get one with `python -m app.ingest.footprints`, which `refresh` also runs.

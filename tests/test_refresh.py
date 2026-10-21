@@ -1,9 +1,12 @@
 """Refresh orchestration with all downloads replaced by fakes (no network)."""
 
+from datetime import date
+
 import pytest
 
 from app.db import connect
 from app.ingest import refresh
+from app.ingest.load_timetable import Feed
 from tests.test_huts import HUTS
 
 
@@ -23,7 +26,8 @@ def fake(tmp_path, monkeypatch, lines):
     monkeypatch.setattr(refresh.load_stops, "read_stops", lambda: [
         {"uic": 1, "name": "Valley", "mode": "bus", "e_lv95": 2620000.0, "n_lv95": 1150000.0, "lat": 46.5, "lon": 7.9}])
     monkeypatch.setattr(refresh.load_timetable, "download", lambda: False)
-    monkeypatch.setattr(refresh.load_timetable, "read", lambda: list(lines))
+    monkeypatch.setattr(refresh.load_timetable, "read_all", lambda: [
+        Feed(2027, "v1", date(2026, 12, 13), date(2027, 12, 11), lines=list(lines))])
     monkeypatch.setattr(refresh, "refresh_trails", lambda: False)
     monkeypatch.setattr(refresh.build_edges, "build", lambda conn: calls.append("build") or 42)
     return calls
