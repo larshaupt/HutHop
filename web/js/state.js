@@ -9,7 +9,7 @@ export const DEFAULTS = {
   hut: 0, base: "light", trails: false, limit: 2,
   // tour planner
   view: "huts", tDate: "", tNights: 2, tMin: 3, tMax: 6, tCat: "any", tStart: 0, tStartName: "", tLoop: false,
-  tUnknown: true, tBox: "", tour: 0, tPeople: 2, tAvail: true, tSort: "best", tLifts: false,
+  tUnknown: true, tBox: "", tour: 0, tPeople: 2, tAvail: true, tSort: "best", tLifts: false, tMember: false,
 };
 
 const HASH_KEYS = {
@@ -17,7 +17,7 @@ const HASH_KEYS = {
   minBeds: "beds", operator: "type", q: "q", sort: "sort", hut: "hut", base: "map", trails: "trails", limit: "tl",
   view: "v", tDate: "td", tNights: "tn", tMin: "tmin", tMax: "tmax", tCat: "tc", tStart: "ts", tStartName: "tsn",
   tLoop: "loop", tUnknown: "unk", tBox: "tb", tour: "tour", tPeople: "ppl", tAvail: "avail", tSort: "tsort",
-  tLifts: "nolifts",
+  tLifts: "nolifts", tMember: "member",
 };
 
 /** The one state object. Modules read it directly and change it only through setState(). */

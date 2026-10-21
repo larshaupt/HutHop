@@ -291,6 +291,54 @@ export function closeDetail() {
   if (!(state.view === "tours" && state.tour && returnToTour())) $("#browse").hidden = false;
 }
 
+const BOOKING_LABEL = { hut_reservation_org: "hut-reservation.org", online_other: "online", email: "by email",
+  phone: "by phone", not_needed: "not needed" };
+const PRICE_LABEL = { overnight: "Night", half_board: "Half board", breakfast: "Breakfast", dinner: "Dinner",
+  tax: "Tourist tax", winter_room: "Winter room", self_catering_fee: "Kitchen use" };
+const UNVERIFIED = `<span class="unverified" title="Not found word for word on the website: check there">?</span>`;
+
+function formatMonthDay(md) {
+  const [m, d] = md.split("-").map(Number);
+  return `${d} ${MONTHS[m - 1]}`;
+}
+
+function formatPrice(p) {
+  const amount = (v) => (v == null ? "" : Number.isInteger(v) ? String(v) : v.toFixed(2));
+  const main = p.member != null && p.non_member != null && p.member !== p.non_member
+    ? `${amount(p.member)} members · ${amount(p.non_member)}` : amount(p.non_member ?? p.member);
+  const reduced = [p.youth != null && `youth ${amount(p.youth)}`, p.child != null && `children ${amount(p.child)}`]
+    .filter(Boolean).join(" · ");
+  return `${p.currency} ${main}${reduced ? `<span class="route-meta"> · ${reduced}</span>` : ""}`;
+}
+
+// What the hut website says (read by app/ingest/scrape_huts.py); values may be outdated, so the source is linked.
+function websiteSection(w) {
+  if (!w || w.status !== "ok") return "";
+  const seasons = w.seasons.map((s) => {
+    const kind = { catered: "Catered", self_service: "Self-service", closed: "Closed" }[s.kind];
+    const range = `${s.approximate ? "about " : ""}${formatMonthDay(s.start_md)} – ${formatMonthDay(s.end_md)}${s.year ? ` ${s.year}` : ""}`;
+    return `<li><b>${kind}</b> ${range}${s.verified === 0 ? UNVERIFIED : ""}${s.note ? `<span class="route-meta"> · ${esc(s.note)}</span>` : ""}</li>`;
+  });
+  const prices = w.prices.map((p) => {
+    const what = p.item === "half_board" && !p.includes_overnight ? "Half board (plus night)" : PRICE_LABEL[p.item];
+    return `<tr><td>${what}<span class="route-meta"> ${esc(p.label || "")}</span></td>` +
+      `<td>${formatPrice(p)}${p.verified === 0 ? UNVERIFIED : ""}</td></tr>`;
+  });
+  const booking = w.booking_methods.map((m) => BOOKING_LABEL[m]).filter(Boolean).join(", ");
+  const priceYear = Math.max(...w.prices.map((p) => p.year || 0));
+  let host = w.url;
+  try { host = new URL(w.url).hostname.replace(/^www\./, ""); } catch { /* keep the URL */ }
+  if (!seasons.length && !prices.length && !booking && !w.notes) return "";
+  return `<div class="section website-info"><h3>From the hut website</h3>
+    ${booking ? `<p>Booking: ${booking}${w.booking_url ? ` · <a href="${esc(w.booking_url)}" target="_blank" rel="noopener">booking page</a>` : ""}</p>` : ""}
+    ${w.notes ? `<p>${esc(w.notes)}</p>` : ""}
+    ${seasons.length ? `<ul class="web-seasons">${seasons.join("")}</ul>` : ""}
+    ${prices.length ? `<table class="prices"><caption>Prices per person and night${priceYear ? ` (${priceYear})` : ""}</caption>${prices.join("")}</table>` : ""}
+    <p class="hint">Read from <a href="${esc(w.url)}" target="_blank" rel="noopener">${esc(host)}</a> by AI on
+      ${new Date(w.checked_at).toLocaleDateString("de-CH")}; may be outdated or wrong. Check there before you go.</p>
+  </div>`;
+}
+
 function renderDetail(d) {
   const photo = d.photos[0];
   const currentMonth = new Date().getMonth();
@@ -326,6 +374,8 @@ function renderDetail(d) {
       <div class="actions">
         ${d.booking_url ? `<a class="btn primary" href="${esc(d.booking_url)}" target="_blank" rel="noopener">Check availability</a>` : ""}
         ${d.website ? `<a class="btn" href="${esc(d.website)}" target="_blank" rel="noopener">Website</a>` : ""}
+        ${d.email ? `<a class="btn" href="mailto:${esc(d.email)}">Email</a>` : ""}
+        ${d.phone ? `<a class="btn" href="tel:${esc(d.phone.replace(/[^\d+]/g, ""))}">${esc(d.phone)}</a>` : ""}
         <a class="btn" href="${geoAdmin}" target="_blank" rel="noopener">swisstopo map</a>
       </div>
       <div class="section">
@@ -339,6 +389,7 @@ function renderDetail(d) {
           <span>Half-filled: part of the month</span>
         </div>
       </div>
+      ${websiteSection(d.web)}
       ${d.booking_url ? `<div class="section"><h3>Free beds</h3><div id="bedCal"><p class="hint">Checking free beds…</p></div></div>` : ""}
       ${connectionsSection(d)}
       ${d.description ? `<div class="section"><h3>About</h3><p class="desc ${long ? "clamped" : ""}" id="desc">${esc(d.description)}</p>

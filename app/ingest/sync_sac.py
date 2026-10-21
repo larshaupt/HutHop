@@ -58,6 +58,8 @@ def parse_hut(raw: dict) -> dict:
             "beds": raw.get("sleeps"),
             "shelter_beds": raw.get("emergency_shelter"),
             "website": raw.get("url") or None,
+            "phone": (raw.get("tel") or "").strip() or None,
+            "email": (raw.get("email") or "").strip() or None,
             "description": TAG_RE.sub("", raw.get("description") or "").strip() or None,
             "services": json.dumps({k: bool(v) for k, v in (raw.get("services") or {}).items()}),
             "photos": json.dumps(photos, ensure_ascii=False),

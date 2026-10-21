@@ -5,7 +5,7 @@ import { closeDetail, invalidateHut, reloadHuts, selectHut } from "./huts.js";
 import { errorText } from "./connections.js";
 
 const FIELD_LABELS = { name: "Name", altitude: "Altitude (m)", beds: "Beds", shelter_beds: "Winter room places",
-  website: "Website", hrs_id: "hut-reservation.org id" };
+  website: "Website", phone: "Phone", email: "Email", hrs_id: "hut-reservation.org id" };
 const NUMERIC = new Set(["altitude", "beds", "shelter_beds", "hrs_id"]);
 const CODE_LABEL = { 0: "✓", 1: "½", 2: "–" };
 const CODE_TITLE = { 0: "whole month", 1: "part of the month", 2: "no" };

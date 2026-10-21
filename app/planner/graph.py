@@ -40,6 +40,7 @@ class Hut:
     half_board: bool
     hrs_id: int | None = None
     altitude: int | None = None
+    seasons: tuple[opening.Season, ...] = ()  # opening periods from the hut website
 
 
 @dataclass(frozen=True)
@@ -72,11 +73,12 @@ def load_graph(conn: sqlite3.Connection, limit: int, footprints: Footprints | No
     A place pair can have one edge per category limit (only stored when the harder trail is faster). All of
     them are kept as alternatives, so allowing harder trails only ever adds options."""
     huts = {}
-    codes = opening.load_codes(conn)
+    codes, seasons = opening.load_codes(conn), opening.load_seasons(conn)
     for r in conn.execute("SELECT id, name, lat, lon, e_lv95, n_lv95, services, hrs_id, altitude_m FROM hut_effective"):
         c, s = codes.get(r["id"], (opening.NO_DATA, opening.NO_DATA))
         huts[r["id"]] = Hut(r["id"], r["name"], r["lat"], r["lon"], r["e_lv95"], r["n_lv95"], c, s,
-                            json.loads(r["services"] or "{}").get("half_board", False), r["hrs_id"], r["altitude_m"])
+                            json.loads(r["services"] or "{}").get("half_board", False), r["hrs_id"], r["altitude_m"],
+                            seasons.get(r["id"], ()))
     rows = conn.execute(
         "SELECT id, from_place, to_place, time_min, distance_m, ascent_m, descent_m, max_category, sac_time_min, "
         "category_limit, footprint, samples, CASE WHEN footprint IS NULL THEN geometry END AS geometry "

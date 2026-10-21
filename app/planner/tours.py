@@ -111,8 +111,9 @@ def parse_tour_id(tour_id: str) -> TourKey:
 
 
 def night_status(hut: Hut, day: date, catering: Catering, include_unknown: bool) -> Night | None:
-    """How the hut can be used on that night (SAC monthly codes), or None if it doesn't fit the request."""
-    result = opening.usable(hut.catering, hut.self_service, day.month, catering)
+    """How the hut can be used on that night (SAC monthly codes and website seasons), or None if it doesn't fit
+    the request."""
+    result = opening.on_day(hut.catering, hut.self_service, hut.seasons, day, catering)
     if result is None or (result[0] == "unknown" and not include_unknown):
         return None
     return Night(hut.id, day, *result)

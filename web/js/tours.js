@@ -1,5 +1,6 @@
 // Tour planner: form, search, result cards (sorted here, without a new search), opening a tour, map drawing.
-import { $, CATEGORY, EMPTY, categoryColor, decodePolyline, esc, formatMinutes, modeLabel, revealPanel } from "./util.js";
+import { $, CATEGORY, EMPTY, categoryColor, costTitle, decodePolyline, esc, formatCost, formatMinutes, modeLabel,
+  revealPanel } from "./util.js";
 import { setState, state } from "./state.js";
 import { fitCoords, map, visibleBox } from "./map.js";
 import { selectHut } from "./huts.js";
@@ -8,12 +9,15 @@ import { loadInfo } from "./info.js";
 import { renderStopOptions, renderTourDetail } from "./tour-detail.js";
 
 const SORTS = { best: "Best", time: "Shortest", ascent: "Least ascent", altitude: "Highest huts",
-  beds: "Most free beds" };
+  beds: "Most free beds", cost: "Cheapest" };
 // The search returns a pool of varied tours ordered by "best"; other orders are applied here, without a new search.
 const SORT_KEYS = {
   best: (t) => [-t.score], time: (t) => [t.time_min, -t.score],
   ascent: (t) => [t.ascent_m, -t.score], altitude: (t) => [-(t.hut_altitude || 0), -t.score],
   beds: (t) => [-t.metrics.beds, -t.score],
+  // Fully priced tours first (partial sums would look cheap), then by the per-person total
+  cost: (t) => [t.cost.priced < t.nights ? 1 : 0,
+    Object.values(t.cost.totals).reduce((sum, c) => sum + (state.tMember ? c.member : c.non_member), 0), -t.score],
 };
 const PAGE = 10;
 let results = null;
@@ -65,6 +69,7 @@ export function syncTourForm() {
   $("#tAvail").checked = state.tAvail;
   $("#tUnknown").checked = state.tUnknown;
   $("#tLifts").checked = state.tLifts;
+  $("#tMember").checked = state.tMember;
   $("#tStartPicked").hidden = !state.tStart;
   $("#tStartInput").hidden = !!state.tStart;
   $("#tStartName").textContent = state.tStartName;
@@ -93,6 +98,18 @@ export function bindTourForm() {
   $("#tAvail").addEventListener("change", (e) => setState({ tAvail: e.target.checked }));
   $("#tUnknown").addEventListener("change", (e) => setState({ tUnknown: e.target.checked }));
   $("#tLifts").addEventListener("change", (e) => setState({ tLifts: e.target.checked }));
+  // Member prices only change the shown estimate: no new search
+  $("#tMember").addEventListener("change", (e) => {
+    setState({ tMember: e.target.checked });
+    if (!results) return;
+    if (state.tSort === "cost") {  // member prices can change the order; keep the open tour selected
+      const open = selectedTour();
+      sortResults();
+      if (open) setState({ tour: order.indexOf(open) + 1 });
+    }
+    renderResults();
+    if (selectedTour() && !$("#tourDetail").hidden) renderTourDetail(selectedTour());
+  });
   bindStopPicker();
 
   $("#tourForm").addEventListener("submit", (e) => {
@@ -231,7 +248,7 @@ function tourCard(t, i) {
   return `<article class="tour-card" data-n="${i + 1}" tabindex="0">
     <div class="tour-head">
       <div><b>${t.nights} night${t.nights > 1 ? "s" : ""}</b> · ${(t.distance_m / 1000).toFixed(0)} km · ↑ ${t.ascent_m.toLocaleString("de-CH")} m</div>
-      <div class="tour-flags">${transitBadge(t)}${availBadge(t)}${scoreBadge(t)}</div>
+      <div class="tour-flags">${transitBadge(t)}${availBadge(t)}${costBadge(t)}${scoreBadge(t)}</div>
     </div>
     <div class="tour-body">
       <ol class="chain">${chainItems(chain)}</ol>
@@ -253,6 +270,14 @@ function transitBadge(t) {
   if (!late && !early) return "";
   const why = [late && `first connection: at the hut from ${t.access.hut_from}`, early && `last connection: leave the last hut by ${t.exit.leave_by}`];
   return `<span class="flag" title="${why.filter(Boolean).join("; ")}">Tight connection</span>`;
+}
+
+/** Card badge: estimated hut costs per person ("from" when some nights have no prices). */
+function costBadge(t) {
+  if (!t.cost?.priced) return "";
+  const from = t.cost.priced < t.nights ? "from " : "";
+  return `<span class="flag pending" title="${esc(costTitle(t, state.tMember, state.tPeople))}">` +
+    `${from}${formatCost(t.cost.totals, state.tMember)} p.p.</span>`;
 }
 
 /** Card badge: free beds on every night, or how many nights are not confirmed. */

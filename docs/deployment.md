@@ -99,6 +99,17 @@ through `data_version`; its first search afterwards takes ~10 s while it loads t
 
 For local development, copy a backup from `data/backups/` to the Mac.
 
+**Hut websites** (prices, season dates, booking; once or twice per season) are the exception: reading them needs
+Gemini through the gcloud login on the Mac. Fetch and extract on the Mac, then load the results on the server
+(only the `.json` files are needed, not `pdf/`):
+
+```sh
+uv run python -m app.ingest.scrape_huts fetch && uv run python -m app.ingest.scrape_huts extract   # Mac
+rsync -a --include='*.json' --exclude='*' data/raw/web/ server2:/opt/huthop/data/raw/web/          # Mac
+cd /opt/huthop/server && docker compose exec -T huthop python -m app.backup && \
+  docker compose run --rm -T refresh python -m app.ingest.scrape_huts load                       # server
+```
+
 **History:** until 2026-10-19 the graph was built on the Mac and the database copied to the server (first deploy
 on 2026-10-18; height profiles imported once on 2026-10-19).
 

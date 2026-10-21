@@ -97,3 +97,19 @@ export const modeLabel = (mode) => MODE_LABELS[mainMode(mode)];
 export function categoryColor() {
   return ["match", ["get", "category"], 1, CATEGORY[1].color, 2, CATEGORY[2].color, CATEGORY[3].color];
 }
+
+/** A tour's estimated hut costs (cost.totals: per currency, member and regular price per person) as text, e.g.
+ * "CHF 245" or "CHF 180 + EUR 60"; `factor` multiplies (number of people). */
+export function formatCost(totals, member, factor = 1) {
+  return Object.entries(totals).map(([cur, t]) => `${cur} ${Math.round((member ? t.member : t.non_member) * factor)}`)
+    .join(" + ");
+}
+
+/** Hover text explaining a tour's cost estimate. */
+export function costTitle(t, member, people) {
+  const c = t.cost;
+  return [`Estimated hut costs per person${member ? " (member prices)" : ""}: cheapest bed, half board when catered,`,
+    "kitchen fee when self-service, tourist tax. Drinks and lunches not included.",
+    `${c.priced} of ${t.nights} nights with prices from the hut websites${c.years.length ? ` (${c.years.join(", ")})` : ""}.`,
+    people > 1 ? `For ${people} people: ${formatCost(c.totals, member, people)}.` : ""].filter(Boolean).join("\n");
+}

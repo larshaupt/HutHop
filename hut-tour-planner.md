@@ -1,8 +1,8 @@
 # Hut Tour Planner: Project Brief
 
-A private web app to browse and filter Swiss mountain huts (SAC plus selected non-SAC huts) and to **suggest multi-day summer hut tours** from user constraints, including availability checks (price estimates postponed).
+A private web app to browse and filter Swiss mountain huts (SAC plus selected non-SAC huts) and to **suggest multi-day summer hut tours** from user constraints, including availability checks and cost estimates.
 
-> Status (19 Oct 2026): Phases 0–4 done except prices (postponed). Deployed on server2, tailnet only (`docs/deployment.md`). Since Phase 4: GPX export with heights, height profiles, free-beds calendar, manual corrections, "best" ranking with route geometry, About dialog. Items marked **(verify)** are assumptions or partial observations and must be checked before relying on them.
+> Status (21 Oct 2026): Phases 0–4 done; prices, season dates and contacts read from the hut websites since 21 Oct (§3.7). Deployed on server2, tailnet only (`docs/deployment.md`). Since Phase 4: GPX export with heights, height profiles, free-beds calendar, manual corrections, "best" ranking with route geometry, About dialog. Items marked **(verify)** are assumptions or partial observations and must be checked before relying on them.
 
 ---
 
@@ -40,7 +40,7 @@ A private web app to browse and filter Swiss mountain huts (SAC plus selected no
 - Output: ranked list of tour suggestions (stop → hut → … → hut → stop), each with:
   - per-day time, distance, ascent/descent and max trail category (plus the SAC grade and SAC time where a matching SAC route exists)
   - route on the map
-  - price estimate (postponed)
+  - price estimate (hut costs per person and group)
   - availability status per night
 
 **F3: Availability**
@@ -48,7 +48,7 @@ A private web app to browse and filter Swiss mountain huts (SAC plus selected no
 - Used as a **filter during tour search** (full or closed huts are dropped), not only as a final check.
 - Distinguish full, closed, not yet released (0 of 0 beds) and unknown (hut not on hut-reservation.org).
 
-**F4: Price estimate** (postponed)
+**F4: Price estimate** (done: hut costs from website prices, §3.7)
 - Computed from stored price components and user inputs: members/non-members, half board vs. self-catering vs. overnight only, number of people, nights, local tax.
 
 **F5: Data maintenance** (done: `refresh` command, "Edit hut data", "+ Add hut", excluding connections; all behind the admin password)
@@ -101,7 +101,7 @@ A private web app to browse and filter Swiss mountain huts (SAC plus selected no
 | Data | Change rate | Approach |
 |---|---|---|
 | Hut base data (location, beds, opening, catering, services) | rare | Sync job from the SAC API (e.g. weekly) into the DB |
-| Prices, missing details, non-SAC huts | rare, no API | Manual entry / scraping into the DB |
+| Prices, season dates, booking method, missing details | rare, no API | Read from the hut websites by a language model once or twice per season (`scrape_huts`, §3.7); manual entry for corrections |
 | Bed availability | constant | One request per hut returns the whole season. Cached for 10 minutes and used as a search filter |
 | Hut↔hut and stop↔hut connections | almost never | Precomputed offline on the swissTLM3D trail graph (rebuilt yearly with each new edition) |
 
@@ -143,11 +143,13 @@ All coordinates are stored in LV95 and WGS84.
 | Table / view | Holds |
 |---|---|
 | `place` | Everything a tour can start, end or stay at: huts and stops, with LV95 + WGS84, altitude, snap distance to the trail network |
-| `hut` | SAC (or hand-added) hut data: SAC and hut-reservation.org ids, beds, services, photos, free access routes, raw API JSON, `source` |
+| `hut` | SAC (or hand-added) hut data: SAC and hut-reservation.org ids, beds, phone, services, photos, free access routes, raw API JSON, `source` |
 | `hut_month` | SAC opening codes per month: `catering` (staffed) and `self_service` (winter room), 0 yes / 1 partly / 2 no; all 2 = no data |
 | `hut_override` | Manual corrections per hut and field (`beds`, `catering.7`, …), never touched by syncs |
 | `hut_effective`, `hut_month_effective` | Views: override if present, else source. The app reads these |
-| `hut_price` | Price components (unused; prices postponed) |
+| `hut_web` | What the hut website says (§3.7): status (ok / unreachable / no_info), phone, booking methods and page, winter room, practical notes, when and by which model it was read |
+| `hut_season` | Opening periods from the hut website: catered / self-service / exceptional closure, MM-DD to MM-DD, year, vague flag, source quote and whether it was found word for word. Refine the SAC months to days (`app/planner/opening.py`) |
+| `hut_price` | Price components per person and night from the hut website (overnight, half board, breakfast, dinner, tax, winter room, kitchen use), member / regular / youth / child, with label, year, source quote |
 | `stop` | Public transport stops: official number, transport modes |
 | `edge` | Directed walking connections per trail-category limit: time, distance, ascent/descent, hardest category, matching SAC route, route line (encoded polyline), heights per point, `excluded` + `note` (manual, kept across rebuilds) |
 | `availability`, `availability_fetch` | Cached hut-reservation.org calendars (per hut and day) and when/whether each hut was fetched |
@@ -212,7 +214,7 @@ Notes:
 - **No price fields** in the SAC data.
 - `opening`/`catering` codes: **0 = yes (whole month), 1 = partly, 2 = no**. `catering` = staffed/catered (confirmed). `opening` = self-service part (winter room) open (strong hypothesis). All-2 = no data (82 huts).
 - `hrs_id` links to hut-reservation.org (0 = none).
-- Contact fields (tel, email) are personal data of hut operators. Don't republish.
+- `tel` and `email` are shown in the app (private, tailnet only; decided 2026-10-21) as call and mail buttons, kept as `hut.phone` / `hut.email` (website values as fallback). Don't republish them.
 
 ### 3.2 hut-reservation.org (availability, bookings)
 
@@ -248,6 +250,13 @@ Notes:
 ### 3.6 Coordinate conversion
 
 - SAC, swissTLM3D and the stop list all use LV95 (EPSG:2056). Store LV95 and convert to WGS84 (EPSG:4326) for the map with `pyproj`.
+
+### 3.7 Hut websites (scraped, read by a language model)
+
+- 380 of 384 huts have a website in the SAC data; 165 are not on hut-reservation.org and 65 of those have no SAC opening data either. Their websites often give season dates, prices and how to book.
+- `app/ingest/scrape_huts.py`, three stages: **fetch** (start page plus up to 6 linked pages of the same site that look like prices / opening / booking, and up to 3 price-list PDFs; robots.txt respected, one request per 2 s per host; `data/raw/web/`), **extract** (Gemini 3.5 Flash on Vertex AI through the gcloud login, `app/clients/gemini.py`; fixed JSON schema, temperature 0, every value with its source sentence), **load** (into `hut_web`, `hut_season`, `hut_price`; values that don't parse are dropped; a quote not found word for word in the page text is stored as unverified and shown with "?").
+- Pilot (20 private huts, Oct 2026): 18 read, 2 dead links; 60 of 73 quotes found word for word, the rest mostly rebuilt from price tables. Exceptional closures ("closed in summer 2026 after a landslide") come out as `closed` seasons. Gemini sometimes writes NUL for an accented letter; stripped on load.
+- Runs on the Mac (gcloud). The server's database is the master copy, so copy `data/raw/web/*.json` (no PDFs needed) to the server and run `python -m app.ingest.scrape_huts load` there (`docs/deployment.md`).
 
 ---
 
@@ -286,8 +295,9 @@ Answer the open questions before building:
 - [x] Availability: season calendar per hut from hut-reservation.org, **cached 10 minutes** (availability changes quickly). Tour search runs in up to 3 rounds: search, fetch the calendars of huts in the best 25 candidates (max 40 fetches, 2 in parallel), search again. Full or closed nights drop out; free-bed nights use the daily status (SERVICED = catered, UNSERVICED = self-service); not-yet-released (0 of 0) and huts without online booking fall back to SAC monthly codes and rank slightly lower. Typical search: 3–6 s with fresh fetches.
 - [x] Planner: number of people, "check free beds" option, card badge (beds free / N nights unconfirmed), free beds + "Book" link per night.
 - [x] A CLOSED 0-of-0 night before the hut's released season counts as closed (e.g. Chamanna Cluozza before 3 June), not "not bookable yet". Only nights with nothing released later stay "not bookable yet".
-- [ ] Price entry (start with YAML/CSV import, then a simple admin form). **Postponed.**
-- [ ] Price estimator from user inputs. **Postponed.**
+- [x] Prices, season dates, booking method and notes from the hut websites (§3.7), shown in the hut detail with source and date. Season dates refine the planner's nights to days, and fill in huts without SAC opening data.
+- [x] Phone number and email (SAC, else website) as call / mail buttons; editable as overrides.
+- [x] Cost estimate per tour (`app/planner/costs.py`): per night the cheapest bed, half board when catered, winter room + kitchen fee when self-service, plus tourist tax; member or regular prices (switch in the form, no new search), total for the group, "from" when some nights have no prices, EUR summed separately. Card chip, "Cheapest" sort, per-night line in the tour detail.
 
 ### Later
 
@@ -338,13 +348,14 @@ The repo layout is described in `README.md`.
 - SAC has granted API permission before (e.g. the OSM hut-metadata import, with the condition "moderate usage"). If the project ever goes public, **ask SAC first**.
 - Paid route portal content (routes with `availability != "free"`) must not be used.
 - hut-reservation.org has its own terms. Read only, low rate, no booking automation.
+- Hut websites: public pages only, robots.txt respected, low rate, once or twice per season. Extracted facts (dates, prices) for private use; no copies of the pages are published.
 
 **Technical risks:**
 - Undocumented APIs can change or disappear. Store raw JSON and keep the clients isolated.
 - Computed times are less reliable for T4+ (official times there are hand-adjusted). Show the SAC time next to the computed one where available.
 - Huts far from the signposted network (long snaps) can get wrong or missing edges. Review snaps over ~200 m.
 - The monthly SAC codes are coarse. Prefer hut-reservation.org's daily status where it exists.
-- Price data is manual and goes stale. Show `updated_at` and source with every estimate.
+- Price and season data from the websites goes stale and can be misread by the model. Show source and date with every value; re-run before each season.
 - Not all huts use hut-reservation.org. Show availability as "unknown" for those.
 
 **Safety:**

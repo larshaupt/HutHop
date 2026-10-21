@@ -71,6 +71,29 @@ def list_huts(
     return [h for h in huts if keep(h)]
 
 
+def website_info(conn: sqlite3.Connection, hut_id: int) -> dict | None:
+    """What was read from the hut website (app/ingest/scrape_huts.py): booking, notes, seasons and prices."""
+    web = conn.execute("SELECT * FROM hut_web WHERE hut_id = ?", (hut_id,)).fetchone()
+    if not web:
+        return None
+    seasons = conn.execute("SELECT kind, start_md, end_md, year, approximate, note, source_url, quote, verified "
+                           "FROM hut_season WHERE hut_id = ? ORDER BY kind = 'closed', year, start_md", (hut_id,))
+    prices = conn.execute("SELECT item, label, includes_overnight, member, non_member, youth, child, currency, year, "
+                          "source, source_url, quote, verified FROM hut_price WHERE hut_id = ? ORDER BY rowid",
+                          (hut_id,))
+    return {
+        "url": web["url"],
+        "status": web["status"],
+        "booking_methods": json.loads(web["booking_methods"] or "[]"),
+        "booking_url": web["booking_url"],
+        "winter_room": None if web["winter_room"] is None else bool(web["winter_room"]),
+        "notes": web["notes"],
+        "checked_at": web["extracted_at"],
+        "seasons": [dict(r) for r in seasons],
+        "prices": [dict(r) for r in prices],
+    }
+
+
 @router.get("/{hut_id}")
 def hut_detail(hut_id: int, conn: sqlite3.Connection = Depends(get_db)) -> dict:
     row = conn.execute("SELECT * FROM hut_effective WHERE id = ?", (hut_id,)).fetchone()
@@ -83,6 +106,9 @@ def hut_detail(hut_id: int, conn: sqlite3.Connection = Depends(get_db)) -> dict:
         "owner": row["owner"],
         "description": row["description"],
         "website": row["website"],
+        "phone": row["phone"],
+        "email": row["email"],
+        "web": website_info(conn, hut_id),
         "booking_url": hut_reservation.BOOKING_URL.format(row["hrs_id"]) if row["hrs_id"] else None,
         "services": json.loads(row["services"] or "{}"),
         "photos": json.loads(row["photos"] or "[]"),

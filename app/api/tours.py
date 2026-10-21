@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field, model_validator
 from app import config
 from app.api.deps import get_db
 from app.clients import hut_reservation
-from app.planner import gpx, planning, ranking, transit
+from app.planner import costs, gpx, planning, ranking, transit
 from app.planner.graph import Graph
 from app.planner.tours import (
     Catering,
@@ -128,6 +128,8 @@ def tour_json(conn: sqlite3.Connection, graph: Graph, tours: list[Tour]) -> list
     edge_ids = sorted({leg.edge_id for t in tours for leg in t.legs})
     lines = {r["id"]: r for r in conn.execute(
         f"SELECT id, geometry, elevation FROM edge WHERE id IN ({','.join('?' * len(edge_ids))})", edge_ids)}
+    prices = costs.load_prices(conn, {n.hut for t in tours for n in t.nights})
+    estimates = [costs.tour_cost(t.nights, prices) for t in tours]
     return [{
         "id": t.id,
         "score": round(t.score, 3),
@@ -140,6 +142,7 @@ def tour_json(conn: sqlite3.Connection, graph: Graph, tours: list[Tour]) -> list
         "descent_m": sum(leg.descent_m for leg in t.legs),
         "max_category": max(leg.max_category for leg in t.legs),
         "uncertain_nights": sum(1 for n in t.nights if n.status == "unknown" or n.partial),
+        "cost": {k: v for k, v in cost.items() if k != "nights"},
         "access": service_json(graph, t.legs[0].frm, t.start_date, t.legs[0].time_min, "access"),
         "exit": service_json(graph, t.legs[-1].to, t.start_date + timedelta(days=len(t.legs) - 1),
                              t.legs[-1].time_min, "exit"),
@@ -155,9 +158,10 @@ def tour_json(conn: sqlite3.Connection, graph: Graph, tours: list[Tour]) -> list
                                             "sac_time_min")},
             "geometry": lines[leg.edge_id]["geometry"] if leg.edge_id in lines else None,
             "elevation": lines[leg.edge_id]["elevation"] if leg.edge_id in lines else None,  # heights per point
-            "night": night_json(t.nights[i], graph.huts[leg.to].hrs_id) if i < len(t.nights) else None,
+            "night": night_json(t.nights[i], graph.huts[leg.to].hrs_id) | {"cost": cost["nights"][i]}
+            if i < len(t.nights) else None,
         } for i, leg in enumerate(t.legs)],
-    } for t in tours]
+    } for t, cost in zip(tours, estimates)]
 
 
 def service_json(graph: Graph, stop_id: int, day: date, walk_min: int, role: str) -> dict:

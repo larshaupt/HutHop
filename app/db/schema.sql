@@ -23,6 +23,8 @@ CREATE TABLE IF NOT EXISTS hut (
   beds          INTEGER,
   shelter_beds  INTEGER,              -- places in the winter room / emergency shelter
   website       TEXT,
+  phone         TEXT,                 -- hut / reservation phone as published by SAC (`tel`)
+  email         TEXT,                 -- hut / reservation email as published by SAC
   description   TEXT,
   services      TEXT,                 -- JSON object of booleans
   photos        TEXT,                 -- JSON list of {caption, copyright, small, medium, large}
@@ -41,22 +43,67 @@ CREATE TABLE IF NOT EXISTS hut_month (
   PRIMARY KEY (hut_id, month)
 );
 
+-- Prices per person and night, from the hut website (app/ingest/scrape_huts.py) or entered by hand.
+-- Replaced per hut and source on every load.
 CREATE TABLE IF NOT EXISTS hut_price (
-  hut_id     INTEGER REFERENCES hut(place_id),
-  year       INTEGER NOT NULL,
-  item       TEXT NOT NULL CHECK (item IN
-               ('overnight','half_board','breakfast','tax','self_catering_fee')),
-  member     REAL,                    -- CHF
-  non_member REAL,
+  hut_id     INTEGER NOT NULL REFERENCES hut(place_id),
+  item       TEXT NOT NULL CHECK (item IN ('overnight','half_board','breakfast','dinner','tax','winter_room',
+                                           'self_catering_fee')),
+  label      TEXT,                    -- original wording, e.g. "Halbpension inkl. Übernachtung (Massenlager)"
+  includes_overnight INTEGER NOT NULL DEFAULT 0,  -- half board price includes the bed
+  member     REAL,                    -- Alpine club members
+  non_member REAL,                    -- regular price (same as member if there is only one)
   youth      REAL,
-  source     TEXT NOT NULL,           -- 'manual' | 'scraped' | 'hrs'
+  child      REAL,
+  currency   TEXT NOT NULL DEFAULT 'CHF',
+  year       INTEGER,                 -- season the price is for (NULL = not stated)
+  source     TEXT NOT NULL,           -- 'scraped' | 'manual'
   source_url TEXT,
-  updated_at TEXT,
-  PRIMARY KEY (hut_id, year, item)
+  quote      TEXT,                    -- sentence on the website the price comes from
+  verified   INTEGER,                 -- 1: quote found word for word in the fetched pages, NULL: from a PDF
+  updated_at TEXT
+);
+CREATE INDEX IF NOT EXISTS hut_price_hut ON hut_price(hut_id);
+
+-- Opening periods from the hut website. They refine the SAC monthly codes to days and fill in huts
+-- without SAC opening data (app/planner/opening.py). Replaced per hut on every load.
+CREATE TABLE IF NOT EXISTS hut_season (
+  hut_id      INTEGER NOT NULL REFERENCES hut(place_id),
+  kind        TEXT NOT NULL CHECK (kind IN ('catered','self_service','closed')),
+                                      -- closed: exceptional closure (renovation, damage), always with year
+  start_md    TEXT NOT NULL,          -- 'MM-DD'
+  end_md      TEXT NOT NULL,          -- 'MM-DD' (inclusive; earlier than start_md = over New Year)
+  year        INTEGER,                -- year the dates were published for (NULL = every year)
+  approximate INTEGER NOT NULL DEFAULT 0,   -- vague dates ("mid June", "depending on snow")
+  note        TEXT,
+  source      TEXT NOT NULL,          -- 'scraped'
+  source_url  TEXT,
+  quote       TEXT,
+  verified    INTEGER                 -- 1: quote found word for word in the fetched pages, NULL: from a PDF
+);
+CREATE INDEX IF NOT EXISTS hut_season_hut ON hut_season(hut_id);
+
+-- Everything else read from the hut website, one row per hut (app/ingest/scrape_huts.py).
+CREATE TABLE IF NOT EXISTS hut_web (
+  hut_id           INTEGER PRIMARY KEY REFERENCES hut(place_id),
+  url              TEXT NOT NULL,     -- website that was read
+  status           TEXT NOT NULL,     -- 'ok' | 'unreachable' (dead link, error) | 'no_info' (not about this hut)
+  phone            TEXT,              -- phone number on the website
+  email            TEXT,              -- reservation email on the website
+  booking_methods  TEXT,              -- JSON list: hut_reservation_org, online_other, email, phone, not_needed
+  booking_url      TEXT,
+  closed_otherwise INTEGER,           -- 1: the website says the hut is closed outside its seasons
+  winter_room      INTEGER,           -- 1 / 0 / NULL (not stated)
+  winter_room_beds INTEGER,
+  beds             INTEGER,
+  notes            TEXT,              -- practical facts in English, written by the extraction model
+  fetched_at       TEXT,
+  extracted_at     TEXT,
+  model            TEXT
 );
 
 -- Manual corrections that survive re-syncs. Fields: 'name', 'altitude', 'beds', 'shelter_beds', 'hrs_id',
--- 'website', 'catering.<month>', 'self_service.<month>'. See app/api/manual.py.
+-- 'website', 'phone', 'email', 'catering.<month>', 'self_service.<month>'. See app/api/manual.py.
 CREATE TABLE IF NOT EXISTS hut_override (
   hut_id     INTEGER REFERENCES hut(place_id),
   field      TEXT NOT NULL,
@@ -161,7 +208,11 @@ SELECT
   COALESCE((SELECT json_extract(o.value, '$') FROM hut_override o WHERE o.hut_id = p.id AND o.field = 'hrs_id'), h.hrs_id) AS hrs_id,
   COALESCE((SELECT json_extract(o.value, '$') FROM hut_override o WHERE o.hut_id = p.id AND o.field = 'beds'), h.beds) AS beds,
   COALESCE((SELECT json_extract(o.value, '$') FROM hut_override o WHERE o.hut_id = p.id AND o.field = 'shelter_beds'), h.shelter_beds) AS shelter_beds,
-  COALESCE((SELECT json_extract(o.value, '$') FROM hut_override o WHERE o.hut_id = p.id AND o.field = 'website'), h.website) AS website
+  COALESCE((SELECT json_extract(o.value, '$') FROM hut_override o WHERE o.hut_id = p.id AND o.field = 'website'), h.website) AS website,
+  COALESCE((SELECT json_extract(o.value, '$') FROM hut_override o WHERE o.hut_id = p.id AND o.field = 'phone'), h.phone,
+           (SELECT w.phone FROM hut_web w WHERE w.hut_id = p.id)) AS phone,
+  COALESCE((SELECT json_extract(o.value, '$') FROM hut_override o WHERE o.hut_id = p.id AND o.field = 'email'), h.email,
+           (SELECT w.email FROM hut_web w WHERE w.hut_id = p.id)) AS email
 FROM place p JOIN hut h ON h.place_id = p.id;
 
 DROP VIEW IF EXISTS hut_month_effective;
@@ -193,6 +244,8 @@ CREATE TRIGGER IF NOT EXISTS hut_month_del AFTER DELETE ON hut_month BEGIN UPDAT
 CREATE TRIGGER IF NOT EXISTS hut_override_ins AFTER INSERT ON hut_override BEGIN UPDATE data_version SET version = version + 1; END;
 CREATE TRIGGER IF NOT EXISTS hut_override_upd AFTER UPDATE ON hut_override BEGIN UPDATE data_version SET version = version + 1; END;
 CREATE TRIGGER IF NOT EXISTS hut_override_del AFTER DELETE ON hut_override BEGIN UPDATE data_version SET version = version + 1; END;
+CREATE TRIGGER IF NOT EXISTS hut_season_ins AFTER INSERT ON hut_season BEGIN UPDATE data_version SET version = version + 1; END;
+CREATE TRIGGER IF NOT EXISTS hut_season_del AFTER DELETE ON hut_season BEGIN UPDATE data_version SET version = version + 1; END;
 CREATE TRIGGER IF NOT EXISTS stop_ins AFTER INSERT ON stop BEGIN UPDATE data_version SET version = version + 1; END;
 CREATE TRIGGER IF NOT EXISTS stop_upd AFTER UPDATE ON stop BEGIN UPDATE data_version SET version = version + 1; END;
 CREATE TRIGGER IF NOT EXISTS stop_del AFTER DELETE ON stop BEGIN UPDATE data_version SET version = version + 1; END;

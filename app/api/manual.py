@@ -4,6 +4,7 @@ All changes need the admin password once one is set (see app/admin.py).
 """
 
 import json
+import re
 import sqlite3
 from datetime import UTC, datetime
 from typing import Any
@@ -26,6 +27,8 @@ FIELDS: dict[str, tuple[str, Any]] = {
     "beds": ("h.beds", lambda v: _int(v, 0, 1000)),
     "shelter_beds": ("h.shelter_beds", lambda v: _int(v, 0, 200)),
     "website": ("h.website", lambda v: _url(v)),
+    "phone": ("h.phone", lambda v: _phone(v)),
+    "email": ("h.email", lambda v: _email(v)),
     "hrs_id": ("h.hrs_id", lambda v: _int(v, 1, 100_000)),
 }
 MONTH_FIELDS = ("catering", "self_service")
@@ -55,6 +58,22 @@ def _url(v: Any) -> str | None:
     if not isinstance(v, str) or not v.startswith(("http://", "https://")) or len(v) > 300:
         raise ValueError("expected an http(s) URL")
     return v
+
+
+def _phone(v: Any) -> str | None:
+    if v is None or v == "":
+        return None
+    if not isinstance(v, str) or not re.fullmatch(r"\+?[\d ()/.-]{6,30}", v.strip()):
+        raise ValueError("expected a phone number")
+    return v.strip()
+
+
+def _email(v: Any) -> str | None:
+    if v is None or v == "":
+        return None
+    if not isinstance(v, str) or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", v.strip()) or len(v) > 120:
+        raise ValueError("expected an email address")
+    return v.strip()
 
 
 def parse_field(field: str, value: Any) -> Any:

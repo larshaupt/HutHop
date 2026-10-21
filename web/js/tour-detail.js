@@ -1,5 +1,7 @@
 // Tour detail view: day-by-day timeline with nights, free beds and a height profile per day.
-import { $, CATEGORY, decodePolyline, decodeValues, distanceM, esc, formatMinutes, modeLabel } from "./util.js";
+import { $, CATEGORY, costTitle, decodePolyline, decodeValues, distanceM, esc, formatCost, formatMinutes, modeLabel }
+  from "./util.js";
+import { state } from "./state.js";
 
 const NIGHT_LABEL = { catered: "Catered", self_service: "Self-service", unknown: "No opening data", closed: "Closed" };
 const AVAIL_LABEL = {
@@ -98,6 +100,7 @@ export function renderTourDetail(t) {
           <div class="tl-meta">Night of ${formatDay(d.date)} ·
             <span class="night ${d.night.status}">${NIGHT_LABEL[d.night.status]}${d.night.partial ? ", part of the month – check dates" : ""}</span></div>
           ${nightAvailability(d.night)}
+          ${nightCost(d.night.cost)}
         </div></li>` : "";
     return `<li class="tl-day" data-day="${d.day}">
         <div class="tl-dot" style="--c:${cat.color}"></div>
@@ -121,6 +124,7 @@ export function renderTourDetail(t) {
         <div class="fact"><b>${(t.distance_m / 1000).toFixed(1)}</b><span>km</span></div>
         <div class="fact"><b>${t.ascent_m.toLocaleString("de-CH")}</b><span>m ascent</span></div>
       </div>
+      ${tourCost(t)}
       <div class="actions">
         <a class="btn" href="/api/tours/${encodeURIComponent(t.id)}/gpx" download>Download GPX</a>
       </div>
@@ -131,6 +135,23 @@ export function renderTourDetail(t) {
         free beds from hut-reservation.org (cached up to 10 minutes; not a reservation). Check conditions, weather
         and official sources before you go.</p>
     </div>`;
+}
+
+function nightCost(c) {
+  if (!c) return `<div class="tl-meta">No prices known for this hut</div>`;
+  const amount = state.tMember ? c.member : c.non_member;
+  return `<div class="tl-meta">≈ ${c.currency} ${Math.round(amount)} per person: ${c.basis}` +
+    `${c.tax ? " + tax" : ""}${c.label ? ` (${esc(c.label)}` + (c.year ? `, ${c.year})` : ")") : ""}</div>`;
+}
+
+/** Estimated hut costs for the tour: per person and for the group, with how many nights have prices. */
+function tourCost(t) {
+  if (!t.cost?.priced) return `<p class="hint">No hut prices known for this tour.</p>`;
+  const people = state.tPeople;
+  const from = t.cost.priced < t.nights ? "from " : "";
+  return `<p class="tour-cost" title="${esc(costTitle(t, state.tMember, people))}">Hut costs ≈ <b>${from}` +
+    `${formatCost(t.cost.totals, state.tMember)}</b> per person${people > 1 ? `, ${from}${formatCost(t.cost.totals, state.tMember, people)} for ${people}` : ""}` +
+    `${t.cost.priced < t.nights ? ` · ${t.nights - t.cost.priced} night${t.nights - t.cost.priced > 1 ? "s" : ""} without prices` : ""}</p>`;
 }
 
 function nightAvailability(n) {
