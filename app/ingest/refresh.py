@@ -21,7 +21,7 @@ from datetime import UTC, datetime
 import httpx
 
 from app.db import ROOT, connect
-from app.ingest import build_edges, load_stops, load_timetable, sync_sac
+from app.ingest import build_edges, footprints, load_stops, load_timetable, sync_sac
 
 TLM_STAC_ITEMS = "https://data.geo.admin.ch/api/stac/v1/collections/ch.swisstopo.swisstlm3d-wanderwege/items"
 TLM_DIR = ROOT / "data/tlm"
@@ -83,6 +83,7 @@ def run(skip_huts: bool = False, skip_stops: bool = False, skip_timetable: bool 
     needs_rebuild = rebuild or any(report.get(k) for k in ("huts_moved", "stops_moved", "lines_changed",
                                                           "trails_updated"))
     report["edges"] = build_edges.build(conn) if needs_rebuild else "unchanged"
+    report["footprints_filled"] = footprints.fill(conn)  # edges from before footprints, and hand-made ones
     report["seconds"] = round(time.time() - started)
 
     log = json.loads(LOG.read_text()) if LOG.exists() else []

@@ -44,7 +44,8 @@ and the official timetable (GTFS, opentransportdata.swiss, about 90 MB) into `da
 The timetable gives the lines and summer departures of each stop; a hut only gets a connection to the closest stop
 of each line.
 On server2, `server/refresh.sh` does the same in a one-off container (see the deployment doc). Edges built before
-height profiles existed get them with `python -m app.ingest.profiles`.
+height profiles existed get them with `python -m app.ingest.profiles`; edges without a stored footprint (grid cells
+and shape samples for the tour search) get one with `python -m app.ingest.footprints`, which `refresh` also runs.
 
 Other commands: `python -m app.backup` (dated copy in `data/backups/`, keeps 14), `python -m app.admin set-password`.
 
@@ -58,7 +59,7 @@ app/
   api/       routes: huts (list, detail, /availability calendar), edges (connections, exclude), manual
              (overrides, added huts), tours (/suggest, /{id}, /{id}/gpx, /stops), info (About dialog)
   db/        schema.sql (tables, views, change-counter triggers) and connect() (migrations, WAL)
-  ingest/    offline jobs: refresh, sync_sac, load_stops, load_timetable, build_edges, profiles
+  ingest/    offline jobs: refresh, sync_sac, load_stops, load_timetable, build_edges, profiles, footprints
   planner/   graph (model, loading, cache), tours (beam search, scoring, rebuilding, diversity),
              planning (search with free-bed rounds, rebuild by id: what the API calls), ranking (sub-scores,
              "best"), geometry (retracing, shape), availability (cache, classification, calendar), opening,

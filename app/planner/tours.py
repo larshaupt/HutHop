@@ -159,49 +159,61 @@ def suggest(graph: Graph, req: TourRequest, availability: AvailabilityLookup | N
         p = UNKNOWN_PENALTY if n.status == "unknown" else PARTIAL_PENALTY if n.partial else 0.0
         return p + (AVAILABILITY_PENALTY[n.availability.state] if n.availability else 0.0)
 
-    def retrace_cost(legs: tuple[Leg, ...], leg: Leg) -> float:
-        return RETRACE_PENALTY * graph.footprints.repeated([x.edge_id for x in legs], leg.edge_id)
+    fp = graph.footprints
 
-    # Day 1: stop → first hut. State: (cost, legs, nights)
+    def repeated(legs: tuple[Leg, ...], leg: Leg) -> float:
+        return fp.repeated([x.edge_id for x in legs], leg.edge_id)
+
+    # Day 1: stop → first hut. State: (cost, legs, nights, walked): walked = cells of the tour so far that retrace
+    # earlier days (Footprints.retraced, summed day by day, so complete tours needn't compute it again).
     states = []
     for hut_id, legs in graph.stop_in.items():
         if not in_region(hut_id) or not (n := night(hut_id, 0)):
             continue
         for leg in legs:
             if lo <= leg.time_min <= hi and (req.start_near is None or near(graph.stops[leg.frm], req.start_near)):
-                states.append((day_cost(leg) + penalty(n), (leg,), (n,)))
+                states.append((day_cost(leg) + penalty(n), (leg,), (n,), 0.0))
     states = heapq.nsmallest(BEAM_WIDTH, states, key=lambda s: s[0])
 
     # Days 2..nights: hut → hut
     for i in range(1, req.nights):
         nxt = []
-        for cost, legs, nights in states:
+        for cost, legs, nights, walked in states:
             visited = {n.hut for n in nights}
             for leg in graph.hut_out.get(legs[-1].to, ()):
                 if leg.to in visited or not (lo <= leg.time_min <= hi) or not in_region(leg.to):
                     continue
                 if n := night(leg.to, i):
-                    nxt.append((cost + day_cost(leg) + retrace_cost(legs, leg) + penalty(n), legs + (leg,), nights + (n,)))
+                    r = repeated(legs, leg)
+                    nxt.append((cost + day_cost(leg) + RETRACE_PENALTY * r + penalty(n), legs + (leg,),
+                                nights + (n,), walked + r * len(fp.cells(leg.edge_id))))
         states = heapq.nsmallest(BEAM_WIDTH, nxt, key=lambda s: s[0])
 
     # Last day: hut → stop. Then order all complete tours by "best" (other orders are applied in the browser).
     tours = []
-    for cost, legs, nights in states:
+    for cost, legs, nights, walked in states:
         start = graph.stops[legs[0].frm]
-        ends = [leg for leg in graph.stop_out.get(legs[-1].to, ()) if lo <= leg.time_min <= hi and (
-            not req.loop or math.hypot(graph.stops[leg.to].e - start.e, graph.stops[leg.to].n - start.n) <= LOOP_RADIUS_M)]
-        for leg in heapq.nsmallest(END_LEGS_PER_STATE, ends, key=lambda x: day_cost(x) + retrace_cost(legs, x)):
-            tours.append(scored(graph, legs + (leg,), nights, req.start_date, (req.min_hours, req.max_hours),
-                                req.weights))
+        ends = [(leg, repeated(legs, leg)) for leg in graph.stop_out.get(legs[-1].to, ()) if lo <= leg.time_min <= hi
+                and (not req.loop or math.hypot(graph.stops[leg.to].e - start.e,
+                                                graph.stops[leg.to].n - start.n) <= LOOP_RADIUS_M)]
+        for leg, r in heapq.nsmallest(END_LEGS_PER_STATE, ends, key=lambda x: day_cost(x[0]) + RETRACE_PENALTY * x[1]):
+            tour_legs = legs + (leg,)
+            total = sum(len(fp.cells(x.edge_id)) for x in tour_legs)
+            retraced = min(1.0, (walked + r * len(fp.cells(leg.edge_id))) / total) if total else 0.0
+            tours.append(scored(graph, tour_legs, nights, req.start_date, (req.min_hours, req.max_hours),
+                                req.weights, retraced))
     tours.sort(key=lambda t: -t.score)
     return diversify(tours, req.max_results)
 
 
 def scored(graph: Graph, legs: tuple[Leg, ...], nights: tuple[Night, ...], start_date: date,
-           hours: tuple[float, float], weights: dict[str, float]) -> Tour:
+           hours: tuple[float, float], weights: dict[str, float], retraced: float | None = None) -> Tour:
+    """A tour with its metrics and "best" score. `retraced` if the caller already knows it (the search does)."""
     edge_ids = [leg.edge_id for leg in legs]
+    if retraced is None:
+        retraced = graph.footprints.retraced(edge_ids)
     m = ranking.metrics(legs, nights, [graph.huts[n.hut].altitude for n in nights], hours[0] * 60, hours[1] * 60,
-                        retraced=graph.footprints.retraced(edge_ids), shape=graph.footprints.shape(edge_ids))
+                        retraced=retraced, shape=graph.footprints.shape(edge_ids))
     return Tour(m.best(weights), legs, nights, start_date, m, hours)
 
 

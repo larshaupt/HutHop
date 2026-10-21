@@ -140,3 +140,23 @@ def test_added_column_on_old_database(tmp_path):
     old.close()
     conn = connect(tmp_path / "old.db")
     assert "elevation" in {r["name"] for r in conn.execute("PRAGMA table_info(edge)")}
+
+
+def test_footprints_stored_and_backfilled(network, places, tmp_path):
+    from app.db import connect
+    from app.ingest import footprints
+    from app.planner.geometry import footprint, unpack
+
+    edges = search(network, places)
+    cells, samples = unpack(edges[0]["footprint"], edges[0]["samples"])
+    expected_cells, expected_samples = footprint(edges[0]["geometry"])
+    assert (cells == expected_cells).all() and (samples == expected_samples).all()
+
+    conn = connect(tmp_path / "test.db")  # an edge stored before footprints existed
+    for kind in ("hut", "hut"):
+        conn.execute("INSERT INTO place (kind, name, e_lv95, n_lv95, lat, lon) VALUES (?, 'p', 0, 0, 46, 8)", (kind,))
+    conn.execute("INSERT INTO edge (from_place, to_place, category_limit, max_category, time_min, source, geometry) "
+                 "VALUES (1, 2, 1, 1, 60, 'tlm_routed', ?)", (edges[0]["geometry"],))
+    assert footprints.fill(conn) == 1 and footprints.fill(conn) == 0
+    row = conn.execute("SELECT footprint, samples FROM edge").fetchone()
+    assert (unpack(row["footprint"], row["samples"])[0] == expected_cells).all()

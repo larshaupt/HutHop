@@ -33,7 +33,7 @@ from scipy.sparse.csgraph import dijkstra
 from scipy.spatial import cKDTree
 
 from app.db import ROOT, connect
-from app.planner import hiking_time, polyline
+from app.planner import geometry, hiking_time, polyline
 
 GPKG = ROOT / "data/tlm/SWISSTLM3D_WANDERWEGE.gpkg"
 CATEGORY = {"Wanderweg": 1, "Bergwanderweg": 2, "Alpinwanderweg": 3}  # yellow, red-white, blue-white
@@ -236,6 +236,7 @@ def search(network: TrailNetwork, places: list[dict], cutoff: float = CUTOFF_MIN
     for (_, _, limit), e in found.items():
         e["geometry"] = path_geometry(network, limit, e.pop("_nodes"))
         e["elevation"] = heights.profile(e["geometry"])
+        e["footprint"], e["samples"] = geometry.pack(*geometry.footprint(e["geometry"]))
         edges.append(e)
     return edges
 
@@ -340,9 +341,10 @@ def store(conn: sqlite3.Connection, places: list[dict], edges: list[dict], netwo
         conn.execute("DELETE FROM edge WHERE source = 'tlm_routed'")
         conn.executemany(
             "INSERT INTO edge (from_place, to_place, distance_m, ascent_m, descent_m, time_min, max_category, "
-            "category_limit, source, geometry, elevation, excluded, note, computed_at) VALUES (:from_place, "
-            ":to_place, :distance_m, :ascent_m, :descent_m, :time_min, :max_category, :category_limit, 'tlm_routed', "
-            ":geometry, :elevation, :excluded, :note, :computed_at)",
+            "category_limit, source, geometry, elevation, footprint, samples, excluded, note, computed_at) "
+            "VALUES (:from_place, :to_place, :distance_m, :ascent_m, :descent_m, :time_min, :max_category, "
+            ":category_limit, 'tlm_routed', :geometry, :elevation, :footprint, :samples, :excluded, :note, "
+            ":computed_at)",
             [e | dict(zip(("excluded", "note"), kept.get((e["from_place"], e["to_place"], e["category_limit"]),
                                                           (0, None))))
              | {"computed_at": computed_at} for e in edges],

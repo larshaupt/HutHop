@@ -1,7 +1,8 @@
 """The place graph the planner searches: huts and stops as nodes, stored walking connections (edges) as legs.
 
 Loaded from SQLite and cached per trail-category limit until the data changes (data_version, bumped by triggers
-in schema.sql). One Footprints cache (route-line geometry) is shared by the graphs of all limits.
+in schema.sql). One Footprints cache (route footprints, for retracing and shape) is shared by the graphs of all
+limits.
 """
 
 import json
@@ -75,7 +76,9 @@ def load_graph(conn: sqlite3.Connection, limit: int, footprints: Footprints | No
         huts[r["id"]] = Hut(r["id"], r["name"], r["lat"], r["lon"], r["e_lv95"], r["n_lv95"], c, s,
                             json.loads(r["services"] or "{}").get("half_board", False), r["hrs_id"], r["altitude_m"])
     rows = conn.execute(
-        "SELECT * FROM edge WHERE category_limit <= ? AND excluded = 0", (limit,)).fetchall()
+        "SELECT id, from_place, to_place, time_min, distance_m, ascent_m, descent_m, max_category, sac_time_min, "
+        "category_limit, footprint, samples, CASE WHEN footprint IS NULL THEN geometry END AS geometry "
+        "FROM edge WHERE category_limit <= ? AND excluded = 0", (limit,)).fetchall()
     stop_ids = {r["from_place"] for r in rows if r["from_place"] not in huts} | \
                {r["to_place"] for r in rows if r["to_place"] not in huts}
     stops = {}
@@ -85,7 +88,8 @@ def load_graph(conn: sqlite3.Connection, limit: int, footprints: Footprints | No
                               f"JOIN stop s ON s.place_id = p.id WHERE p.id IN ({','.join('?' * len(ids))})", ids):
             stops[r["id"]] = Stop(r["id"], r["name"], r["lat"], r["lon"], r["e_lv95"], r["n_lv95"], r["mode"])
     footprints = footprints or Footprints({})
-    footprints.geometry.update({r["id"]: r["geometry"] for r in rows})
+    footprints.packed.update({r["id"]: (r["footprint"], r["samples"]) for r in rows if r["footprint"]})
+    footprints.geometry.update({r["id"]: r["geometry"] for r in rows if not r["footprint"]})
     graph = Graph(huts, stops, footprints=footprints)
     for r in rows:
         leg = Leg(r["id"], r["from_place"], r["to_place"], r["time_min"], r["distance_m"], r["ascent_m"],

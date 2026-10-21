@@ -120,3 +120,65 @@ def test_overlap_cache_is_bounded(monkeypatch):
         fp.overlap(1, b)
     assert len(fp._overlap) <= 3
     assert fp.overlap(1, 2) == fp.overlap(2, 1)  # recomputed after the cache started over
+
+
+def reference_shape(fp, edge_ids):
+    """shape() as computed before the per-edge parts: on all samples joined together (numpy)."""
+    import math
+
+    import numpy as np
+
+    from app.planner import geometry as g
+
+    pts = np.concatenate([fp.samples(e) for e in edge_ids])
+    length = float(np.hypot(*np.diff(pts, axis=0).T).sum())
+    progress = float(np.hypot(*(pts[-1] - pts[0]))) / length
+    closed = np.vstack((pts, pts[:1]))
+    area = 0.5 * abs(float(np.dot(closed[:-1, 0], closed[1:, 1]) - np.dot(closed[1:, 0], closed[:-1, 1])))
+    roundness = 4 * math.pi * area / (length + float(np.hypot(*(pts[-1] - pts[0])))) ** 2
+    loop = max(0.0, 1 - progress / g.LOOP_PROGRESS)
+    return max(0.0, min(1.0, max(progress / g.PROGRESS_GOOD, loop * roundness / g.ROUNDNESS_GOOD)))
+
+
+def test_shape_from_parts_matches_joined_samples():
+    fp = footprints(e1=line((0, 0), (2, 1), (3, 3)), e2=line((3, 3), (1, 4)), e3=line((1, 4), (0.5, 1.5)),
+                    e4=line((0.5, 1.5), (4, 0.2)))
+    for ids in ([1, 2], [1, 2, 3], [2, 3, 4], [1, 2, 3, 4]):
+        # Same formula, other summation order: rounding differs at ~1e-10 (coordinates are ~5000 km)
+        assert fp.shape(ids) == pytest.approx(reference_shape(fp, ids), abs=1e-8)
+
+
+def test_packed_footprint_roundtrip_and_same_overlaps():
+    from app.planner.geometry import footprint, pack, unpack
+
+    lines = {1: line((0, 0), (3, 0), (3, 2)), 2: line((3, 2), (3, 0), (5, -1)), 3: line((5, -1), (8, 0))}
+    decoded = Footprints(lines)
+    packed = Footprints({}, {e: pack(*footprint(g)) for e, g in lines.items()})
+    for e, g in lines.items():
+        cells, samples = unpack(*pack(*footprint(g)))
+        assert (cells == decoded.cells(e)).all() and (samples == decoded.samples(e)).all()
+        assert cells.dtype.name == "int32" and (cells[1:] > cells[:-1]).all()  # sorted, unique
+    for a, b in ((1, 2), (1, 3), (2, 3)):
+        assert packed.overlap(a, b) == decoded.overlap(a, b)
+    assert packed.overlap(1, 2) > 0 and packed.overlap(1, 3) == 0  # 1 and 3 are far apart: coarse check
+
+
+def test_search_retraced_matches_rebuilt_tour():
+    """The search sums retracing day by day; a tour rebuilt from its id computes it from scratch."""
+    from app.planner.tours import build_tour, parse_tour_id
+
+    huts = {1: Hut(1, "A", LAT0, LON0, 2_600_000, 1_200_000, "0" * 12, "2" * 12, True),
+            2: Hut(2, "B", LAT0, LON0, 2_603_000, 1_200_000, "0" * 12, "2" * 12, True)}
+    stops = {10: Stop(10, "S", LAT0, LON0, 2_600_000, 1_200_000, "bus"),
+             11: Stop(11, "T", LAT0, LON0, 2_606_000, 1_200_000, "bus")}
+    # Day 2 walks back over a stretch of day 1, day 3 back over part of day 2: some retracing, not clipped to 0.
+    g = Graph(huts, stops, footprints=footprints(e1=line((0, 0), (3, 0)), e2=line((3, 0), (2.5, 0), (2.5, 2)),
+                                                 e3=line((2.5, 2), (2.5, 1.5), (6, 1.5))))
+    g.stop_in = {1: [leg(1, 10, 1, 240)]}
+    g.hut_out = {1: [leg(2, 1, 2, 240)]}
+    g.stop_out = {2: [leg(3, 2, 10, 240)]}
+    g.legs = {(x.frm, x.to, x.category_limit): x for x in (*g.stop_in[1], *g.hut_out[1], *g.stop_out[2])}
+    [t] = suggest(g, TourRequest(date(2027, 7, 10), 2, 3, 6))
+    assert 0 < t.metrics.fresh < 1
+    rebuilt = build_tour(g, parse_tour_id(t.id))
+    assert rebuilt.metrics.fresh == t.metrics.fresh and rebuilt.score == t.score
