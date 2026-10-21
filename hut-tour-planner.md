@@ -306,6 +306,12 @@ Answer the open questions before building:
   2. *Real booking through hut-reservation.org (large, risky):* its booking endpoints (`preBook`, `submit`, …) are undocumented and need the user's own login, and the site's terms likely don't allow automated bookings. That would mean storing credentials and changing §3.2's "booking is out of scope". Only with the operator's permission; otherwise stay with level 1.
 - **Public transport within a tour:** allow a day to include a bus/train/cable car ride, e.g. walk down from a hut, take the bus through the valley, walk up to the next hut. Approach: combine a hut→stop edge, a timetable ride (or a simple stop→stop transfer table from the official timetable data), and a stop→hut edge into one day, counting only the walking time against the daily limit. Needs timetable data (e.g. opentransportdata.swiss GTFS) and a cap on rides per day.
 - Warnings for official trail closures and military shooting zones (geo.admin layers, see via-helvetica).
+- **Winter tours (ski touring, snowshoe hiking):** the same planner for winter, with a season switch. What changes:
+  - *Routes:* winter routes don't follow the summer hiking network. Candidates: swisstopo's ski touring and snowshoe route layers (geo.admin, `ch.swisstopo-karto.skitouren`, `ch.swisstopo-karto.schneeschuhrouten`; check license and whether the geometry can be downloaded) and SAC's ski touring and snowshoe routes (only routes with `availability == "free"`, see §6). Probably a separate winter edge set (`season` column on `edge`) with its own build.
+  - *Times and grades:* the Swiss hiking-time formula doesn't fit skis (fast descents) or snowshoes. Use SAC times where given, otherwise a separate formula per discipline. Grades: SAC ski scale (L, WS, ZS, …) and snowshoe scale (WT1–WT6) instead of trail colours.
+  - *Huts:* winter opening (SAC monthly codes, catered in winter vs. winter room only) and winter free beds from hut-reservation.org (same API).
+  - *Public transport:* `load_timetable` averages departures over July and August; winter needs a second window (e.g. January to March), otherwise winter-only ski buses and lifts get no connections (they are dropped today).
+  - *Safety:* a link to the SLF avalanche bulletin per tour and wildlife rest areas (`ch.bafu.wrz-wildruhezonen`) on the map. No avalanche risk assessment by the app; tours are planning aids only.
 - ~~Docker Compose for a home server~~ done (server2, see `docs/deployment.md`).
 
 ---
