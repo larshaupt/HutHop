@@ -8,8 +8,10 @@ Steps (see hut-tour-planner.md, "Routing approach"):
 2. Snap huts and stops to the nearest trail node (snap distance stored on `place`).
 3. From every hut, Dijkstra up to the cutoff, forward (hut → hut/stop) and on the reversed graph (stop → hut),
    once per trail category limit (yellow only, up to red-white, up to blue-white).
-4. Store edges with a simplified route line: all huts reached, and the STOPS_PER_HUT fastest stops per hut and
-   direction. Higher category limits only store edges that differ from the easier one.
+4. Store edges with a simplified route line: all huts reached, and per hut and direction only the closest stop of
+   each line in the summer timetable (`stop_line`, from load_timetable), so a bus line along the valley gives one
+   stop, not all of them. Without a loaded timetable: the STOPS_PER_HUT fastest stops. Higher category limits only
+   store edges that differ from the easier one.
 5. Keep manual `excluded` flags and notes across rebuilds, and attach matching SAC hut-to-hut routes.
 """
 
@@ -39,8 +41,7 @@ LIMITS = (1, 2, 3)
 NODE_PRECISION_M = 1.0
 CUTOFF_MIN = 600.0
 STOP_MAX_SNAP_M = 300.0
-# Fastest stops kept per hut, direction and category limit. Enough to include the stations of a village with
-# many bus stops (e.g. Grindelwald), while keeping the table small.
+# Most stops kept per hut, direction and category limit (after keeping only the closest stop of each line).
 STOPS_PER_HUT = 40
 # Huts further than this from a signposted trail (glacier and high-alpine huts, huts abroad) get no computed
 # edges: the gap would be counted as flat walking and give misleading times.
@@ -269,7 +270,7 @@ def _collect_from_tree(network: TrailNetwork, limit: int, reverse: bool, hut: di
     huts_reached = [cand for cand in candidates if cand[1]["kind"] == "hut"]
     stops_reached = sorted((cand for cand in candidates if cand[1]["kind"] == "stop"), key=lambda cand: cand[0])
 
-    for total, other, t in huts_reached + stops_reached[:STOPS_PER_HUT]:
+    for total, other, t in huts_reached + closest_per_line(stops_reached):
         frm, to = (other, hut) if reverse else (hut, other)
         easier = next((found[k] for k in ((frm["id"], to["id"], lim) for lim in range(limit - 1, 0, -1))
                        if k in found), None)
@@ -284,6 +285,18 @@ def _collect_from_tree(network: TrailNetwork, limit: int, reverse: bool, hut: di
             "max_category": int(agg["category"][t]) or 1,
             "_nodes": nodes[::-1] if reverse else nodes,
         }
+
+
+def closest_per_line(stops_reached: list[tuple]) -> list[tuple]:
+    """Of the stops reached (fastest first), those that serve a line no faster stop serves, at most STOPS_PER_HUT.
+    A stop's `lines` is None when no timetable is loaded: then simply the fastest stops."""
+    kept, covered = [], set()
+    for cand in stops_reached:
+        lines = cand[1].get("lines")
+        if lines is None or lines - covered:
+            kept.append(cand)
+            covered |= lines or set()
+    return kept[:STOPS_PER_HUT]
 
 
 def name_key(name: str) -> str:
@@ -350,6 +363,15 @@ def build(conn: sqlite3.Connection, cutoff: float = CUTOFF_MIN) -> int:
     nodes, dists = snap(network, np.array([(p["e_lv95"], p["n_lv95"]) for p in places]))
     for p, node, d in zip(places, nodes, dists):
         p["node"], p["snap_m"] = int(node), float(d)
+    lines: dict[int, set[str]] = {}
+    for r in conn.execute("SELECT stop_place, line FROM stop_line WHERE departures > 0"):
+        lines.setdefault(r["stop_place"], set()).add(r["line"])
+    if lines:  # stops without summer service get no edges
+        for p in places:
+            if p["kind"] == "stop":
+                p["lines"] = lines.get(p["id"], set())
+    print(f"timetable: {len(lines):,} stops with summer service" if lines else
+          "timetable: not loaded, keeping the fastest stops (run app.ingest.load_timetable)")
     review = sum(1 for p in places if p["kind"] == "hut" and HUT_REVIEW_SNAP_M < p["snap_m"] <= HUT_MAX_SNAP_M)
     off = sum(1 for p in places if p["kind"] == "hut" and p["snap_m"] > HUT_MAX_SNAP_M)
     print(f"snapped {len(places):,} places; huts: {review} to review (>{HUT_REVIEW_SNAP_M:.0f} m from a trail), "

@@ -57,6 +57,13 @@ def hut_edges(hut_id: int, limit: int = Query(2, ge=1, le=3, description="max tr
         e = item(r)
         entry = stops.setdefault(e["place"]["id"], {"place": e["place"], "to_hut": None, "from_hut": None})
         entry[direction] = {k: v for k, v in e.items() if k != "place"}
+    if stops:
+        ids = list(stops)
+        for r in conn.execute(f"SELECT stop_place, label, departures FROM stop_line WHERE departures > 0 AND "
+                              f"stop_place IN ({','.join('?' * len(ids))}) ORDER BY departures DESC", ids):
+            place = stops[r["stop_place"]]["place"]
+            place.setdefault("lines", []).append(r["label"])
+            place["departures"] = round(place.get("departures", 0) + r["departures"])
     stop_list = sorted(stops.values(), key=lambda s: min(
         (s[d]["time_min"] for d in ("to_hut", "from_hut") if s[d]), default=9999))
     return {"limit": limit, "huts": huts, "stops": stop_list}

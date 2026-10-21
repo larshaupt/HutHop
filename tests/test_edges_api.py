@@ -18,6 +18,8 @@ def client(tmp_path):
     stop = conn.execute("INSERT INTO place (kind, name, e_lv95, n_lv95, lat, lon) "
                         "VALUES ('stop', 'Valley Station', 2620000, 1150000, 46.5, 7.9)").lastrowid
     conn.execute("INSERT INTO stop (place_id, uic, mode) VALUES (?, 8500001, 'cableway,bus')", (stop,))
+    conn.executemany("INSERT INTO stop_line (stop_place, line, label, departures) VALUES (?, ?, ?, ?)",
+                     [(stop, "92-121", "B 121", 20.4), (stop, "93-244", "GB 2440", 300.0), (stop, "92-9", "B 9", 0)])
     edges = [  # (from, to, limit, max_category, minutes)
         (a, b, 1, 1, 300), (a, b, 3, 3, 200),
         (stop, a, 1, 1, 90), (a, stop, 1, 1, 60),
@@ -46,6 +48,8 @@ def test_stops_grouped_by_direction(client):
     s = stops[0]
     assert s["place"]["name"] == "Valley Station" and s["place"]["mode"] == "cableway,bus"
     assert s["to_hut"]["time_min"] == 90 and s["from_hut"]["time_min"] == 60
+    assert s["place"]["lines"] == ["GB 2440", "B 121"]  # most frequent first, no line without summer service
+    assert s["place"]["departures"] == 320
 
 
 def test_exclude_edge(client):

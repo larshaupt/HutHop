@@ -22,12 +22,13 @@ Serving HutHop takes little: a few hundred MB of RAM and a fraction of a CPU. On
 | Database | SQLite `data/huthop.db`, about 36 MB, WAL mode; path set with `HUTHOP_DB` | One persistent volume; no database server |
 | `sync_sac` | Fetches SAC huts, about 10 s and 5 requests | Can run on the server on a schedule |
 | `load_stops` | Public transport stops, about 5 MB download | Rare; `server/refresh.sh` |
+| `load_timetable` | Lines and summer departures per stop (GTFS), about 90 MB download when a new weekly edition is out, ~20 s and ~200 MB RAM to read | Weekly; `server/refresh.sh` (rebuilds the graph only if lines changed) |
 | `build_edges` | Route graph on swissTLM3D: about 2 min, about 2 GB RAM, 651 MB of input in `data/tlm/` | Yearly (new trail edition) or after new huts; `server/refresh.sh` |
 | Writes while running | Availability cache; hut corrections, added huts and edge exclusions (admin password) | The server's database is not read-only, and it is the master copy |
 | Settings | `huthop.toml` ("best" weights, impressum), baked into the image | Changing it means a commit and deploy |
 | Memory | Route graph cached per trail limit, plus a bounded cache of route-line overlaps (~40 MB at most) | A few hundred MB in total |
 | Browser dependencies | MapLibre from unpkg, swisstopo tiles | The browser needs internet access; the server doesn't serve them |
-| Server calls out to | SAC API (weekly sync), hut-reservation.org (free beds, on demand) | Outgoing internet only; nothing needs to accept calls from outside |
+| Server calls out to | SAC API (weekly sync), swisstopo, BAV and opentransportdata.swiss (weekly refresh), hut-reservation.org (free beds, on demand) | Outgoing internet only; nothing needs to accept calls from outside |
 
 ## Constraints
 
@@ -56,10 +57,10 @@ Any deployment has to keep the app private, because the SAC terms allow private 
 │                          │  └─────────▲──────────────────────┘    │ │
 │                          │  ┌─────────▼──────────────────────┐    │ │
 │                          │  │ /opt/huthop/data               │    │ │
-│                          │  │ huthop.db, backups/, tlm/      │    │ │
+│                          │  │ huthop.db backups/ tlm/ gtfs/  │    │ │
 │                          │  └─────────▲──────────────────────┘    │ │
 │                          │  ┌─────────┴──────────────────────┐    │ │
-│                          │  │ refresh.sh: one-off container  │─────────▶ SAC, swisstopo, BAV
+│                          │  │ refresh.sh: one-off container  │─────────▶ SAC, swisstopo, BAV, SBB
 │                          │  │ (data refresh, graph build)    │    │ │
 │                          │  └────────────────────────────────┘    │ │
 │                          └────────────────────────────────────────┘ │
@@ -86,7 +87,7 @@ The browser loads swisstopo tiles and MapLibre directly. The server only makes o
 The server's database is the only live copy. Everything that changes it runs on the server:
 
 ```sh
-/opt/huthop/server/refresh.sh            # backup, then huts + stops, trails if new, rebuild if needed
+/opt/huthop/server/refresh.sh            # backup, then huts, stops, timetable, trails if new, rebuild if needed
 /opt/huthop/server/refresh.sh --rebuild  # force a rebuild (e.g. after adding huts by hand)
 ```
 
@@ -127,7 +128,7 @@ Deploying is a push to `main`; the rest is a few host cron jobs.
 | Task | How often | How |
 | --- | --- | --- |
 | App update | Every 5 min | Host cron: `/opt/huthop/server/update.sh >> /opt/huthop/update.log 2>&1`. The script waits 150 s so it doesn't overlap the website's update (whose `docker image prune` broke our pulls), retries the pull once, and prunes only HutHop images |
-| Data refresh | Mondays 4:00 | Host cron (since 2026-10-19; before: SAC sync only): `/opt/huthop/server/refresh.sh >> /opt/huthop/refresh.log 2>&1`. Backup, SAC huts, stops, trails if swisstopo has a new edition, route graph rebuild only if something moved |
+| Data refresh | Mondays 4:00 | Host cron (since 2026-10-19; before: SAC sync only): `/opt/huthop/server/refresh.sh >> /opt/huthop/refresh.log 2>&1`. Backup, SAC huts, stops, timetable, trails if swisstopo has a new edition, route graph rebuild only if something moved or the lines per stop changed |
 | Availability | On demand | Fetched per hut and cached for 10 minutes by the app; no job |
 | Route graph rebuild | When swisstopo publishes new trails (about yearly), or after adding huts | Automatic in the Monday refresh when trails or positions changed; after adding huts by hand: `server/refresh.sh --rebuild` |
 | Backup | Nightly 3:30 | Host cron: `cd /opt/huthop/server && docker compose exec -T huthop python -m app.backup >> /opt/huthop/backup.log 2>&1`. Writes `data/backups/huthop-YYYY-MM-DD.db`, keeps 14. Sometimes copy one off the server |

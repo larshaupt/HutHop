@@ -73,6 +73,15 @@ CREATE TABLE IF NOT EXISTS stop (
                                       -- cableway, chairlift, boat, elevator
 );
 
+-- Lines serving each stop, from the official timetable (app/ingest/load_timetable.py). Replaced on every load.
+CREATE TABLE IF NOT EXISTS stop_line (
+  stop_place INTEGER NOT NULL REFERENCES place(id),
+  line       TEXT NOT NULL,           -- timetable route id without the year, e.g. 92-121-A
+  label      TEXT,                    -- e.g. "B 121", "R61"
+  departures REAL NOT NULL,           -- calls per day, averaged over July and August (0: no summer service)
+  PRIMARY KEY (stop_place, line)
+);
+
 CREATE TABLE IF NOT EXISTS edge (
   id             INTEGER PRIMARY KEY,
   from_place     INTEGER NOT NULL REFERENCES place(id),

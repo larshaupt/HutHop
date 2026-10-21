@@ -5,7 +5,16 @@ import { map, mapPadding } from "./map.js";
 import { selectHut } from "./huts.js";
 
 const STOPS_SHOWN = 8;
+const LINES_SHOWN = 4;
 const cache = new Map(); // "hutId:limit" → API response
+
+/** Lines at a stop (most frequent first) and its summer departures per day, from the timetable. */
+function linesMeta(place) {
+  if (!place.lines) return "";
+  const more = place.lines.length > LINES_SHOWN ? ` +${place.lines.length - LINES_SHOWN}` : "";
+  return `<div class="conn-meta" title="Lines and departures per day in July and August (official timetable)">` +
+    `${esc(place.lines.slice(0, LINES_SHOWN).join(", "))}${more} · ${place.departures}/day</div>`;
+}
 
 const allEdges = (data) => [...data.huts, ...data.stops.flatMap((s) => [s.to_hut, s.from_hut].filter(Boolean))];
 
@@ -56,7 +65,7 @@ export async function showConnections(hutId) {
   draw(data);
 }
 
-function edgeRow(e, label, kind) {
+function edgeRow(e, label, kind, extra = "") {
   const cat = CATEGORY[e.max_category];
   const meta = [`${(e.distance_m / 1000).toFixed(1)} km`, `↑ ${e.ascent_m} m`, `↓ ${e.descent_m} m`];
   const sac = e.sac_time_min ? `<span class="sac" title="Time given by the SAC for this route">SAC ${formatMinutes(e.sac_time_min)}` +
@@ -64,7 +73,7 @@ function edgeRow(e, label, kind) {
   return `<li class="conn${e.excluded ? " excluded" : ""}" data-edge="${e.id}" data-place="${e.place.id}" data-kind="${kind}">
     <i class="cat-bar" style="background:${cat.color}" title="${cat.name}"></i>
     <div class="conn-main"><div class="conn-name">${label}</div>
-      <div class="conn-meta">${meta.join(" · ")} ${sac}</div></div>
+      <div class="conn-meta">${meta.join(" · ")} ${sac}</div>${extra}</div>
     <div class="conn-time">${formatMinutes(e.time_min)}</div>
     <button class="conn-x" data-exclude="${e.id}" title="${e.excluded ? "Include this connection again" : "Exclude this connection (bad route)"}"
       aria-label="${e.excluded ? "Include" : "Exclude"}">${e.excluded ? "↺" : "×"}</button>
@@ -78,7 +87,8 @@ function render(data, showAllStops = false) {
     for (const [dir, arrow] of [["to_hut", "from"], ["from_hut", "to"]]) {
       const e = s[dir];
       if (e) stopRows.push(edgeRow({ ...e, place: s.place },
-        `<span class="mode">${modeLabel(s.place.mode)}</span> ${arrow} ${esc(s.place.name)}`, "stop"));
+        `<span class="mode">${modeLabel(s.place.mode)}</span> ${arrow} ${esc(s.place.name)}`, "stop",
+        linesMeta(s.place)));
     }
   }
   $("#connList").innerHTML = `

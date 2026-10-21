@@ -87,6 +87,22 @@ def test_only_fastest_stops_per_hut(network, places, monkeypatch):
     assert from_a == {10}  # J is closer to A than C
 
 
+def test_closest_stop_per_line(network, places):
+    places[2]["lines"], places[3]["lines"] = {"bus 1"}, {"bus 1"}  # J and C on the same bus line
+    edges = edges_by_key(search(network, places))
+    assert (1, 10, 1) in edges and (1, 11, 1) not in edges  # from A: only J, the closer stop of the line
+    assert (2, 11, 1) in edges and (2, 10, 1) not in edges  # from B, C is the closer one
+
+
+def test_stop_with_another_line_kept_and_unserved_dropped(network, places):
+    places[2]["lines"], places[3]["lines"] = {"bus 1"}, {"bus 1", "train"}
+    edges = edges_by_key(search(network, places))
+    assert (1, 11, 1) in edges  # C also has the train: kept although further than J
+    places[2]["lines"] = set()  # J has no summer service
+    edges = edges_by_key(search(network, places))
+    assert (1, 10, 1) not in edges and (10, 1, 1) not in edges
+
+
 def test_snap_time_added_and_cutoff(network, places):
     edges = edges_by_key(search(network, places))
     assert edges[(1, 10, 1)]["distance_m"] == pytest.approx(np.hypot(1000, 800) + 30, abs=2)

@@ -1,11 +1,12 @@
 """Refresh all source data and rebuild the route graph when something relevant changed.
 
-    uv run python -m app.ingest.refresh               # huts + stops, trails only if swisstopo has a new edition
+    uv run python -m app.ingest.refresh               # huts, stops, timetable; trails only if swisstopo has a new one
     uv run python -m app.ingest.refresh --rebuild     # also rebuild the edges even if nothing moved
-    uv run python -m app.ingest.refresh --skip-stops --skip-trails
+    uv run python -m app.ingest.refresh --skip-stops --skip-timetable --skip-trails
 
 Suggested rhythm: weekly (SAC opening data changes during the season); swisstopo publishes the trail network
-about once a year. Each run is appended to data/refresh_log.json. Manual exclusions and overrides survive.
+about once a year, the timetable weekly (downloaded only when a new edition is out). Each run is appended to
+data/refresh_log.json. Manual exclusions and overrides survive.
 """
 
 import argparse
@@ -20,7 +21,7 @@ from datetime import UTC, datetime
 import httpx
 
 from app.db import ROOT, connect
-from app.ingest import build_edges, load_stops, sync_sac
+from app.ingest import build_edges, load_stops, load_timetable, sync_sac
 
 TLM_STAC_ITEMS = "https://data.geo.admin.ch/api/stac/v1/collections/ch.swisstopo.swisstlm3d-wanderwege/items"
 TLM_DIR = ROOT / "data/tlm"
@@ -55,7 +56,8 @@ def refresh_trails(force: bool = False) -> bool:
     return True
 
 
-def run(skip_huts: bool = False, skip_stops: bool = False, skip_trails: bool = False, rebuild: bool = False) -> dict:
+def run(skip_huts: bool = False, skip_stops: bool = False, skip_timetable: bool = False, skip_trails: bool = False,
+        rebuild: bool = False) -> dict:
     started = time.time()
     conn = connect()
     report: dict = {"started_at": datetime.now(UTC).isoformat(timespec="seconds")}
@@ -69,10 +71,17 @@ def run(skip_huts: bool = False, skip_stops: bool = False, skip_trails: bool = F
         load_stops.download()
         report["stops"] = load_stops.load(conn, load_stops.read_stops())
         report["stops_moved"] = positions_fingerprint(conn, "stop") != before
+    if not skip_timetable:
+        # Loaded every time (~30 s, from the local file) so new stops get their lines too.
+        before = load_timetable.lines_fingerprint(conn)
+        report["timetable_updated"] = load_timetable.download()
+        report["stop_lines"] = load_timetable.load(conn, load_timetable.read())
+        report["lines_changed"] = load_timetable.lines_fingerprint(conn) != before
     if not skip_trails:
         report["trails_updated"] = refresh_trails()
 
-    needs_rebuild = rebuild or any(report.get(k) for k in ("huts_moved", "stops_moved", "trails_updated"))
+    needs_rebuild = rebuild or any(report.get(k) for k in ("huts_moved", "stops_moved", "lines_changed",
+                                                          "trails_updated"))
     report["edges"] = build_edges.build(conn) if needs_rebuild else "unchanged"
     report["seconds"] = round(time.time() - started)
 
@@ -85,10 +94,11 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--skip-huts", action="store_true")
     parser.add_argument("--skip-stops", action="store_true")
+    parser.add_argument("--skip-timetable", action="store_true")
     parser.add_argument("--skip-trails", action="store_true")
     parser.add_argument("--rebuild", action="store_true", help="rebuild the edges even if no position changed")
     args = parser.parse_args()
-    report = run(args.skip_huts, args.skip_stops, args.skip_trails, args.rebuild)
+    report = run(args.skip_huts, args.skip_stops, args.skip_timetable, args.skip_trails, args.rebuild)
     print(json.dumps(report, indent=1))
 
 

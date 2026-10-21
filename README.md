@@ -20,12 +20,12 @@ Requires [uv](https://docs.astral.sh/uv/) and Python 3.12.
 
 ```sh
 uv sync                                   # create .venv and install dependencies
-uv run python -m app.ingest.refresh       # huts, stops, trails (if new) and route graph (if needed)
+uv run python -m app.ingest.refresh       # huts, stops, timetable, trails (if new) and route graph (if needed)
 uv run uvicorn app.main:app --reload      # http://localhost:8000
 uv run pytest                             # tests (use a throwaway database, see tests/conftest.py)
 ```
 
-`refresh` runs the individual jobs (`sync_sac`, `load_stops`, `build_edges`), downloads a new swissTLM3D edition
+`refresh` runs the individual jobs (`sync_sac`, `load_stops`, `load_timetable`, `build_edges`), downloads a new swissTLM3D edition
 only when swisstopo publishes one, and rebuilds the route graph only when hut/stop positions or trails changed
 (`--rebuild` forces it). Each run is logged to `data/refresh_log.json`. Run it weekly during the season.
 `sync_sac --from-file data/raw/sac/huts.json` re-imports the last saved API response without fetching.
@@ -39,7 +39,10 @@ order (shown in the app's About dialog) and the impressum. Manual corrections: "
 view, "+ Add hut" in the hut list, and excluding a connection in a hut's connection list; all survive re-syncs and
 rebuilds. New huts get walking connections at the next `refresh --rebuild`.
 
-`refresh` downloads the swissTLM3D hiking network (swisstopo open data, about 200 MB) into `data/tlm/` when needed.
+`refresh` downloads the swissTLM3D hiking network (swisstopo open data, about 200 MB) into `data/tlm/` when needed,
+and the official timetable (GTFS, opentransportdata.swiss, about 90 MB) into `data/gtfs/` when a new edition is out.
+The timetable gives the lines and summer departures of each stop; a hut only gets a connection to the closest stop
+of each line.
 On server2, `server/refresh.sh` does the same in a one-off container (see the deployment doc). Edges built before
 height profiles existed get them with `python -m app.ingest.profiles`.
 
@@ -55,7 +58,7 @@ app/
   api/       routes: huts (list, detail, /availability calendar), edges (connections, exclude), manual
              (overrides, added huts), tours (/suggest, /{id}, /{id}/gpx, /stops), info (About dialog)
   db/        schema.sql (tables, views, change-counter triggers) and connect() (migrations, WAL)
-  ingest/    offline jobs: refresh, sync_sac, load_stops, build_edges, profiles
+  ingest/    offline jobs: refresh, sync_sac, load_stops, load_timetable, build_edges, profiles
   planner/   graph (model, loading, cache), tours (beam search, scoring, rebuilding, diversity),
              planning (search with free-bed rounds, rebuild by id: what the API calls), ranking (sub-scores,
              "best"), geometry (retracing, shape), availability (cache, classification, calendar), opening,
