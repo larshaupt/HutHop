@@ -231,7 +231,8 @@ Fields:
   price, put it in both. youth / child: reduced prices for young people and children, in the same entry as
   the adult price (never a separate entry; give the ages in label). includes_overnight: only for half_board.
   label: the original wording incl. room type (e.g. "Massenlager", "Doppelzimmer"). One entry per room type
-  and item, at most 12; dormitory first. Skip meals à la carte, drinks, packed lunches, group packages.
+  and item, at most 12; dormitory first. Skip meals à la carte, drinks, packed lunches, group packages, and
+  prices only for local residents or for members of one particular club section.
 - notes: up to 2 short sentences in English with practical facts a hiker must know before booking
   (e.g. reservation compulsory, cash only, no showers, dogs not allowed). null if nothing notable.
 

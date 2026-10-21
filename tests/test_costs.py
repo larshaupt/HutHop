@@ -45,3 +45,13 @@ def test_tour_totals_per_currency_and_unpriced_nights():
     cost = tour_cost(nights, prices)
     assert cost["totals"] == {"CHF": {"member": 78, "non_member": 88}, "EUR": {"member": 80, "non_member": 80}}
     assert cost["priced"] == 2 and cost["nights"][2] is None and cost["years"] == [2026, 2027]
+
+
+def test_prices_for_some_guests_only_are_skipped():
+    prices = [price("overnight", 10, label="Domiciliati a Lodrino (Adulti / Ragazzi)"),
+              price("overnight", 15, label="Non domiciliati (Adulti / Ragazzi)"),
+              price("overnight", 8, label="Kinder (7-14 Jahre)"),
+              price("overnight", 12, label="Dortoir (Membres CAS Jaman)"),
+              price("overnight", 24, label="Dortoir (Membres CAS autres sections / Non membres)")]
+    assert night_cost(prices, "catered")["non_member"] == 15
+    assert night_cost(prices[3:], "catered")["non_member"] == 24

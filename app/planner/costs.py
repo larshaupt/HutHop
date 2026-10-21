@@ -3,13 +3,24 @@
 Per night, the cheapest bed (usually the dormitory):
   catered or unknown  half board (plus the bed if half board is listed without it); bed only if no half board
   self_service        winter room (or bed) plus the kitchen fee
-plus the tourist tax. Member and regular prices are both computed, so the app can switch without a new search.
+plus the tourist tax. Prices only for some guests (local residents, children, members of one section) are
+skipped. Member and regular prices are both computed, so the app can switch without a new search.
 Nights at huts without prices are left out and counted, so the total is a lower bound then.
 """
 
+import re
 import sqlite3
 
 from app.planner.tours import Night
+
+# Labels of prices that don't apply to a hiker in general, as the hut websites write them
+RESTRICTED = re.compile(r"(?<!non )domicil|einheimisch|ortsansässig|résident"
+                        r"|^(ragazzi|kinder|enfants?|jugend|children|youth)"
+                        r"|sektionsmitglied|membres? (cas|sac) (?!/|autres)\w", re.I)
+
+
+def _general(p: dict) -> bool:
+    return not RESTRICTED.search(p["label"] or "")
 
 
 def load_prices(conn: sqlite3.Connection, hut_ids: set[int]) -> dict[int, list[dict]]:
@@ -28,8 +39,8 @@ def _amount(p: dict | None, member: bool) -> float:
 
 
 def _cheapest(prices: list[dict], item: str) -> dict | None:
-    return min((p for p in prices if p["item"] == item and _amount(p, False)), key=lambda p: _amount(p, False),
-               default=None)
+    return min((p for p in prices if p["item"] == item and _amount(p, False) and _general(p)),
+               key=lambda p: _amount(p, False), default=None)
 
 
 def night_cost(prices: list[dict], status: str) -> dict | None:
@@ -43,7 +54,7 @@ def night_cost(prices: list[dict], status: str) -> dict | None:
         basis = "winter room" if main and main["item"] == "winter_room" else "bed, self-catering"
         extra = _cheapest(prices, "self_catering_fee")
     else:
-        boards = [p for p in prices if p["item"] == "half_board" and _amount(p, False)]
+        boards = [p for p in prices if p["item"] == "half_board" and _amount(p, False) and _general(p)]
         main = min(boards, key=lambda p: _amount(p, False) + (0 if p["includes_overnight"] else _amount(bed, False)),
                    default=None)
         if main and not main["includes_overnight"]:
@@ -52,7 +63,7 @@ def night_cost(prices: list[dict], status: str) -> dict | None:
         main = main or bed
     if not main:
         return None
-    taxes = [p for p in prices if p["item"] == "tax"]
+    taxes = [p for p in prices if p["item"] == "tax" and _general(p)]
     tax = max(taxes, key=lambda p: _amount(p, False), default=None)  # the adult rate
     parts = [p for p in (main, extra, tax) if p and p["currency"] == main["currency"]]
     return {
