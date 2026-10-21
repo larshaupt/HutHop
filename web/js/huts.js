@@ -215,6 +215,12 @@ export function addHutLayers() {
   if (state.hut) map.setFeatureState({ source: "huts", id: state.hut }, { selected: true });
 }
 
+let hutClickHook = null;
+/** Handle clicks on hut dots elsewhere first; the hook returns true if it handled the click. */
+export function setHutClickHook(fn) {
+  hutClickHook = fn;
+}
+
 /** Hover popup and click on hut dots (bound once; MapLibre keeps layer handlers across style reloads). */
 export function bindHutMap() {
   const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false, offset: 12 });
@@ -242,7 +248,11 @@ export function bindHutMap() {
     hoverId = null;
     popup.remove();
   });
-  map.on("click", "huts", (e) => selectHut(e.features[0].id, { fly: false }));
+  map.on("click", "huts", (e) => {
+    const f = e.features[0];
+    if (hutClickHook?.(f.id, f.properties.name)) return;  // e.g. the tour editor offers the edits the hut fits
+    selectHut(f.id, { fly: false });
+  });
 }
 
 // ---------- Detail view ----------
@@ -377,6 +387,7 @@ function renderDetail(d) {
         ${d.email ? `<a class="btn" href="mailto:${esc(d.email)}">Email</a>` : ""}
         ${d.phone ? `<a class="btn" href="tel:${esc(d.phone.replace(/[^\d+]/g, ""))}">${esc(d.phone)}</a>` : ""}
         <a class="btn" href="${geoAdmin}" target="_blank" rel="noopener">swisstopo map</a>
+        <button class="btn" data-plan-tour="${d.id}">Plan a tour from here</button>
       </div>
       <div class="section">
         <h3>Season</h3>

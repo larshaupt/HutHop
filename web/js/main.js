@@ -2,11 +2,14 @@
 import { $, isMobile, setSheet } from "./util.js";
 import { reloadFromHash, setState, state } from "./state.js";
 import { addTrailLayer, initMap, setBaseStyle, setTrailsVisible } from "./map.js";
-import { addHutLayers, bindHutEvents, bindHutMap, closeDetail, loadHuts, renderControls, selectHut, syncControls, update } from "./huts.js";
+import { addHutLayers, bindHutEvents, bindHutMap, closeDetail, loadHuts, renderControls, selectHut, setHutClickHook, syncControls,
+  update } from "./huts.js";
 import { addEdgeLayers, bindConnectionEvents, redrawConnections } from "./connections.js";
 import { bindEditorEvents } from "./editor.js";
 import { bindAbout } from "./info.js";
-import { addTourLayers, bindTourForm, clearTour, closeTour, hasResults, redrawTour, runTourSearch, syncTourForm } from "./tours.js";
+import { addTourLayers, bindTourForm, clearTour, closeTour, hasResults, openTourById, redrawTour, runTourSearch, syncTourForm }
+  from "./tours.js";
+import { addEditorLayers, bindEditorEvents as bindTourEditorEvents, editorHutClick } from "./tour-editor.js";
 
 /** Our layers, bottom to top. Runs after every base-style (re)load. */
 function addLayers() {
@@ -14,6 +17,7 @@ function addLayers() {
   addEdgeLayers();
   addHutLayers();
   addTourLayers();
+  addEditorLayers();
   redrawConnections();
   redrawTour();
 }
@@ -56,7 +60,7 @@ function bindGlobalEvents() {
       $("#q").focus();
     } else if (e.key === "Escape") {
       if (state.hut) closeDetail();
-      else if (state.tour) closeTour();
+      else if (state.tour || state.tid) closeTour();
       else if (document.activeElement === $("#q")) $("#q").blur();
     }
   });
@@ -78,11 +82,14 @@ async function main() {
   bindGlobalEvents();
   initMap(addLayers);
   bindHutMap();
+  bindTourEditorEvents();
+  setHutClickHook(editorHutClick);
   await loadHuts();
   update();
   syncTourForm();
   setView(state.view);
   if (state.view === "tours" && state.tour) await runTourSearch();
+  else if (state.view === "tours" && state.tid) await openTourById(state.tid, { edit: state.tEdit });
   if (state.hut) selectHut(state.hut);
 }
 

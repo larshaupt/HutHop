@@ -1,4 +1,5 @@
-"""Tour suggestions, single tours by id (JSON and GPX), and the stop search used to pick a start point."""
+"""Tour suggestions, single tours by id (JSON and GPX), the tour editor's options, a tour from a hut, and the
+stop search used to pick a start point."""
 
 import sqlite3
 from datetime import date, timedelta
@@ -10,23 +11,13 @@ from pydantic import BaseModel, Field, model_validator
 from app import config
 from app.api.deps import get_db
 from app.clients import hut_reservation
-from app.planner import costs, gpx, planning, ranking, transit
-from app.planner.graph import Graph
-from app.planner.tours import (
-    Catering,
-    Night,
-    Tour,
-    TourKey,
-    TourRequest,
-    access_options,
-    build_tour,
-    exit_options,
-    parse_tour_id,
-)
+from app.planner import costs, editing, gpx, planning, ranking, transit
+from app.planner.graph import Graph, cached_graph
+from app.planner.tours import Catering, Night, Tour, TourRequest, build_tour, parse_tour_id
 
 router = APIRouter(prefix="/api", tags=["tours"])
 AVAILABILITY_STATES = ("available", "not_released", "no_booking", "not_checked", "error")
-STOP_ALTERNATIVES = 6  # other stops offered per end of a tour
+LIMIT_QUERY = Query(None, ge=1, le=3, description="the planner's hardest trail, to flag harder days")
 
 
 class TourQuery(BaseModel):
@@ -70,38 +61,59 @@ def suggest_tours(q: TourQuery, conn: sqlite3.Connection = Depends(get_db)) -> d
 
 @router.get("/tours/{tour_id}")
 def get_tour(tour_id: str, people: int = Query(2, ge=1, le=30), check_availability: bool = False,
-             conn: sqlite3.Connection = Depends(get_db)) -> dict:
+             limit: int | None = LIMIT_QUERY, conn: sqlite3.Connection = Depends(get_db)) -> dict:
     """A tour rebuilt from its id (start date, places, per-day trail limits, hours), e.g. for sharing or export."""
     graph, tour = rebuild(conn, tour_id, people, check_availability)
-    return tour_json(conn, graph, [tour])[0]
+    return tour_json(conn, graph, [tour], limit)[0]
 
 
-@router.get("/tours/{tour_id}/stops")
-def tour_stops(tour_id: str, conn: sqlite3.Connection = Depends(get_db)) -> dict:
-    """Other stops to start from (first hut) and to end at (last hut), closest first, served on that day: each
-    with its walk, its service that day and the tour id (and score) with that stop instead."""
+@router.get("/tours/{tour_id}/options")
+def tour_options(tour_id: str, limit: int = Query(2, ge=1, le=3, description="the planner's hardest trail"),
+                 conn: sqlite3.Connection = Depends(get_db)) -> dict:
+    """The tour editor: the tour, and every single edit of it (planner/editing.py) with the tour it gives, best
+    "best" score first. Availability isn't fetched here; the app checks free beds of the tour it switches to."""
     graph, tour = rebuild(conn, tour_id, people=1, check_availability=False)
-    key = parse_tour_id(tour_id)
-    first_hut, last_hut = tour.legs[0].to, tour.legs[-1].frm
-    end_day = tour.start_date + timedelta(days=len(tour.legs) - 1)
-    max_minutes = key.hours[1] * 60
     weights = config.ranking_weights()
+    options = []
+    for edit in editing.edits(graph, parse_tour_id(tour_id), limit):
+        try:
+            variant = build_tour(graph, edit.key, weights=weights)
+        except ValueError:
+            continue
+        option = {"kind": edit.kind, "slot": edit.slot, "tour_id": variant.id, "score": round(variant.score, 3),
+                  "place": place_json(graph, edit.place) if edit.place is not None else None,
+                  "time_min": sum(leg.time_min for leg in variant.legs),
+                  "ascent_m": sum(leg.ascent_m for leg in variant.legs),
+                  "days": [leg.time_min for leg in variant.legs],
+                  "warnings": len(editing.warnings(graph, variant, limit))}
+        if edit.kind == "start":
+            option["service"] = service_json(graph, edit.place, variant.start_date, variant.legs[0].time_min,
+                                             "access")
+        elif edit.kind == "end":
+            option["service"] = service_json(graph, edit.place, variant.start_date + timedelta(
+                days=len(variant.legs) - 1), variant.legs[-1].time_min, "exit")
+        elif edit.kind in ("swap", "insert"):
+            night = next(n for n in variant.nights if n.hut == edit.place)
+            option["night"] = {"status": night.status, "partial": night.partial}
+        elif edit.kind == "limit":
+            option["max_category"] = variant.legs[edit.slot].max_category
+        options.append(option)
+    options.sort(key=lambda o: -o["score"])
+    return {"tour": tour_json(conn, graph, [tour], limit)[0], "options": options}
 
-    def option(leg, role: str) -> dict:
-        places, limits = list(key.places), list(key.limits)
-        i, stop_id, day = (0, leg.frm, tour.start_date) if role == "access" else (-1, leg.to, end_day)
-        places[i], limits[i] = stop_id, leg.category_limit
-        variant = build_tour(graph, TourKey(key.start_date, places, limits, key.hours), weights=weights)
-        return {"tour_id": variant.id, "score": round(variant.score, 3), "current": variant.id == tour.id,
-                "stop": place_json(graph, stop_id),
-                "walk": {k: getattr(leg, k) for k in ("time_min", "distance_m", "ascent_m", "descent_m",
-                                                      "max_category")},
-                "service": service_json(graph, stop_id, day, leg.time_min, role)}
 
-    return {"access": [option(leg, "access") for leg in
-                       access_options(graph, first_hut, tour.start_date, max_minutes)[:STOP_ALTERNATIVES]],
-            "exit": [option(leg, "exit") for leg in
-                     exit_options(graph, last_hut, end_day, max_minutes)[:STOP_ALTERNATIVES]]}
+@router.get("/huts/{hut_id}/tour")
+def tour_from_hut(hut_id: int, start_date: date, min_hours: float = Query(3, ge=0, le=12),
+                  max_hours: float = Query(6, gt=0, le=12), limit: int = Query(2, ge=1, le=3),
+                  conn: sqlite3.Connection = Depends(get_db)) -> dict:
+    """A one-night tour at a hut, to start the tour editor with: the closest stops that run on those days."""
+    graph = cached_graph(conn, 3)
+    if hut_id not in graph.huts:
+        raise HTTPException(404, "hut not found")
+    key = editing.tour_from_hut(graph, hut_id, start_date, (min_hours, max_hours), limit)
+    if key is None:
+        raise HTTPException(404, "no public transport within walking distance of this hut")
+    return {"tour_id": build_tour(graph, key, weights=config.ranking_weights()).id}
 
 
 @router.get("/tours/{tour_id}/gpx")
@@ -123,8 +135,9 @@ def rebuild(conn: sqlite3.Connection, tour_id: str, people: int, check_availabil
 
 # ---------- JSON ----------
 
-def tour_json(conn: sqlite3.Connection, graph: Graph, tours: list[Tour]) -> list[dict]:
-    """The one serialisation of tours for the frontend (and for GPX export)."""
+def tour_json(conn: sqlite3.Connection, graph: Graph, tours: list[Tour], limit: int | None = None) -> list[dict]:
+    """The one serialisation of tours for the frontend (and for GPX export). `limit`: the planner's hardest trail,
+    for the warnings (editing.warnings) about tours edited by hand."""
     edge_ids = sorted({leg.edge_id for t in tours for leg in t.legs})
     lines = {r["id"]: r for r in conn.execute(
         f"SELECT id, geometry, elevation FROM edge WHERE id IN ({','.join('?' * len(edge_ids))})", edge_ids)}
@@ -148,6 +161,8 @@ def tour_json(conn: sqlite3.Connection, graph: Graph, tours: list[Tour]) -> list
                              t.legs[-1].time_min, "exit"),
         "availability": {s: sum(1 for n in t.nights if n.availability and n.availability.state == s)
                          for s in AVAILABILITY_STATES},
+        "hours": list(t.hours),
+        "warnings": editing.warnings(graph, t, limit),
         "days": [{
             "day": i + 1,
             "date": (t.start_date + timedelta(days=i)).isoformat(),

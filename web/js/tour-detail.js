@@ -60,30 +60,26 @@ function connectionLine(s, role) {
     ${s.leave_by}${s.early ? " – a very early start" : ""}</div>`;
 }
 
-function stopChooser(role) {
-  return `<button class="link inline" data-stops="${role}">Other stops</button>
-    <ul class="stop-options" id="stopOptions-${role}" hidden></ul>`;
+/** Warnings of a tour (from the API: days outside the hours, harder trails, closed or full huts, connections). */
+export const WARNING_TEXT = {
+  too_long: (w) => `Day ${w.day} is longer than your hours per day`,
+  too_short: (w) => `Day ${w.day} is shorter than your hours per day`,
+  harder_trail: (w) => `Day ${w.day} uses a harder trail than you searched for`,
+  closed: (w) => `The hut of night ${w.night} is closed then`,
+  full: (w) => `The hut of night ${w.night} is full`,
+  no_service: (w) => `No public transport at the ${w.day === 1 ? "start" : "end"} stop on that day`,
+  late: () => "With the first connection you reach the first hut only in the evening",
+  early: () => "To catch the last connection you have to leave the last hut very early",
+};
+
+export function warningList(t) {
+  if (!t.warnings?.length) return "";
+  return `<ul class="warn tour-warnings">${t.warnings.map((w) => `<li>${esc(WARNING_TEXT[w.code]?.(w) ?? w.code)}</li>`).join("")}</ul>`;
 }
 
-/** The list of other start or end stops (from /api/tours/{id}/stops); a click switches the tour to that stop. */
-export function renderStopOptions(role, options) {
-  const box = $(`#stopOptions-${role}`);
-  if (!box) return;
-  if (!options.length) { box.innerHTML = `<li class="hint">No other stop with public transport on this day.</li>`; return; }
-  box.innerHTML = options.map((o) => {
-    const s = o.service;
-    const when = !s.known ? "no timetable yet"
-      : role === "access" ? `${s.calls} connections · first ${s.first}${s.late ? " (late)" : ""}`
-        : `${s.calls} connections · last ${s.last}${s.early ? " (early)" : ""}`;
-    return `<li><button class="stop-opt${o.current ? " current" : ""}" data-tour-id="${esc(o.tour_id)}"${o.current ? " aria-current=\"true\"" : ""}>
-      <span class="stop-opt-name">${stopLabel(o.stop)}</span>
-      <span class="stop-opt-meta">${formatMinutes(o.walk.time_min)} walk · ↑ ${o.walk.ascent_m} m · ↓ ${o.walk.descent_m} m ·
-        <span style="color:${CATEGORY[o.walk.max_category].color}">${CATEGORY[o.walk.max_category].name}</span> · ${when} ·
-        score ${Math.round(o.score * 100)}%</span></button></li>`;
-  }).join("");
-}
+export { connectionLine, formatDay, stopLabel, NIGHT_LABEL };
 
-export function renderTourDetail(t) {
+export function renderTourDetail(t, { kept = false } = {}) {
   const start = t.days[0].from, end = t.days[t.days.length - 1].to;
   const profiles = t.days.map(dayProfile);
   const heights = profiles.filter(Boolean).flatMap((p) => p.map(([, z]) => z));
@@ -108,8 +104,8 @@ export function renderTourDetail(t) {
           <div>${from} → ${to}</div>
           <div class="tl-meta"><b>${formatMinutes(d.time_min)}</b> · ${(d.distance_m / 1000).toFixed(1)} km ·
             ↑ ${d.ascent_m} m · ↓ ${d.descent_m} m · <span style="color:${cat.color}">${cat.name}</span>${sac}</div>
-          ${i === 0 ? connectionLine(t.access, "access") + stopChooser("access") : ""}
-          ${i === t.days.length - 1 ? connectionLine(t.exit, "exit") + stopChooser("exit") : ""}
+          ${i === 0 ? connectionLine(t.access, "access") : ""}
+          ${i === t.days.length - 1 ? connectionLine(t.exit, "exit") : ""}
           ${profileChart(profiles[i], scale, cat.color)}
         </div></li>${night}`;
   }).join("");
@@ -126,8 +122,11 @@ export function renderTourDetail(t) {
       </div>
       ${tourCost(t)}
       <div class="actions">
+        <button class="btn primary" id="tourEdit">Edit tour</button>
+        <button class="btn" id="tourKeep" aria-pressed="${kept}">${kept ? "★ In your tours" : "☆ Add to your tours"}</button>
         <a class="btn" href="/api/tours/${encodeURIComponent(t.id)}/gpx" download>Download GPX</a>
       </div>
+      ${warningList(t)}
     </div>
     <div class="detail-body">
       <ol class="timeline">${rows}</ol>

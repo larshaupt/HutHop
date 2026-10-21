@@ -1,4 +1,5 @@
-// Tour planner: form, search, result cards (sorted here, without a new search), opening a tour, map drawing.
+// Tour planner: form, search, result cards (sorted here, without a new search), "Your tours", opening a tour (a
+// search result, or by id: your tours, shared links, the editor), map drawing.
 import { $, CATEGORY, EMPTY, categoryColor, costTitle, decodePolyline, esc, formatCost, formatMinutes, modeLabel,
   revealPanel } from "./util.js";
 import { setState, state } from "./state.js";
@@ -6,7 +7,9 @@ import { fitCoords, map, visibleBox } from "./map.js";
 import { selectHut } from "./huts.js";
 import { clearConnections } from "./connections.js";
 import { loadInfo } from "./info.js";
-import { renderStopOptions, renderTourDetail } from "./tour-detail.js";
+import { renderTourDetail } from "./tour-detail.js";
+import { findEntry, keepTour, onYourToursChange, removeEntry, yourTours } from "./your-tours.js";
+import { isEditing, openEditor, refreshEditor } from "./tour-editor.js";
 
 const SORTS = { best: "Best", time: "Shortest", ascent: "Least ascent", altitude: "Highest huts",
   beds: "Most free beds", cost: "Cheapest" };
@@ -22,11 +25,18 @@ const SORT_KEYS = {
 const PAGE = 10;
 let results = null;
 let order = []; // results.tours in the chosen sort order; state.tour is a 1-based index into it
+let current = null; // the open tour: a search result (state.tour) or one opened by id (state.tid)
 let shown = PAGE;
 let metricLabels = {};
 const stopSearch = { timer: null, seq: 0 };
 
-const selectedTour = () => order[state.tour - 1];
+const selectedTour = () => current;
+export const currentTour = () => current;
+/** The editor's tour becomes the open tour (opened by id). */
+export function setCurrent(t) {
+  current = t;
+  setState({ tour: 0, tid: t.id });
+}
 
 function sortResults() {
   const key = SORT_KEYS[state.tSort] || SORT_KEYS.best;
@@ -103,14 +113,15 @@ export function bindTourForm() {
     setState({ tMember: e.target.checked });
     if (!results) return;
     if (state.tSort === "cost") {  // member prices can change the order; keep the open tour selected
-      const open = selectedTour();
+      const open = state.tour ? selectedTour() : null;
       sortResults();
       if (open) setState({ tour: order.indexOf(open) + 1 });
     }
     renderResults();
-    if (selectedTour() && !$("#tourDetail").hidden) renderTourDetail(selectedTour());
+    if (selectedTour() && !$("#tourDetail").hidden && !isEditing()) renderTourDetail(selectedTour(), detailOptions());
   });
   bindStopPicker();
+  bindYourTours();
 
   $("#tourForm").addEventListener("submit", (e) => {
     e.preventDefault();
@@ -129,11 +140,15 @@ export function bindTourForm() {
   });
   $("#tourResults").addEventListener("mouseleave", () => clearTour());
   $("#tourDetail").addEventListener("click", (e) => {
+    if (isEditing()) return;  // the editor handles its own clicks
     if (e.target.closest("#tourBack")) { closeTour(); return; }
-    const stops = e.target.closest("[data-stops]");
-    if (stops) { showStopOptions(stops.dataset.stops); return; }
-    const pick = e.target.closest("[data-tour-id]");
-    if (pick) { switchStops(pick.dataset.tourId); return; }
+    if (e.target.closest("#tourEdit")) { openEditor(current); return; }
+    if (e.target.closest("#tourKeep")) {
+      const entry = findEntry(current.id);
+      entry ? removeEntry(entry.key) : keepTour(current);
+      renderTourDetail(current, detailOptions());
+      return;
+    }
     const hut = e.target.closest("[data-hut]");
     if (hut) { e.preventDefault(); selectHut(Number(hut.dataset.hut)); return; }
     const day = e.target.closest("[data-day]");
@@ -212,7 +227,7 @@ export async function runTourSearch() {
   sortResults();
   shown = Math.max(PAGE, Math.ceil(state.tour / PAGE) * PAGE);
   renderResults();
-  if (selectedTour()) selectTour(state.tour);
+  if (state.tour && order[state.tour - 1]) selectTour(state.tour);
 }
 
 function renderResults() {
@@ -306,12 +321,60 @@ function chainItems(chain) {
   return [item(chain[0], true), ...shown, item(chain[chain.length - 1], true)].join("");
 }
 
+// ---------- Your tours ----------
+function bindYourTours() {
+  renderYourTours();
+  onYourToursChange(renderYourTours);
+  $("#yoursList").addEventListener("click", (e) => {
+    const remove = e.target.closest("[data-remove]");
+    if (remove) { removeEntry(remove.dataset.remove); return; }
+    const open = e.target.closest("[data-open]");
+    if (open) openTourById(open.dataset.open);
+  });
+}
+
+function renderYourTours() {
+  const list = yourTours();
+  $("#yoursCount").textContent = list.length ? `(${list.length})` : "";
+  $("#yoursList").innerHTML = list.length ? list.map((e) => `<li>
+      <button class="your-tour" data-open="${esc(e.id)}">
+        <b>${esc(e.title)}</b>
+        <span>${esc(e.date)} · ${e.nights} night${e.nights > 1 ? "s" : ""} · ${esc(e.huts.join(", "))}</span>
+      </button>
+      <button class="conn-x" data-remove="${esc(e.key)}" title="Remove from your tours" aria-label="Remove">×</button>
+    </li>`).join("") : `<li class="hint">No tours yet. Open a tour and choose “Add to your tours”, or edit one.</li>`;
+}
+
 // ---------- Tour detail ----------
+const detailOptions = () => ({ kept: !!(current && findEntry(current.id)) });
+
 function selectTour(n) {
   const t = order[n - 1];
   if (!t) return;
-  setState({ tour: n });
-  renderTourDetail(t);
+  current = t;
+  setState({ tour: n, tid: "", tEdit: false });
+  showTour(t);
+}
+
+/** A tour by id (your tours, a shared link, the editor's result), or null if it no longer exists. */
+export async function openTourById(id, { edit = false } = {}) {
+  const res = await fetch(`/api/tours/${encodeURIComponent(id)}?people=${state.tPeople}&limit=${state.limit}`);
+  if (!res.ok) {
+    $("#tourResults").insertAdjacentHTML("afterbegin", `<p class="warn">This tour is no longer available (a connection
+      was removed or excluded).</p>`);
+    return null;
+  }
+  current = await res.json();
+  setState({ tour: 0, tid: id, tEdit: edit });
+  if (edit) openEditor(current);
+  else showTour(current);
+  return current;
+}
+
+/** Show a tour in the detail view (also used by the editor for its result). */
+export function showTour(t) {
+  current = t;
+  renderTourDetail(t, detailOptions());
   $("#browse").hidden = true;
   $("#detail").hidden = true;
   $("#tourDetail").hidden = false;
@@ -322,48 +385,30 @@ function selectTour(n) {
   checkTourBeds(t);
 }
 
-/** Tours beyond the first candidates of a search weren't checked for free beds; check them when opened. */
-async function checkTourBeds(t) {
-  if (!results.query.check_availability || !t.days.some((d) => d.night?.availability?.state === "not_checked")) return;
-  const res = await fetch(`/api/tours/${encodeURIComponent(t.id)}?people=${results.query.people}&check_availability=true`);
+/** Free beds of a tour's nights not checked yet (beyond a search's first candidates, or edited / opened by id):
+ * checked when the tour is shown, if the search asks for free beds. */
+export async function checkTourBeds(t) {
+  const fromSearch = !!(state.tour && results);
+  const check = fromSearch ? results.query.check_availability : state.tAvail;
+  const people = fromSearch ? results.query.people : state.tPeople;
+  if (!check || !t.days.some((d) => d.night && (!d.night.availability || d.night.availability.state === "not_checked"))) return;
+  const res = await fetch(`/api/tours/${encodeURIComponent(t.id)}?people=${people}&check_availability=true&limit=${state.limit}`);
   if (!res.ok) return;
   const fresh = await res.json();
-  // Keep score and order (computed for the search's hours); take only the nights' availability.
+  // Keep score and order (computed for the search's hours); take only the nights' availability and warnings.
   t.days.forEach((d, i) => { d.night = fresh.days[i].night; });
   t.availability = fresh.availability;
-  renderResults();  // the card's badge, for when the list is shown again
-  if (selectedTour() === t && !$("#tourDetail").hidden) renderTourDetail(t);
-}
-
-/** Other stops for the start or end of the selected tour, loaded when asked for. */
-async function showStopOptions(role) {
-  const box = $(`#stopOptions-${role}`);
-  if (!box) return;
-  if (!box.hidden) { box.hidden = true; return; }
-  box.hidden = false;
-  box.innerHTML = `<p class="hint">Loading…</p>`;
-  const res = await fetch(`/api/tours/${encodeURIComponent(selectedTour().id)}/stops`);
-  if (!res.ok) { box.innerHTML = `<p class="hint">Could not load other stops.</p>`; return; }
-  renderStopOptions(role, (await res.json())[role]);
-}
-
-/** Replace the selected tour by the same huts with another start or end stop (keeps its place in the list). */
-async function switchStops(tourId) {
-  const t = selectedTour();
-  if (!t || tourId === t.id) return;
-  const q = results.query;
-  const res = await fetch(`/api/tours/${encodeURIComponent(tourId)}?people=${q.people}&check_availability=${q.check_availability}`);
-  if (!res.ok) return;
-  const fresh = await res.json();
-  results.tours[results.tours.indexOf(t)] = fresh;
-  order[state.tour - 1] = fresh;
-  renderResults();
-  renderTourDetail(fresh);
-  drawTour(fresh);
+  t.warnings = fresh.warnings;
+  if (fromSearch) renderResults();  // the card's badge, for when the list is shown again
+  if (current === t && !$("#tourDetail").hidden) {
+    if (isEditing()) refreshEditor(t);
+    else renderTourDetail(t, detailOptions());
+  }
 }
 
 export function closeTour() {
-  setState({ tour: 0 });
+  setState({ tour: 0, tid: "", tEdit: false });
+  current = null;
   clearTour();
   $("#tourDetail").hidden = true;
   $("#browse").hidden = false;
@@ -371,15 +416,14 @@ export function closeTour() {
 
 /** Back from a hut opened inside a tour: return to that tour. */
 export function returnToTour() {
-  const t = selectedTour();
-  if (!t) return false;
+  if (!current) return false;
   $("#tourDetail").hidden = false;
-  drawTour(t, { fit: false });
+  drawTour(current, { fit: false });
   return true;
 }
 
 // ---------- Map ----------
-function drawTour(t, { fit = true } = {}) {
+export function drawTour(t, { fit = true } = {}) {
   if (!map.getSource("tour") || !t) return;
   const lines = t.days.map((d) => ({
     type: "Feature", id: d.day,
@@ -410,7 +454,7 @@ export function clearTour() {
 }
 
 export function redrawTour() {
-  if (state.tour && !$("#tourDetail").hidden) drawTour(selectedTour(), { fit: false });
+  if (current && !$("#tourDetail").hidden) drawTour(current, { fit: false });
 }
 
 export function hasResults() {

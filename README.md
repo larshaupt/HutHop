@@ -58,17 +58,20 @@ app/
   admin.py   admin password (HTTP Basic) for data-changing routes; `python -m app.admin set-password`
   backup.py  database backup; config.py: huthop.toml
   api/       routes: huts (list, detail, /availability calendar), edges (connections, exclude), manual
-             (overrides, added huts), tours (/suggest, /{id}, /{id}/gpx, /stops), info (About dialog)
+             (overrides, added huts), tours (/suggest, /{id}, /{id}/gpx, /{id}/options for the editor, /huts/{id}/tour, /stops),
+             info (About dialog)
   db/        schema.sql (tables, views, change-counter triggers) and connect() (migrations, WAL)
   ingest/    offline jobs: refresh, sync_sac, load_stops, load_timetable, build_edges, profiles, footprints
   planner/   graph (model, loading, cache), tours (beam search, scoring, rebuilding, diversity),
              planning (search with free-bed rounds, rebuild by id: what the API calls), ranking (sub-scores,
              "best"), geometry (retracing, shape), availability (cache, classification, calendar), opening,
-             gpx, hiking_time, polyline
+             transit (stops served on a date), editing (tour editor: possible edits, warnings), gpx,
+             hiking_time, polyline
   clients/   external APIs (SAC, hut-reservation.org)
 web/         static frontend (MapLibre + swisstopo tiles, no build step), ES modules in web/js/:
              main (wiring), state (URL hash), map, huts (list, detail), beds (free-beds calendar),
-             connections, tours (form, results, sorting), tour-detail (timeline, profiles), editor,
+             connections, tours (form, results, sorting, opening a tour), tour-detail (timeline, profiles),
+             tour-editor (editing a tour), your-tours (kept in the browser), editor (hut data),
              info (About dialog), util
 server/      compose.yaml, update.sh (deploy) and refresh.sh (data refresh and graph build) for server2
 docs/        deployment plan, route graph figure
