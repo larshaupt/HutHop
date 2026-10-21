@@ -3,9 +3,8 @@
     uv run uvicorn app.main:app --reload
 """
 
-from contextlib import asynccontextmanager
-
 import sqlite3
+from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
 from fastapi.middleware.gzip import GZipMiddleware

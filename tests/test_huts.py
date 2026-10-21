@@ -6,10 +6,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.api.deps import get_db
-from app.planner.opening import month_status
 from app.db import connect
 from app.ingest.sync_sac import parse_hut, sync
 from app.main import app
+from app.planner.opening import month_status
 
 
 def raw_hut(sac_id: int, name: str, catering: str, opening: str, **extra) -> dict:
@@ -88,7 +88,9 @@ def test_month_status(catering, self_service, month, expected):
 
 
 def test_list_filters(client):
-    names = lambda **params: [h["name"] for h in client.get("/api/huts", params=params).json()]
+    def names(**params):
+        return [h["name"] for h in client.get("/api/huts", params=params).json()]
+
     assert names() == ["Mystery Hut", "Summer Hut", "Winter Room Only"]
     assert names(month=7) == ["Summer Hut", "Winter Room Only"]
     assert names(month=7, open_as="catered") == ["Summer Hut"]

@@ -2,8 +2,8 @@
 
 import pytest
 
-from app.ingest import refresh
 from app.db import connect
+from app.ingest import refresh
 from tests.test_huts import HUTS
 
 

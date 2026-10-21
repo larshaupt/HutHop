@@ -29,7 +29,10 @@ def graph():
     huts = {1: hut(1), 2: hut(2), 3: hut(3, catering=NONE, self_service=SELF_JULY, lon=8.5)}
     stops = {11: stop(11, 2_600_000), 12: stop(12, 2_620_000), 13: stop(13, 2_601_000)}
     g = Graph(huts, stops)
-    leg = lambda i, a, b, minutes: Leg(i, a, b, minutes, minutes * 50, 500, 400, 2, None, 2)
+
+    def leg(i, a, b, minutes):
+        return Leg(i, a, b, minutes, minutes * 50, 500, 400, 2, None, 2)
+
     g.stop_in = {1: [leg(1, 11, 1, 240)]}
     g.hut_out = {1: [leg(2, 1, 2, 300), leg(3, 1, 3, 300)], 2: [leg(4, 2, 1, 300)], 3: [leg(5, 3, 1, 300)]}
     g.stop_out = {2: [leg(6, 2, 12, 240)], 3: [leg(7, 3, 13, 240)], 1: [leg(8, 1, 11, 240)]}

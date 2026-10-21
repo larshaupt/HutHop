@@ -6,8 +6,8 @@ import pytest
 
 from app.planner import polyline
 from app.planner.geometry import M_PER_DEG_LAT, M_PER_DEG_LON, Footprints
-from app.planner.ranking import metrics
 from app.planner.graph import Graph, Hut, Leg, Stop
+from app.planner.ranking import metrics
 from app.planner.tours import MAX_TOURS_PER_HUT, Night, Tour, TourRequest, diversify, suggest
 
 LAT0, LON0 = 46.6, 8.0
