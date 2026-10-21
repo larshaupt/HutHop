@@ -10,7 +10,7 @@ export const DEFAULTS = {
   // tour planner
   view: "huts", tDate: "", tNights: 2, tMin: 3, tMax: 6, tCat: "any", tStart: 0, tStartName: "", tLoop: false,
   tUnknown: true, tBox: "", tour: 0, tPeople: 2, tAvail: true, tSort: "best", tLifts: false, tMember: false,
-  tid: "", tEdit: false, // a tour opened by id (your tours, a shared link, the editor), and whether it is being edited
+  tid: "", tEdit: false, // a tour opened by id (my tours, a shared link, the editor), and whether it is being edited
 };
 
 const HASH_KEYS = {

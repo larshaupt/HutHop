@@ -499,10 +499,10 @@ code { font-size: 12px; background: var(--bg-soft); padding: 0 4px; border-radiu
 .warn-text { color: #7a5200; }
 .link.inline { order: 0; margin: 2px 0 0; font-size: 12.5px; }
 
-/* ---------- Your tours ---------- */
-.yours { margin: 0 0 14px; border: 1px solid var(--line); border-radius: var(--radius); padding: 8px 12px; background: var(--bg); }
-.yours summary { cursor: pointer; font-weight: 600; }
-.your-tours { list-style: none; margin: 8px 0 4px; padding: 0; display: grid; gap: 6px; }
+/* ---------- My tours ---------- */
+#yoursCount:not(:empty) { margin-left: 3px; font-size: 11px; font-weight: 700; background: var(--bg-soft); border-radius: 99px;
+  padding: 0 6px; }
+.your-tours { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 6px; }
 .your-tours li { display: flex; align-items: flex-start; gap: 6px; }
 .your-tour { flex: 1; display: grid; gap: 1px; text-align: left; background: var(--bg-soft); border: 0; border-radius: 8px;
   padding: 7px 9px; font: inherit; color: var(--text); cursor: pointer; }
@@ -517,9 +517,6 @@ code { font-size: 12px; background: var(--bg-soft); padding: 0 4px; border-radiu
 .editor-bar .btn[disabled] { opacity: .45; cursor: default; }
 .editing-label { margin-left: auto; font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--accent); }
 .editor-date { margin: 8px 0; }
-.delta { font-size: 11.5px; font-weight: 700; color: var(--text-soft); }
-.delta.up { color: var(--catered); }
-.delta.down { color: var(--accent); }
 .timeline.editor .tl-stop .tl-dot { background: #fff; border: 2px solid var(--text); }
 .tl-insert .tl-dot.add { background: transparent; border: 1.5px dashed var(--text-faint); }
 .slot { margin-top: 2px; }

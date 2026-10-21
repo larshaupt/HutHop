@@ -1,8 +1,10 @@
 // Tour editor: change any tour by hand. The server lists every single edit of a tour with the tour it gives
 // (GET /api/tours/{id}/options, planner/editing.py): another start or end stop, another hut for a night, a night
 // added or removed, another trail variant for a day; the start date is edited here. Edit mode replaces the tour
-// view: each slot opens its candidates (best resulting score first) in the panel and on the map, and a click on a
-// hut on the map offers the edits it fits. Undo and redo; the result is kept in "Your tours" as a new entry (the
+// view: each slot opens its candidates in the panel and on the map, and a click on a
+// hut on the map offers the edits it fits. Candidates are ordered by the tour's resulting "best" score, which isn't
+// shown: when you design your own tour, the order is all it is good for. Undo and redo; the result is kept in
+// "My tours" as a new entry (the
 // tour it started from stays as it was). Days outside the hours, closed huts and the like are flagged, not refused.
 import { $, CATEGORY, EMPTY, esc, formatMinutes, revealPanel } from "./util.js";
 import { setState, state } from "./state.js";
@@ -13,13 +15,13 @@ import { checkTourBeds, drawTour, openTourById, setCurrent, showTour } from "./t
 import { keepTour, updateEntry } from "./your-tours.js";
 
 const SHOWN = 8; // candidates listed before "Show all"
-let ed = null; // { tour, options, history: [tour ids], pos, entryKey, slot, showAll, previous score, pick }
+let ed = null; // { tour, options, history: [tour ids], pos, entryKey, slot, showAll, pick }
 
 export const isEditing = () => !!ed;
 
-/** Start editing a tour (it stays as it was; the first change creates a new entry in Your tours). */
+/** Start editing a tour (it stays as it was; the first change creates a new entry in My tours). */
 export async function openEditor(t) {
-  ed = { tour: t, options: [], history: [t.id], pos: 0, entryKey: null, slot: null, showAll: false, prev: null, pick: null };
+  ed = { tour: t, options: [], history: [t.id], pos: 0, entryKey: null, slot: null, showAll: false, pick: null };
   setState({ tEdit: true });
   $("#browse").hidden = true;
   $("#detail").hidden = true;
@@ -73,14 +75,13 @@ async function load(tourId, known = null) {
 /** Switch to another version of the tour (an edit, or undo / redo with `record` false). */
 async function apply(tourId, { record = true } = {}) {
   if (!ed || tourId === ed.tour.id) return;
-  ed.prev = ed.tour.score;
   if (record) {
     ed.history = [...ed.history.slice(0, ed.pos + 1), tourId];
     ed.pos = ed.history.length - 1;
   }
   render({ loading: true });
   if (!(await load(tourId))) return;
-  // The edited tour is a new entry in Your tours; further edits update that entry.
+  // The edited tour is a new entry in My tours; further edits update that entry.
   if (ed.entryKey) updateEntry(ed.entryKey, ed.tour);
   else if (ed.pos > 0) ed.entryKey = keepTour(ed.tour).key;
 }
@@ -94,12 +95,6 @@ function step(delta) {
 
 // ---------- Rendering ----------
 const options = (kind, slot = null) => ed.options.filter((o) => o.kind === kind && (slot === null || o.slot === slot));
-const pct = (score) => Math.round(score * 100);
-
-function scoreDelta(score, base) {
-  const d = pct(score) - pct(base);
-  return d ? `<span class="delta ${d > 0 ? "up" : "down"}">${d > 0 ? "+" : ""}${d}</span>` : `<span class="delta">±0</span>`;
-}
 
 function candidateList(list) {
   if (!list.length) return `<p class="hint">Nothing connects here.</p>`;
@@ -109,7 +104,7 @@ function candidateList(list) {
     const extra = o.service ? serviceSummary(o) : o.night ? `<span class="night ${o.night.status}">${NIGHT_LABEL[o.night.status]}</span>` : "";
     return `<li><button class="cand" data-apply="${esc(o.tour_id)}"${o.place ? ` data-place="${o.place.id}"` : ""}>
         <span class="cand-name">${name}</span>
-        <span class="cand-meta">${pct(o.score)}% ${scoreDelta(o.score, ed.tour.score)} · ${formatMinutes(o.time_min)} walking
+        <span class="cand-meta">${formatMinutes(o.time_min)} walking
           (${o.days.map((m) => (m / 60).toFixed(1).replace(".0", "")).join(" / ")} h) · ↑ ${o.ascent_m.toLocaleString("de-CH")} m
           ${extra ? ` · ${extra}` : ""}${o.warnings ? ` · <span class="warn-text">${o.warnings} warning${o.warnings > 1 ? "s" : ""}</span>` : ""}</span>
       </button></li>`;
@@ -139,7 +134,7 @@ function limitChips(d) {
   const list = options("limit", d);
   if (!list.length) return "";
   return `<div class="chips">${list.map((o) => `<button class="chip small" data-apply="${esc(o.tour_id)}">
-      ${CATEGORY[o.max_category].name}: ${formatMinutes(o.days[d])} · ${pct(o.score)}% ${scoreDelta(o.score, ed.tour.score)}</button>`).join("")}</div>`;
+      ${CATEGORY[o.max_category].name}: ${formatMinutes(o.days[d])}</button>`).join("")}</div>`;
 }
 
 function render({ loading = false } = {}) {
@@ -166,8 +161,7 @@ function render({ loading = false } = {}) {
           <div class="tl-meta">Night of ${formatDay(d.date)} · <span class="night ${d.night.status}">${NIGHT_LABEL[d.night.status]}</span>${
             a && a.state !== "not_checked" ? ` · ${esc(a.state === "available" ? `${a.free_beds} beds free` : a.state.replace("_", " "))}` : ""}</div>
           <div class="slot-row">${slot(`swap:${i}`, "Other hut", options("swap", i))}
-            ${remove ? `<button class="link inline danger" data-apply="${esc(remove.tour_id)}">Remove this night
-              <span class="count">${pct(remove.score)}% ${scoreDelta(remove.score, t.score)}</span></button>` : ""}</div>
+            ${remove ? `<button class="link inline danger" data-apply="${esc(remove.tour_id)}">Remove this night</button>` : ""}</div>
         </div></li>`);
     rows.push(insertRow(i + 1));
   });
@@ -188,8 +182,8 @@ function render({ loading = false } = {}) {
       <div class="field editor-date"><label class="field-label" for="edDate">Start date</label>
         <input class="input" type="date" id="edDate" value="${t.days[0].date}" min="${today}"></div>
       <div class="facts">
-        <div class="fact"><b>${pct(t.score)}%</b><span>score ${ed.prev !== null ? scoreDelta(t.score, ed.prev) : ""}</span></div>
         <div class="fact"><b>${formatMinutes(t.time_min).replace(" h", "")}</b><span>hours walking</span></div>
+        <div class="fact"><b>${(t.distance_m / 1000).toFixed(1)}</b><span>km</span></div>
         <div class="fact"><b>${t.ascent_m.toLocaleString("de-CH")}</b><span>m ascent</span></div>
       </div>
       ${warningList(t)}
@@ -216,8 +210,7 @@ function pickMenu() {
   const what = (o) => o.kind === "swap" ? `Instead of night ${o.slot + 1}` :
     o.slot === 0 ? "As a night before the first" : o.slot === ed.tour.nights ? "As a night after the last" : `As a night between nights ${o.slot} and ${o.slot + 1}`;
   return `<div class="pick"><b>${esc(name)}</b><ul class="cands">${list.map((o) => `<li><button class="cand" data-apply="${esc(o.tour_id)}">
-      <span class="cand-name">${what(o)}</span><span class="cand-meta">${pct(o.score)}% ${scoreDelta(o.score, ed.tour.score)} ·
-      ${formatMinutes(o.time_min)} walking</span></button></li>`).join("")}</ul>
+      <span class="cand-name">${what(o)}</span><span class="cand-meta">${formatMinutes(o.time_min)} walking</span></button></li>`).join("")}</ul>
     <button class="link inline" id="edPickClose">Close</button></div>`;
 }
 
@@ -231,7 +224,7 @@ function drawCandidates() {
   const list = options(kind, slotNo === undefined ? null : Number(slotNo)).filter((o) => o.place);
   source.setData({ type: "FeatureCollection", features: list.map((o) => ({
     type: "Feature", geometry: { type: "Point", coordinates: [o.place.lon, o.place.lat] },
-    properties: { tour_id: o.tour_id, label: `${o.place.name} ${pct(o.score)}%`, best: o === list[0] },
+    properties: { tour_id: o.tour_id, label: o.place.name, best: o === list[0] },
   })) });
 }
 
@@ -312,7 +305,7 @@ export function bindEditorEvents() {
   });
 }
 
-/** A one-night tour at a hut (the planner's date and hours), opened in the editor and kept in Your tours. */
+/** A one-night tour at a hut (the planner's date and hours), opened in the editor and kept in My tours. */
 async function planFromHut(hutId, button) {
   button.disabled = true;
   const params = new URLSearchParams({ start_date: state.tDate, min_hours: state.tMin, max_hours: state.tMax, limit: state.limit });
@@ -324,7 +317,7 @@ async function planFromHut(hutId, button) {
   }
   const { tour_id: tourId } = await res.json();
   closeDetail();
-  document.querySelector('#tabs [data-view="tours"]')?.click();
+  document.querySelector('#tabs [data-view="mine"]')?.click();
   const t = await openTourById(tourId, { edit: true });
   if (t && ed) ed.entryKey = keepTour(t).key;
 }

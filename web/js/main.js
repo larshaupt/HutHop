@@ -27,8 +27,9 @@ function setView(view) {
   document.querySelectorAll("#tabs button").forEach((b) => b.setAttribute("aria-selected", b.dataset.view === view));
   $("#hutsTab").hidden = view !== "huts";
   $("#toursTab").hidden = view !== "tours";
+  $("#mineTab").hidden = view !== "mine";
   if (view === "huts" && state.tour) setState({ tour: 0 });
-  if (view === "huts" || (hasResults() && !state.tour)) clearTour();
+  if (view !== "tours" || (hasResults() && !state.tour)) clearTour();
 }
 
 function bindGlobalEvents() {
@@ -89,7 +90,7 @@ async function main() {
   syncTourForm();
   setView(state.view);
   if (state.view === "tours" && state.tour) await runTourSearch();
-  else if (state.view === "tours" && state.tid) await openTourById(state.tid, { edit: state.tEdit });
+  else if ((state.view === "tours" || state.view === "mine") && state.tid) await openTourById(state.tid, { edit: state.tEdit });
   if (state.hut) selectHut(state.hut);
 }
 

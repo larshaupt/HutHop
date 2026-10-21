@@ -32,6 +32,7 @@
       <nav class="tabs" id="tabs" role="tablist">
         <button role="tab" data-view="huts">Huts</button>
         <button role="tab" data-view="tours">Plan a tour</button>
+        <button role="tab" data-view="mine">My tours <span id="yoursCount"></span></button>
       </nav>
 
       <div class="tab" id="hutsTab">
@@ -105,11 +106,6 @@
       </div>
 
       <div class="tab scroll" id="toursTab" hidden>
-        <details class="yours" id="yoursBox">
-          <summary>Your tours <span id="yoursCount"></span></summary>
-          <ul class="your-tours" id="yoursList"></ul>
-          <p class="hint">Kept in this browser only. Edited tours are added automatically.</p>
-        </details>
         <form class="tour-form" id="tourForm" autocomplete="off">
           <div class="field">
             <label class="field-label" for="tDate">Start date</label>
@@ -185,6 +181,11 @@
           <button class="btn primary wide" type="submit" id="tFind">Find tours</button>
         </form>
         <div id="tourResults" aria-live="polite"></div>
+      </div>
+
+      <div class="tab scroll" id="mineTab" hidden>
+        <ul class="your-tours" id="yoursList"></ul>
+        <p class="hint">Kept in this browser only. Tours you edit are added automatically.</p>
       </div>
     </section>
 

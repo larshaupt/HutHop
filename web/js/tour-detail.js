@@ -111,7 +111,7 @@ export function renderTourDetail(t, { kept = false } = {}) {
   }).join("");
   $("#tourDetail").innerHTML = `
     <div class="tour-top">
-      <button class="back flat" id="tourBack"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>Tours</button>
+      <button class="back flat" id="tourBack"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>${state.view === "mine" ? "My tours" : "Tours"}</button>
       <h2>${esc(start.name)} → ${esc(end.name)}</h2>
       <div class="subtitle">${t.nights} night${t.nights > 1 ? "s" : ""}, ${t.days.length} days ·
         ${formatDay(t.days[0].date)} – ${formatDay(t.days[t.days.length - 1].date)}</div>
@@ -123,7 +123,7 @@ export function renderTourDetail(t, { kept = false } = {}) {
       ${tourCost(t)}
       <div class="actions">
         <button class="btn primary" id="tourEdit">Edit tour</button>
-        <button class="btn" id="tourKeep" aria-pressed="${kept}">${kept ? "★ In your tours" : "☆ Add to your tours"}</button>
+        <button class="btn" id="tourKeep" aria-pressed="${kept}">${kept ? "★ In my tours" : "☆ Add to my tours"}</button>
         <a class="btn" href="/api/tours/${encodeURIComponent(t.id)}/gpx" download>Download GPX</a>
       </div>
       ${warningList(t)}

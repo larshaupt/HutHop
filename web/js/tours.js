@@ -1,5 +1,5 @@
-// Tour planner: form, search, result cards (sorted here, without a new search), "Your tours", opening a tour (a
-// search result, or by id: your tours, shared links, the editor), map drawing.
+// Tour planner: form, search, result cards (sorted here, without a new search), "My tours", opening a tour (a
+// search result, or by id: my tours, shared links, the editor), map drawing.
 import { $, CATEGORY, EMPTY, categoryColor, costTitle, decodePolyline, esc, formatCost, formatMinutes, modeLabel,
   revealPanel } from "./util.js";
 import { setState, state } from "./state.js";
@@ -321,7 +321,7 @@ function chainItems(chain) {
   return [item(chain[0], true), ...shown, item(chain[chain.length - 1], true)].join("");
 }
 
-// ---------- Your tours ----------
+// ---------- My tours (own tab) ----------
 function bindYourTours() {
   renderYourTours();
   onYourToursChange(renderYourTours);
@@ -335,14 +335,15 @@ function bindYourTours() {
 
 function renderYourTours() {
   const list = yourTours();
-  $("#yoursCount").textContent = list.length ? `(${list.length})` : "";
+  $("#yoursCount").textContent = list.length ? list.length : "";
   $("#yoursList").innerHTML = list.length ? list.map((e) => `<li>
       <button class="your-tour" data-open="${esc(e.id)}">
         <b>${esc(e.title)}</b>
         <span>${esc(e.date)} · ${e.nights} night${e.nights > 1 ? "s" : ""} · ${esc(e.huts.join(", "))}</span>
       </button>
-      <button class="conn-x" data-remove="${esc(e.key)}" title="Remove from your tours" aria-label="Remove">×</button>
-    </li>`).join("") : `<li class="hint">No tours yet. Open a tour and choose “Add to your tours”, or edit one.</li>`;
+      <button class="conn-x" data-remove="${esc(e.key)}" title="Remove from my tours" aria-label="Remove">×</button>
+    </li>`).join("") : `<li class="hint">No tours yet. Open a tour and choose “Add to my tours”, edit one, or plan one
+      from a hut's details.</li>`;
 }
 
 // ---------- Tour detail ----------
@@ -356,7 +357,7 @@ function selectTour(n) {
   showTour(t);
 }
 
-/** A tour by id (your tours, a shared link, the editor's result), or null if it no longer exists. */
+/** A tour by id (my tours, a shared link, the editor's result), or null if it no longer exists. */
 export async function openTourById(id, { edit = false } = {}) {
   const res = await fetch(`/api/tours/${encodeURIComponent(id)}?people=${state.tPeople}&limit=${state.limit}`);
   if (!res.ok) {
