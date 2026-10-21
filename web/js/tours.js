@@ -2,7 +2,7 @@
 // search result, or by id: my tours, shared links, the editor), map drawing.
 import { $, CATEGORY, EMPTY, categoryColor, costTitle, decodePolyline, esc, formatCost, formatMinutes, modeLabel,
   revealPanel } from "./util.js";
-import { setState, state } from "./state.js";
+import { DEFAULTS, setState, state } from "./state.js";
 import { fitCoords, map, visibleBox } from "./map.js";
 import { selectHut } from "./huts.js";
 import { clearConnections } from "./connections.js";
@@ -61,6 +61,15 @@ function defaultTourDate() {
 }
 
 // ---------- Form ----------
+// Settings behind "Options" (start date, nights, people and start stay visible); hours count as one.
+const OPTION_KEYS = [["tMin", "tMax"], ["limit"], ["tCat"], ["tLoop"], ["tAvail"], ["tUnknown"], ["tMember"], ["tLifts"]];
+
+/** "· 2 changed" on the Options button, so settings that differ from the defaults are visible while it is closed. */
+function optionsChanged() {
+  const n = OPTION_KEYS.filter((keys) => keys.some((k) => state[k] !== DEFAULTS[k])).length;
+  return n ? `· ${n} changed` : "";
+}
+
 export function syncTourForm() {
   if (!state.tDate || state.tDate < todayIso()) state.tDate = defaultTourDate();
   $("#tDate").min = todayIso();
@@ -84,6 +93,7 @@ export function syncTourForm() {
   $("#tStartInput").hidden = !!state.tStart;
   $("#tStartName").textContent = state.tStartName;
   $("#tAreaHint").hidden = !!state.tStart;
+  $("#tOptionsChanged").textContent = optionsChanged();
 }
 
 export function bindTourForm() {
@@ -105,12 +115,13 @@ export function bindTourForm() {
       if (b) { setState({ [key]: parse(b.dataset.v) }); syncTourForm(); }
     });
   }
-  $("#tAvail").addEventListener("change", (e) => setState({ tAvail: e.target.checked }));
-  $("#tUnknown").addEventListener("change", (e) => setState({ tUnknown: e.target.checked }));
-  $("#tLifts").addEventListener("change", (e) => setState({ tLifts: e.target.checked }));
+  $("#tAvail").addEventListener("change", (e) => { setState({ tAvail: e.target.checked }); syncTourForm(); });
+  $("#tUnknown").addEventListener("change", (e) => { setState({ tUnknown: e.target.checked }); syncTourForm(); });
+  $("#tLifts").addEventListener("change", (e) => { setState({ tLifts: e.target.checked }); syncTourForm(); });
   // Member prices only change the shown estimate: no new search
   $("#tMember").addEventListener("change", (e) => {
     setState({ tMember: e.target.checked });
+    syncTourForm();
     if (!results) return;
     if (state.tSort === "cost") {  // member prices can change the order; keep the open tour selected
       const open = state.tour ? selectedTour() : null;
