@@ -105,7 +105,8 @@ Gemini through the gcloud login on the Mac. Fetch and extract on the Mac, then l
 
 ```sh
 uv run python -m app.ingest.scrape_huts fetch && uv run python -m app.ingest.scrape_huts extract   # Mac
-rsync -a --include='*.json' --exclude='*' data/raw/web/ server2:/opt/huthop/data/raw/web/          # Mac
+(cd data/raw/web && COPYFILE_DISABLE=1 tar -cf - --no-xattrs *.json) | \
+  ssh server2 'mkdir -p /opt/huthop/data/raw/web && tar -xf - -C /opt/huthop/data/raw/web'          # Mac (no rsync on server2)
 cd /opt/huthop/server && docker compose exec -T huthop python -m app.backup && \
   docker compose run --rm -T refresh python -m app.ingest.scrape_huts load                       # server
 ```
