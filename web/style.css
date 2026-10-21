@@ -541,3 +541,9 @@ code { font-size: 12px; background: var(--bg-soft); padding: 0 4px; border-radiu
 #tOptionsChanged { color: var(--accent); font-weight: 600; font-size: 12.5px; }
 .options > :not(summary) { margin-left: 12px; margin-right: 12px; }
 .options > :last-child { margin-bottom: 12px; }
+
+/* ---------- Settings dialog ---------- */
+#aboutBtn { margin-left: 6px; }
+.settings-body .field { margin: 14px 0; }
+.settings-body .check { margin: 10px 0; }
+.settings-body select.input { width: 100%; }

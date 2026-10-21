@@ -3,6 +3,7 @@
 import { $, CATEGORY, EMPTY, categoryColor, costTitle, decodePolyline, esc, formatCost, formatMinutes, modeLabel,
   revealPanel } from "./util.js";
 import { DEFAULTS, setState, state } from "./state.js";
+import { distanceValue, distanceUnit, formatHeight, settings, settingsParams, settingsQuery } from "./settings.js";
 import { fitCoords, map, visibleBox } from "./map.js";
 import { selectHut } from "./huts.js";
 import { clearConnections } from "./connections.js";
@@ -20,7 +21,7 @@ const SORT_KEYS = {
   beds: (t) => [-t.metrics.beds, -t.score],
   // Fully priced tours first (partial sums would look cheap), then by the per-person total
   cost: (t) => [t.cost.priced < t.nights ? 1 : 0,
-    Object.values(t.cost.totals).reduce((sum, c) => sum + (state.tMember ? c.member : c.non_member), 0), -t.score],
+    Object.values(t.cost.totals).reduce((sum, c) => sum + (settings().member ? c.member : c.non_member), 0), -t.score],
 };
 const PAGE = 10;
 let results = null;
@@ -61,8 +62,9 @@ function defaultTourDate() {
 }
 
 // ---------- Form ----------
-// Settings behind "Options" (start date, nights, people and start stay visible); hours count as one.
-const OPTION_KEYS = [["tMin", "tMax"], ["limit"], ["tCat"], ["tLoop"], ["tAvail"], ["tUnknown"], ["tMember"], ["tLifts"]];
+// Search settings behind "Options" (start date, nights, people and start stay visible); hours count as one. The
+// general settings (⚙, settings.js) apply to every search.
+const OPTION_KEYS = [["tMin", "tMax"], ["tCat"], ["tLoop"], ["tUnknown"]];
 
 /** "· 2 changed" on the Options button, so settings that differ from the defaults are visible while it is closed. */
 function optionsChanged() {
@@ -81,14 +83,10 @@ export function syncTourForm() {
   $("#tHoursLabel").textContent = `${state.tMin}–${state.tMax} h`;
   $("#tHoursFill").style.left = `${((state.tMin - 1) / 9) * 100}%`;
   $("#tHoursFill").style.right = `${100 - ((state.tMax - 1) / 9) * 100}%`;
-  document.querySelectorAll("#tLimit button").forEach((b) => b.setAttribute("aria-pressed", Number(b.dataset.v) === state.limit));
   document.querySelectorAll("#tCat button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.v === state.tCat));
   document.querySelectorAll("#tLoop button").forEach((b) => b.setAttribute("aria-pressed", (b.dataset.v === "1") === state.tLoop));
   $("#tLoopField").hidden = !state.tStart;
-  $("#tAvail").checked = state.tAvail;
   $("#tUnknown").checked = state.tUnknown;
-  $("#tLifts").checked = state.tLifts;
-  $("#tMember").checked = state.tMember;
   $("#tStartPicked").hidden = !state.tStart;
   $("#tStartInput").hidden = !!state.tStart;
   $("#tStartName").textContent = state.tStartName;
@@ -109,28 +107,13 @@ export function bindTourForm() {
   stepper("data-people", "tPeople", 30);
   $("#tMin").addEventListener("input", (e) => { setState({ tMin: Math.min(Number(e.target.value), state.tMax - 0.5) }); syncTourForm(); });
   $("#tMax").addEventListener("input", (e) => { setState({ tMax: Math.max(Number(e.target.value), state.tMin + 0.5) }); syncTourForm(); });
-  for (const [id, key, parse] of [["#tLimit", "limit", Number], ["#tCat", "tCat", String], ["#tLoop", "tLoop", (v) => v === "1"]]) {
+  for (const [id, key, parse] of [["#tCat", "tCat", String], ["#tLoop", "tLoop", (v) => v === "1"]]) {
     $(id).addEventListener("click", (e) => {
       const b = e.target.closest("button");
       if (b) { setState({ [key]: parse(b.dataset.v) }); syncTourForm(); }
     });
   }
-  $("#tAvail").addEventListener("change", (e) => { setState({ tAvail: e.target.checked }); syncTourForm(); });
   $("#tUnknown").addEventListener("change", (e) => { setState({ tUnknown: e.target.checked }); syncTourForm(); });
-  $("#tLifts").addEventListener("change", (e) => { setState({ tLifts: e.target.checked }); syncTourForm(); });
-  // Member prices only change the shown estimate: no new search
-  $("#tMember").addEventListener("change", (e) => {
-    setState({ tMember: e.target.checked });
-    syncTourForm();
-    if (!results) return;
-    if (state.tSort === "cost") {  // member prices can change the order; keep the open tour selected
-      const open = state.tour ? selectedTour() : null;
-      sortResults();
-      if (open) setState({ tour: order.indexOf(open) + 1 });
-    }
-    renderResults();
-    if (selectedTour() && !$("#tourDetail").hidden && !isEditing()) renderTourDetail(selectedTour(), detailOptions());
-  });
   bindStopPicker();
   bindYourTours();
 
@@ -205,14 +188,14 @@ function bindStopPicker() {
 export async function runTourSearch() {
   const body = {
     start_date: state.tDate, nights: state.tNights, min_hours: state.tMin, max_hours: state.tMax,
-    limit: state.limit, catering: state.tCat, loop: state.tLoop && !!state.tStart,
-    include_unknown: state.tUnknown, start_stop: state.tStart || null, avoid_lifts: state.tLifts,
-    people: state.tPeople, check_availability: state.tAvail,
+    ...settingsParams(), catering: state.tCat, loop: state.tLoop && !!state.tStart,
+    include_unknown: state.tUnknown, start_stop: state.tStart || null,
+    people: state.tPeople, check_availability: settings().checkBeds,
     bbox: state.tBox ? state.tBox.split(",").map(Number) : null,
   };
   const button = $("#tFind");
   button.disabled = true;
-  button.textContent = state.tAvail ? "Searching and checking free beds…" : "Searching…";
+  button.textContent = settings().checkBeds ? "Searching and checking free beds…" : "Searching…";
   $("#tourResults").innerHTML = "";
   try {
     const res = await fetch("/api/tours/suggest", {
@@ -273,7 +256,7 @@ function tourCard(t, i) {
       <span>${(d.time_min / 60).toFixed(1).replace(".0", "")}h</span></div>`).join("");
   return `<article class="tour-card" data-n="${i + 1}" tabindex="0">
     <div class="tour-head">
-      <div><b>${t.nights} night${t.nights > 1 ? "s" : ""}</b> · ${(t.distance_m / 1000).toFixed(0)} km · ↑ ${t.ascent_m.toLocaleString("de-CH")} m</div>
+      <div><b>${t.nights} night${t.nights > 1 ? "s" : ""}</b> · ${distanceValue(t.distance_m, 0)} ${distanceUnit()} · ↑ ${formatHeight(t.ascent_m)}</div>
       <div class="tour-flags">${transitBadge(t)}${availBadge(t)}${costBadge(t)}${scoreBadge(t)}</div>
     </div>
     <div class="tour-body">
@@ -302,8 +285,8 @@ function transitBadge(t) {
 function costBadge(t) {
   if (!t.cost?.priced) return "";
   const from = t.cost.priced < t.nights ? "from " : "";
-  return `<span class="flag pending" title="${esc(costTitle(t, state.tMember, state.tPeople))}">` +
-    `${from}${formatCost(t.cost.totals, state.tMember)} p.p.</span>`;
+  return `<span class="flag pending" title="${esc(costTitle(t, settings().member, state.tPeople))}">` +
+    `${from}${formatCost(t.cost.totals, settings().member)} p.p.</span>`;
 }
 
 /** Card badge: free beds on every night, or how many nights are not confirmed. */
@@ -370,7 +353,7 @@ function selectTour(n) {
 
 /** A tour by id (my tours, a shared link, the editor's result), or null if it no longer exists. */
 export async function openTourById(id, { edit = false } = {}) {
-  const res = await fetch(`/api/tours/${encodeURIComponent(id)}?people=${state.tPeople}`);
+  const res = await fetch(`/api/tours/${encodeURIComponent(id)}?people=${state.tPeople}&${settingsQuery()}`);
   if (!res.ok) {
     $("#tourResults").insertAdjacentHTML("afterbegin", `<p class="warn">This tour is no longer available (a connection
       was removed or excluded).</p>`);
@@ -401,10 +384,10 @@ export function showTour(t) {
  * checked when the tour is shown, if the search asks for free beds. */
 export async function checkTourBeds(t) {
   const fromSearch = !!(state.tour && results);
-  const check = fromSearch ? results.query.check_availability : state.tAvail;
+  const check = fromSearch ? results.query.check_availability : settings().checkBeds;
   const people = fromSearch ? results.query.people : state.tPeople;
   if (!check || !t.days.some((d) => d.night && (!d.night.availability || d.night.availability.state === "not_checked"))) return;
-  const res = await fetch(`/api/tours/${encodeURIComponent(t.id)}?people=${people}&check_availability=true`);
+  const res = await fetch(`/api/tours/${encodeURIComponent(t.id)}?people=${people}&check_availability=true&${settingsQuery()}`);
   if (!res.ok) return;
   const fresh = await res.json();
   // Keep score and order (computed for the search's hours); take only the nights' availability.

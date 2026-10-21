@@ -9,7 +9,9 @@ import { bindEditorEvents } from "./editor.js";
 import { bindAbout } from "./info.js";
 import { addTourLayers, bindTourForm, clearTour, closeTour, hasResults, openTourById, redrawTour, runTourSearch, syncTourForm }
   from "./tours.js";
-import { addEditorLayers, bindEditorEvents as bindTourEditorEvents, editorHutClick } from "./tour-editor.js";
+import { addEditorLayers, bindEditorEvents as bindTourEditorEvents, editorHutClick, isEditing, reloadEditor }
+  from "./tour-editor.js";
+import { bindSettings, onSettingsChange } from "./settings.js";
 
 /** Our layers, bottom to top. Runs after every base-style (re)load. */
 function addLayers() {
@@ -30,6 +32,22 @@ function setView(view) {
   $("#mineTab").hidden = view !== "mine";
   if (view === "huts" && state.tour) setState({ tour: 0 });
   if (view !== "tours" || (hasResults() && !state.tour)) clearTour();
+}
+
+/** After a change in the settings (⚙): show everything open again within them (units, pace, what is offered). */
+let settingsTimer = null;
+function applySettings() {
+  clearTimeout(settingsTimer);
+  settingsTimer = setTimeout(() => {
+    update();
+    syncControls();
+    if (state.hut) {
+      selectHut(state.hut, { fly: false });
+      if (hasResults() && !state.tour && !state.tid) runTourSearch();  // the list behind it, without opening a tour
+    } else if (isEditing()) reloadEditor();
+    else if (state.tid) openTourById(state.tid);
+    else if (hasResults()) runTourSearch();
+  }, 300);
 }
 
 function bindGlobalEvents() {
@@ -80,6 +98,8 @@ async function main() {
   bindTourForm();
   bindEditorEvents();
   bindAbout();
+  bindSettings();
+  onSettingsChange(applySettings);
   bindGlobalEvents();
   initMap(addLayers);
   bindHutMap();

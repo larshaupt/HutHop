@@ -5,6 +5,7 @@ import { map, mapPadding } from "./map.js";
 import { clearConnections, connectionsSection, showConnections } from "./connections.js";
 import { clearTour, returnToTour } from "./tours.js";
 import { loadBeds } from "./beds.js";
+import { formatHeight, heightUnit, heightValue } from "./settings.js";
 
 const SERVICE_LABELS = {
   half_board: "Half board", plain_meals: "Simple meals", drinks: "Drinks",
@@ -84,8 +85,8 @@ export function syncControls() {
   $("#altMin").value = state.altMin;
   $("#altMax").value = state.altMax;
   $("#minBeds").value = state.minBeds;
-  const hi = state.altMax >= ALT_MAX ? "max" : `${state.altMax.toLocaleString("de-CH")} m`;
-  $("#altLabel").textContent = state.altMin || state.altMax < ALT_MAX ? `${state.altMin.toLocaleString("de-CH")} – ${hi}` : "Any";
+  const hi = state.altMax >= ALT_MAX ? "max" : formatHeight(state.altMax);
+  $("#altLabel").textContent = state.altMin || state.altMax < ALT_MAX ? `${heightValue(state.altMin)} – ${hi}` : "Any";
   $("#altFill").style.left = `${(state.altMin / ALT_MAX) * 100}%`;
   $("#altFill").style.right = `${100 - (state.altMax / ALT_MAX) * 100}%`;
   $("#bedsLabel").textContent = state.minBeds ? `${state.minBeds}+` : "Any";
@@ -163,7 +164,7 @@ function renderList() {
     const img = h.photo
       ? `<img src="${esc(h.photo)}" alt="" loading="lazy" decoding="async" width="64" height="44">`
       : `<span class="noimg">▲</span>`;
-    const meta = [h.altitude && `${h.altitude.toLocaleString("de-CH")} m`, h.beds && `${h.beds} beds`].filter(Boolean).join(" · ");
+    const meta = [h.altitude && formatHeight(h.altitude), h.beds && `${h.beds} beds`].filter(Boolean).join(" · ");
     return `<li class="hut" data-id="${h.id}">${img}<div><div class="hut-name">${esc(h.name)}</div>` +
       `<div class="hut-meta">${meta}</div></div>${badge}</li>`;
   }).join("");
@@ -237,7 +238,7 @@ export function bindHutMap() {
     }
     const status = f.properties.status;
     popup.setLngLat(f.geometry.coordinates)
-      .setHTML(`${esc(f.properties.name)}<small>${f.properties.altitude ? `${f.properties.altitude} m` : ""}` +
+      .setHTML(`${esc(f.properties.name)}<small>${f.properties.altitude ? formatHeight(f.properties.altitude) : ""}` +
         `${status !== "any" ? ` · ${STATUS_LABEL[status]}` : ""}</small>`)
       .addTo(map);
   });
@@ -357,7 +358,7 @@ function renderDetail(d) {
   const routes = d.routes.map((r) => {
     const grade = (r.main_difficulty || "").trim();
     const time = formatDuration(r.ascent_time_min, r.ascent_time_max);
-    const meta = [time, r.ascent_altitude && `↑ ${r.ascent_altitude} m`, r.descent_altitude && `↓ ${r.descent_altitude} m`,
+    const meta = [time, r.ascent_altitude && `↑ ${formatHeight(r.ascent_altitude)}`, r.descent_altitude && `↓ ${formatHeight(r.descent_altitude)}`,
       r.normal_route && "normal route"].filter(Boolean).join(" · ");
     return `<li><span class="grade g${grade.charAt(1) || 0}">${esc(grade || "–")}</span>` +
       `<span class="route-title">${esc(r.title)}</span><span class="route-meta">${meta}</span></li>`;
@@ -377,7 +378,7 @@ function renderDetail(d) {
       <h2>${esc(d.name)}</h2>
       <div class="subtitle">${subtitle}</div>
       <div class="facts">
-        <div class="fact"><b>${d.altitude ? d.altitude.toLocaleString("de-CH") : "–"}</b><span>m altitude</span></div>
+        <div class="fact"><b>${d.altitude ? heightValue(d.altitude) : "–"}</b><span>${heightUnit()} altitude</span></div>
         <div class="fact"><b>${d.beds ?? "–"}</b><span>beds</span></div>
         <div class="fact"><b>${d.shelter_beds ?? "–"}</b><span>winter room</span></div>
       </div>

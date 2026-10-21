@@ -169,6 +169,7 @@ CREATE TABLE IF NOT EXISTS edge (
   sac_grade      TEXT,
   geometry       TEXT,                -- simplified encoded polyline
   elevation      TEXT,                -- height (m) of each geometry point, encoded (polyline.encode_values)
+  max_altitude_m INTEGER,             -- highest point of the route (m), from the height profile
   footprint      BLOB,                -- grid cells of the route line, packed (planner/geometry.py: pack)
   samples        BLOB,                -- evenly spaced points of the route line, for the tour shape (same)
   excluded       INTEGER DEFAULT 0,

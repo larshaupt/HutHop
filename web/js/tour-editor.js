@@ -9,7 +9,9 @@ import { $, CATEGORY, EMPTY, esc, formatMinutes, revealPanel } from "./util.js";
 import { setState, state } from "./state.js";
 import { fitCoords, map } from "./map.js";
 import { closeDetail } from "./huts.js";
-import { NIGHT_LABEL, connectionLine, formatDay, stopLabel } from "./tour-detail.js";
+import { NIGHT_LABEL, connectionLine, formatDay, outsideSettings, stopLabel } from "./tour-detail.js";
+import { distanceUnit, distanceValue, formatDistance, formatHeight, heightUnit, heightValue, settingsParams,
+  settingsQuery } from "./settings.js";
 import { checkTourBeds, drawTour, openTourById, setCurrent, showTour } from "./tours.js";
 import { keepTour, updateEntry } from "./your-tours.js";
 
@@ -30,6 +32,11 @@ export async function openEditor(t) {
   await load(t.id, t);
 }
 
+/** After the settings changed: the same tour, with the edits the new settings allow (and times at the new pace). */
+export function reloadEditor() {
+  if (ed) load(ed.tour.id, ed.tour);
+}
+
 /** After a free-beds check of the edited tour: show the nights' new availability. */
 export function refreshEditor(t) {
   if (!ed || ed.tour !== t) return;
@@ -46,7 +53,7 @@ function done() {
 
 /** Load a tour and its edits; `known` keeps the nights' availability of an already loaded version. */
 async function load(tourId, known = null) {
-  const res = await fetch(`/api/tours/${encodeURIComponent(tourId)}/options?limit=${state.limit}`);
+  const res = await fetch(`/api/tours/${encodeURIComponent(tourId)}/options?${settingsQuery()}`);
   if (!ed) return false;
   if (!res.ok) {
     $("#edStatus")?.replaceChildren(document.createTextNode("Could not load the edits for this tour."));
@@ -103,9 +110,9 @@ function candidateList(list) {
     const extra = o.service ? serviceSummary(o) : o.night ? `<span class="night ${o.night.status}">${NIGHT_LABEL[o.night.status]}</span>` : "";
     return `<li><button class="cand" data-apply="${esc(o.tour_id)}"${o.place ? ` data-place="${o.place.id}"` : ""}>
         <span class="cand-name">${name}</span>
-        <span class="cand-meta">${o.distance_m !== undefined ? `<b>${(o.distance_m / 1000).toFixed(1)} km · ${formatMinutes(o.walk_min)}</b> away · ` : ""}tour
+        <span class="cand-meta">${o.distance_m !== undefined ? `<b>${formatDistance(o.distance_m)} · ${formatMinutes(o.walk_min)}</b> away · ` : ""}tour
           ${formatMinutes(o.time_min)} (${o.days.map((m) => (m / 60).toFixed(1).replace(".0", "")).join(" / ")} h) ·
-          ↑ ${o.ascent_m.toLocaleString("de-CH")} m${extra ? ` · ${extra}` : ""}</span>
+          ↑ ${formatHeight(o.ascent_m)}${extra ? ` · ${extra}` : ""}</span>
       </button></li>`;
   }).join("");
   const more = !ed.showAll && list.length > SHOWN ? `<button class="link inline" id="edAll">Show all ${list.length}</button>` : "";
@@ -149,8 +156,8 @@ function render({ loading = false } = {}) {
     const cat = CATEGORY[d.max_category];
     rows.push(`<li class="tl-day" data-day="${d.day}"><div class="tl-dot" style="--c:${cat.color}"></div>
         <div><div class="tl-title">Day ${d.day} · ${formatDay(d.date)}</div>
-          <div class="tl-meta"><b>${formatMinutes(d.time_min)}</b> · ${(d.distance_m / 1000).toFixed(1)} km · ↑ ${d.ascent_m} m ·
-            ↓ ${d.descent_m} m · <span style="color:${cat.color}">${cat.name}</span></div>
+          <div class="tl-meta"><b>${formatMinutes(d.time_min)}</b> · ${formatDistance(d.distance_m)} · ↑ ${formatHeight(d.ascent_m)} ·
+            ↓ ${formatHeight(d.descent_m)} · <span style="color:${cat.color}">${cat.name}</span></div>
           ${limitChips(i)}</div></li>`);
     if (!d.night) return;
     const remove = options("remove", i)[0];
@@ -182,9 +189,10 @@ function render({ loading = false } = {}) {
         <input class="input" type="date" id="edDate" value="${t.days[0].date}" min="${today}"></div>
       <div class="facts">
         <div class="fact"><b>${formatMinutes(t.time_min).replace(" h", "")}</b><span>hours walking</span></div>
-        <div class="fact"><b>${(t.distance_m / 1000).toFixed(1)}</b><span>km</span></div>
-        <div class="fact"><b>${t.ascent_m.toLocaleString("de-CH")}</b><span>m ascent</span></div>
+        <div class="fact"><b>${distanceValue(t.distance_m)}</b><span>${distanceUnit()}</span></div>
+        <div class="fact"><b>${heightValue(t.ascent_m)}</b><span>${heightUnit()} ascent</span></div>
       </div>
+      ${outsideSettings(t)}
       <p class="hint" id="edStatus">${loading ? "Updating…" : "Choose a part of the tour to change it, or click a hut on the map."}</p>
       ${ed.pick ? pickMenu() : ""}
     </div>
@@ -306,7 +314,8 @@ export function bindEditorEvents() {
 /** A one-night tour at a hut (the planner's date and hours), opened in the editor and kept in My tours. */
 async function planFromHut(hutId, button) {
   button.disabled = true;
-  const params = new URLSearchParams({ start_date: state.tDate, min_hours: state.tMin, max_hours: state.tMax, limit: state.limit });
+  const params = new URLSearchParams({ start_date: state.tDate, min_hours: state.tMin, max_hours: state.tMax,
+    ...settingsParams() });
   const res = await fetch(`/api/huts/${hutId}/tour?${params}`);
   button.disabled = false;
   if (!res.ok) {

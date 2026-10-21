@@ -9,7 +9,8 @@ DB_PATH = Path(os.environ.get("HUTHOP_DB", ROOT / "data/huthop.db"))
 SCHEMA = Path(__file__).with_name("schema.sql")
 # Columns added after the first deploy: (table, column, type). New databases get them from schema.sql.
 ADDED_COLUMNS = [("edge", "elevation", "TEXT"), ("edge", "footprint", "BLOB"), ("edge", "samples", "BLOB"),
-                 ("hut", "phone", "TEXT"), ("hut", "email", "TEXT"), ("hut_web", "email", "TEXT")]
+                 ("hut", "phone", "TEXT"), ("hut", "email", "TEXT"), ("hut_web", "email", "TEXT"),
+                 ("edge", "max_altitude_m", "INTEGER")]
 
 
 def connect(path: Path | str = DB_PATH, init: bool = True) -> sqlite3.Connection:

@@ -2,6 +2,7 @@
 import { $, CATEGORY, costTitle, decodePolyline, decodeValues, distanceM, esc, formatCost, formatMinutes, modeLabel }
   from "./util.js";
 import { state } from "./state.js";
+import { distanceUnit, distanceValue, formatDistance, formatHeight, heightUnit, heightValue, settings } from "./settings.js";
 
 const NIGHT_LABEL = { catered: "Catered", self_service: "Self-service", unknown: "No opening data", closed: "Closed" };
 const AVAIL_LABEL = {
@@ -38,12 +39,12 @@ function profileChart(profile, scale, color) {
   const line = profile.map(([m, z], i) => `${i ? "L" : "M"}${x(m)},${y(z)}`).join("");
   const zs = profile.map(([, z]) => z);
   const hi = Math.max(...zs), lo = Math.min(...zs);
-  return `<div class="profile" title="Height profile: ${lo.toLocaleString("de-CH")}–${hi.toLocaleString("de-CH")} m">
+  return `<div class="profile" title="Height profile: ${heightValue(lo)}–${formatHeight(hi)}">
       <div class="profile-plot"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:${Math.max(30, (length / scale.length) * 100)}%">
         <path d="${line}L${W},${H}L0,${H}Z" fill="${color}" opacity=".14"/>
         <path d="${line}" fill="none" stroke="${color}" stroke-width="1.6" vector-effect="non-scaling-stroke"/>
       </svg></div>
-      <div class="profile-axis"><span>${hi.toLocaleString("de-CH")} m</span><span>${lo.toLocaleString("de-CH")} m</span></div>
+      <div class="profile-axis"><span>${formatHeight(hi)}</span><span>${formatHeight(lo)}</span></div>
     </div>`;
 }
 
@@ -85,8 +86,8 @@ export function renderTourDetail(t, { kept = false } = {}) {
         <div class="tl-dot" style="--c:${cat.color}"></div>
         <div><div class="tl-title">Day ${d.day} · ${formatDay(d.date)}</div>
           <div>${from} → ${to}</div>
-          <div class="tl-meta"><b>${formatMinutes(d.time_min)}</b> · ${(d.distance_m / 1000).toFixed(1)} km ·
-            ↑ ${d.ascent_m} m · ↓ ${d.descent_m} m · <span style="color:${cat.color}">${cat.name}</span>${sac}</div>
+          <div class="tl-meta"><b>${formatMinutes(d.time_min)}</b> · ${formatDistance(d.distance_m)} ·
+            ↑ ${formatHeight(d.ascent_m)} · ↓ ${formatHeight(d.descent_m)} · <span style="color:${cat.color}">${cat.name}</span>${sac}</div>
           ${i === 0 ? connectionLine(t.access, "access") : ""}
           ${i === t.days.length - 1 ? connectionLine(t.exit, "exit") : ""}
           ${profileChart(profiles[i], scale, cat.color)}
@@ -100,9 +101,10 @@ export function renderTourDetail(t, { kept = false } = {}) {
         ${formatDay(t.days[0].date)} – ${formatDay(t.days[t.days.length - 1].date)}</div>
       <div class="facts">
         <div class="fact"><b>${formatMinutes(t.time_min).replace(" h", "")}</b><span>hours walking</span></div>
-        <div class="fact"><b>${(t.distance_m / 1000).toFixed(1)}</b><span>km</span></div>
-        <div class="fact"><b>${t.ascent_m.toLocaleString("de-CH")}</b><span>m ascent</span></div>
+        <div class="fact"><b>${distanceValue(t.distance_m)}</b><span>${distanceUnit()}</span></div>
+        <div class="fact"><b>${heightValue(t.ascent_m)}</b><span>${heightUnit()} ascent</span></div>
       </div>
+      ${outsideSettings(t)}
       ${tourCost(t)}
       <div class="actions">
         <button class="btn primary" id="tourEdit">Edit tour</button>
@@ -120,7 +122,7 @@ export function renderTourDetail(t, { kept = false } = {}) {
 
 function nightCost(c) {
   if (!c) return `<div class="tl-meta">No prices known for this hut</div>`;
-  const amount = state.tMember ? c.member : c.non_member;
+  const amount = settings().member ? c.member : c.non_member;
   return `<div class="tl-meta">≈ ${c.currency} ${Math.round(amount)} per person: ${c.basis}` +
     `${c.tax ? " + tax" : ""}${c.label ? ` (${esc(c.label)}` + (c.year ? `, ${c.year})` : ")") : ""}</div>`;
 }
@@ -130,9 +132,17 @@ function tourCost(t) {
   if (!t.cost?.priced) return `<p class="hint">No hut prices known for this tour.</p>`;
   const people = state.tPeople;
   const from = t.cost.priced < t.nights ? "from " : "";
-  return `<p class="tour-cost" title="${esc(costTitle(t, state.tMember, people))}">Hut costs ≈ <b>${from}` +
-    `${formatCost(t.cost.totals, state.tMember)}</b> per person${people > 1 ? `, ${from}${formatCost(t.cost.totals, state.tMember, people)} for ${people}` : ""}` +
+  return `<p class="tour-cost" title="${esc(costTitle(t, settings().member, people))}">Hut costs ≈ <b>${from}` +
+    `${formatCost(t.cost.totals, settings().member)}</b> per person${people > 1 ? `, ${from}${formatCost(t.cost.totals, settings().member, people)} for ${people}` : ""}` +
     `${t.cost.priced < t.nights ? ` · ${t.nights - t.cost.priced} night${t.nights - t.cost.priced > 1 ? "s" : ""} without prices` : ""}</p>`;
+}
+
+/** A tour made earlier or shared by someone else can use what your settings wouldn't offer: say what. */
+export function outsideSettings(t) {
+  const reasons = { trail: "a harder trail", altitude: "a route higher than your altitude limit",
+    lift: "a mountain lift at the start or end" };
+  const list = (t.outside_settings || []).map((r) => reasons[r]).filter(Boolean);
+  return list.length ? `<p class="warn">Outside your settings (⚙): this tour uses ${list.join(" and ")}.</p>` : "";
 }
 
 function nightAvailability(n) {

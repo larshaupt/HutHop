@@ -6,19 +6,18 @@ export const DEFAULTS = {
   // hut browser
   month: 0, openAs: "any", hb: false, kitchen: false, bookable: false,
   altMin: 0, altMax: ALT_MAX, minBeds: 0, operator: "all", q: "", sort: "name",
-  hut: 0, base: "light", trails: false, limit: 2,
+  hut: 0, base: "light", trails: false,
   // tour planner
   view: "huts", tDate: "", tNights: 2, tMin: 3, tMax: 6, tCat: "any", tStart: 0, tStartName: "", tLoop: false,
-  tUnknown: true, tBox: "", tour: 0, tPeople: 2, tAvail: true, tSort: "best", tLifts: false, tMember: false,
+  tUnknown: true, tBox: "", tour: 0, tPeople: 2, tSort: "best",
   tid: "", tEdit: false, // a tour opened by id (my tours, a shared link, the editor), and whether it is being edited
 };
 
 const HASH_KEYS = {
   month: "m", openAs: "open", hb: "hb", kitchen: "kitchen", bookable: "book", altMin: "amin", altMax: "amax",
-  minBeds: "beds", operator: "type", q: "q", sort: "sort", hut: "hut", base: "map", trails: "trails", limit: "tl",
+  minBeds: "beds", operator: "type", q: "q", sort: "sort", hut: "hut", base: "map", trails: "trails",
   view: "v", tDate: "td", tNights: "tn", tMin: "tmin", tMax: "tmax", tCat: "tc", tStart: "ts", tStartName: "tsn",
-  tLoop: "loop", tUnknown: "unk", tBox: "tb", tour: "tour", tPeople: "ppl", tAvail: "avail", tSort: "tsort",
-  tLifts: "nolifts", tMember: "member", tid: "tid", tEdit: "edit",
+  tLoop: "loop", tUnknown: "unk", tBox: "tb", tour: "tour", tPeople: "ppl", tSort: "tsort", tid: "tid", tEdit: "edit",
 };
 
 /** The one state object. Modules read it directly and change it only through setState(). */

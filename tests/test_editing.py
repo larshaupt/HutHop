@@ -9,7 +9,7 @@ from datetime import date, timedelta
 
 import pytest
 
-from app.planner.editing import edits, leg_limit, tour_from_hut
+from app.planner.editing import Rules, edits, leg_limit, tour_from_hut
 from app.planner.graph import Graph, Hut, Leg, Stop
 from app.planner.tours import TourKey, build_tour
 
@@ -45,17 +45,17 @@ def add(g: Graph, leg: Leg) -> None:
 TOUR = TourKey(START, [S1, A, B, S2], [1, 1, 1], (3.0, 6.0))
 
 
-def by_kind(graph, key=TOUR, cap=1):
+def by_kind(graph, key=TOUR, rules=Rules(cap=1)):
     out = {}
-    for e in edits(graph, key, cap, today=date(2027, 1, 1)):
+    for e in edits(graph, key, rules, today=date(2027, 1, 1)):
         out.setdefault((e.kind, e.slot), []).append(e)
     return out
 
 
 def test_leg_limit(graph):
-    assert leg_limit(graph, A, B, 1) == 1 and leg_limit(graph, A, B, 2) == 2
-    assert leg_limit(graph, S1, A, 3) == 3  # build_tour takes the hardest variant at or below the cap
-    assert leg_limit(graph, C, A, 1) is None
+    assert leg_limit(graph, A, B, Rules(cap=1)) == 1 and leg_limit(graph, A, B, Rules(cap=2)) == 2
+    assert leg_limit(graph, S1, A, Rules(cap=3)) == 1  # the hardest variant that exists and is allowed
+    assert leg_limit(graph, C, A, Rules(cap=1)) is None
 
 
 def test_start_and_end_stops(graph):
@@ -100,18 +100,36 @@ def test_remove_a_night(graph):
 
 
 def test_other_trail_limit(graph):
-    variants = by_kind(graph)[("limit", 1)]
+    assert ("limit", 1) not in by_kind(graph)  # the harder variant is above a yellow-only setting
+    variants = by_kind(graph, rules=Rules(cap=2))[("limit", 1)]
     assert [x.key.limits for x in variants] == [[1, 2, 1]]
     tour = build_tour(graph, variants[0].key)
     assert tour.legs[1].edge_id == 99
 
 
 def test_every_edit_builds(graph):
-    for e in edits(graph, TOUR, 1, today=date(2027, 1, 1)):
+    for e in edits(graph, TOUR, Rules(cap=1), today=date(2027, 1, 1)):
         build_tour(graph, e.key)  # raises if a day has no edge
 
 
 def test_tour_from_hut(graph):
-    key = tour_from_hut(graph, A, START, (3.0, 6.0), 1)
+    key = tour_from_hut(graph, A, START, (3.0, 6.0), Rules(cap=1))
     assert key.places == [S3, A, S1] and key.limits == [1, 1]  # S3 → A (1.5 h) is closer than S1 → A (2 h)
-    assert tour_from_hut(graph, C, START, (3.0, 6.0), 1) is None  # no stop leads to C
+    assert tour_from_hut(graph, C, START, (3.0, 6.0), Rules(cap=1)) is None  # no stop leads to C
+
+
+def test_settings_filter_what_is_offered(graph):
+    """Routes above the altitude limit and mountain-lift stops (when avoided) are never offered."""
+    from dataclasses import replace
+
+    high = replace(graph.legs[(A, D, 1)], max_altitude_m=3100)
+    graph.legs[(A, D, 1)] = high
+    graph.hut_out[A] = [high if x.to == D else x for x in graph.hut_out[A]]
+    assert [x.key.places for x in by_kind(graph)[("insert", 1)]] == [[S1, A, D, B, S2]]
+    assert ("insert", 1) not in by_kind(graph, rules=Rules(cap=1, max_altitude=3000))  # A → D goes up to 3100 m
+
+    graph.stops[S3] = replace(graph.stops[S3], mode="cableway")
+    assert [x.place for x in by_kind(graph)[("start", None)]] == [S3]
+    assert ("start", None) not in by_kind(graph, rules=Rules(cap=1, avoid_lifts=True))
+    key = tour_from_hut(graph, A, START, (3.0, 6.0), Rules(cap=1, avoid_lifts=True))
+    assert key.places[0] == S1  # S3 is closer, but a cable car

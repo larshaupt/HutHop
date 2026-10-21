@@ -25,6 +25,7 @@ class Leg:
     max_category: int
     sac_time_min: int | None
     category_limit: int = 1  # search limit the edge was stored for; with frm/to it names the edge stably
+    max_altitude_m: int | None = None  # highest point of the route
 
 
 @dataclass(frozen=True)
@@ -81,7 +82,7 @@ def load_graph(conn: sqlite3.Connection, limit: int, footprints: Footprints | No
                             seasons.get(r["id"], ()))
     rows = conn.execute(
         "SELECT id, from_place, to_place, time_min, distance_m, ascent_m, descent_m, max_category, sac_time_min, "
-        "category_limit, footprint, samples, CASE WHEN footprint IS NULL THEN geometry END AS geometry "
+        "category_limit, max_altitude_m, footprint, samples, CASE WHEN footprint IS NULL THEN geometry END AS geometry "
         "FROM edge WHERE category_limit <= ? AND excluded = 0", (limit,)).fetchall()
     stop_ids = {r["from_place"] for r in rows if r["from_place"] not in huts} | \
                {r["to_place"] for r in rows if r["to_place"] not in huts}
@@ -97,7 +98,7 @@ def load_graph(conn: sqlite3.Connection, limit: int, footprints: Footprints | No
     graph = Graph(huts, stops, footprints=footprints, timetable=timetable or transit.load(conn))
     for r in rows:
         leg = Leg(r["id"], r["from_place"], r["to_place"], r["time_min"], r["distance_m"], r["ascent_m"],
-                  r["descent_m"], r["max_category"], r["sac_time_min"], r["category_limit"])
+                  r["descent_m"], r["max_category"], r["sac_time_min"], r["category_limit"], r["max_altitude_m"])
         graph.legs[(leg.frm, leg.to, leg.category_limit)] = leg
         if leg.frm in huts and leg.to in huts:
             graph.hut_out.setdefault(leg.frm, []).append(leg)

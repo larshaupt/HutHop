@@ -47,6 +47,9 @@ class TourRequest:
     loop: bool = False
     include_unknown: bool = True
     avoid_lifts: bool = False  # no access or exit stop served only by cable cars, chairlifts or funiculars
+    max_altitude: int | None = None  # no route whose highest point is above this (m)
+    pace: float = 1.0  # walking time / Swiss standard time; the hours above are already in standard time (the API
+    #                    divides them), this only judges the connection times at the start and end stop
     max_results: int = POOL_SIZE
     weights: dict[str, float] = field(default_factory=lambda: dict(ranking.DEFAULT_WEIGHTS))
 
@@ -135,20 +138,27 @@ def with_availability(night: Night | None, hut: Hut, day: date, catering: Cateri
     return Night(night.hut, night.date, night.status, night.partial, avail) if night else None
 
 
+def below(leg: Leg, max_altitude: int | None) -> bool:
+    """The route's highest point is within the altitude limit (None: no limit; routes without heights pass)."""
+    return max_altitude is None or leg.max_altitude_m is None or leg.max_altitude_m <= max_altitude
+
+
 def is_lift(stop: Stop) -> bool:
     modes = set((stop.mode or "").split(","))
     return bool(modes) and modes <= LIFT_MODES
 
 
 def access_options(graph: Graph, hut_id: int, day: date, max_minutes: float, avoid_lifts: bool = False,
-                   near: tuple[float, float] | None = None) -> list[Leg]:
+                   near: tuple[float, float] | None = None, max_altitude: int | None = None,
+                   pace: float = 1.0) -> list[Leg]:
     """Stop → hut connections usable on `day`: served that day (or no timetable for the date), at most
-    `max_minutes`, within START_RADIUS_M of `near` if given. Closest (walking time) first, but stops whose first
-    connection gets you to the hut only after transit.LATEST_HUT_ARRIVAL after all others."""
+    `max_minutes` (standard time), within START_RADIUS_M of `near` if given, below `max_altitude`. Closest (walking
+    time) first, but stops whose first connection gets you to the hut (at `pace`) only after
+    transit.LATEST_HUT_ARRIVAL after all others."""
     legs = []
     for leg in graph.stop_in.get(hut_id, ()):
         stop = graph.stops[leg.frm]
-        if leg.time_min > max_minutes or (avoid_lifts and is_lift(stop)) or \
+        if leg.time_min > max_minutes or (avoid_lifts and is_lift(stop)) or not below(leg, max_altitude) or \
                 (near is not None and math.hypot(stop.e - near[0], stop.n - near[1]) > START_RADIUS_M) or \
                 not graph.timetable.day(stop.id, day).served:
             continue
@@ -156,26 +166,27 @@ def access_options(graph: Graph, hut_id: int, day: date, max_minutes: float, avo
 
     def late(leg: Leg) -> bool:
         first = graph.timetable.day(leg.frm, day).first_min
-        return first is not None and first + leg.time_min > transit.LATEST_HUT_ARRIVAL
+        return first is not None and first + leg.time_min * pace > transit.LATEST_HUT_ARRIVAL
     return sorted(legs, key=lambda x: (late(x), x.time_min, x.max_category))
 
 
 def exit_options(graph: Graph, hut_id: int, day: date, max_minutes: float, avoid_lifts: bool = False,
-                 loop_start: Stop | None = None) -> list[Leg]:
+                 loop_start: Stop | None = None, max_altitude: int | None = None, pace: float = 1.0) -> list[Leg]:
     """Hut → stop connections usable on `day`, closest first (but stops whose last connection means leaving the hut
     before transit.EARLIEST_HUT_DEPARTURE after all others); for a loop, within LOOP_RADIUS_M of its start."""
     legs = []
     for leg in graph.stop_out.get(hut_id, ()):
         stop = graph.stops[leg.to]
-        if leg.time_min > max_minutes or (avoid_lifts and is_lift(stop)) or \
-                (loop_start is not None and math.hypot(stop.e - loop_start.e, stop.n - loop_start.n) > LOOP_RADIUS_M) or \
+        if leg.time_min > max_minutes or (avoid_lifts and is_lift(stop)) or not below(leg, max_altitude) or \
+                (loop_start is not None and
+                 math.hypot(stop.e - loop_start.e, stop.n - loop_start.n) > LOOP_RADIUS_M) or \
                 not graph.timetable.day(stop.id, day).served:
             continue
         legs.append(leg)
 
     def early(leg: Leg) -> bool:
         last = graph.timetable.day(leg.to, day).last_min
-        return last is not None and last - leg.time_min < transit.EARLIEST_HUT_DEPARTURE
+        return last is not None and last - leg.time_min * pace < transit.EARLIEST_HUT_DEPARTURE
     return sorted(legs, key=lambda x: (early(x), x.time_min, x.max_category))
 
 
@@ -237,7 +248,7 @@ def suggest(graph: Graph, req: TourRequest, availability: AvailabilityLookup | N
 
     def exit_legs(hut_id: int) -> list[Leg]:
         if hut_id not in exits:
-            exits[hut_id] = exit_options(graph, hut_id, end_day, hi, req.avoid_lifts)
+            exits[hut_id] = exit_options(graph, hut_id, end_day, hi, req.avoid_lifts, None, req.max_altitude, req.pace)
         return exits[hut_id]
 
     # Day 1: the closest usable stop → first hut. State: (cost, legs, nights, walked): walked = cells of the tour
@@ -247,7 +258,8 @@ def suggest(graph: Graph, req: TourRequest, availability: AvailabilityLookup | N
     for hut_id in graph.stop_in:
         if not in_region(hut_id) or not (n := night(hut_id, 0)) or (req.nights == 1 and not exit_legs(hut_id)):
             continue
-        access = access_options(graph, hut_id, req.start_date, hi, req.avoid_lifts, req.start_near)
+        access = access_options(graph, hut_id, req.start_date, hi, req.avoid_lifts, req.start_near, req.max_altitude,
+                                req.pace)
         if access:
             states.append((day_cost(access[0], True) + penalty(n), (access[0],), (n,), 0.0))
     states = best_per_chain(states, 1)
@@ -259,6 +271,7 @@ def suggest(graph: Graph, req: TourRequest, availability: AvailabilityLookup | N
             visited = {n.hut for n in nights}
             for leg in graph.hut_out.get(legs[-1].to, ()):
                 if leg.to in visited or not (lo <= leg.time_min <= hi) or not in_region(leg.to) or \
+                        not below(leg, req.max_altitude) or \
                         (i == req.nights - 1 and not exit_legs(leg.to)):
                     continue
                 if n := night(leg.to, i):
@@ -271,7 +284,8 @@ def suggest(graph: Graph, req: TourRequest, availability: AvailabilityLookup | N
     tours = []
     for _, legs, nights, walked in states:
         start = graph.stops[legs[0].frm]
-        ends = exit_options(graph, legs[-1].to, end_day, hi, req.avoid_lifts, start) if req.loop \
+        ends = exit_options(graph, legs[-1].to, end_day, hi, req.avoid_lifts, start, req.max_altitude, req.pace) \
+            if req.loop \
             else exit_legs(legs[-1].to)
         if not ends:
             continue

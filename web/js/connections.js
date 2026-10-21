@@ -1,12 +1,13 @@
 // Connections of the selected hut (edges of the place graph): list in the detail view, lines on the map, review.
 import { $, CATEGORY, EMPTY, categoryColor, decodePolyline, esc, formatMinutes, modeLabel } from "./util.js";
-import { setState, state } from "./state.js";
+import { state } from "./state.js";
+import { formatDistance, formatHeight, settingsQuery } from "./settings.js";
 import { map, mapPadding } from "./map.js";
 import { selectHut } from "./huts.js";
 
 const STOPS_SHOWN = 8;
 const LINES_SHOWN = 4;
-const cache = new Map(); // "hutId:limit" → API response
+const cache = new Map(); // "hutId:settings" → API response (the settings decide which connections exist)
 
 /** Lines at a stop (most frequent first) and its summer departures per day, from the timetable. */
 function linesMeta(place) {
@@ -21,53 +22,50 @@ const allEdges = (data) => [...data.huts, ...data.stops.flatMap((s) => [s.to_hut
 /** The "Connections" section of the hut detail view; filled by showConnections(). */
 export function connectionsSection(d) {
   const warning = d.snap_m > 500
-    ? `<p class="warn">This hut is ${(d.snap_m / 1000).toFixed(1)} km from the nearest signposted hiking trail. It is reached
+    ? `<p class="warn">This hut is ${formatDistance(d.snap_m)} from the nearest signposted hiking trail. It is reached
        by alpine routes or across glaciers, so no walking connections are computed.</p>`
     : d.snap_m > 200
-      ? `<p class="warn">This hut is ${Math.round(d.snap_m)} m from the nearest signposted trail, so connection times may be
+      ? `<p class="warn">This hut is ${formatHeight(d.snap_m)} from the nearest signposted trail, so connection times may be
          inaccurate.</p>` : "";
   return `<div class="section" id="connections">
       <h3>Connections</h3>
-      <div class="seg trail-seg" id="limit" role="group" aria-label="Hardest trail allowed">
-        ${[1, 2, 3].map((c) => `<button data-v="${c}" aria-pressed="${c === state.limit}">` +
-          `<i class="trail-swatch c${c}"></i>${CATEGORY[c].label}</button>`).join("")}
-      </div>
-      <p class="hint">Hardest trail allowed. Walking times use the Swiss hiking-time formula, without breaks.</p>
+      <p class="hint">Within your settings (⚙: hardest trail, highest point, lifts). Walking times use the Swiss
+        hiking-time formula at your pace, without breaks.</p>
       ${warning}
       <div id="connList"><p class="hint">Loading…</p></div>
     </div>`;
 }
 
-async function load(hutId, limit) {
-  const key = `${hutId}:${limit}`;
+async function load(hutId, query) {
+  const key = `${hutId}:${query}`;
   if (!cache.has(key)) {
-    const res = await fetch(`/api/huts/${hutId}/edges?limit=${limit}`);
+    const res = await fetch(`/api/huts/${hutId}/edges?${query}`);
     if (!res.ok) throw new Error(`edges ${hutId}: ${res.status}`);
     cache.set(key, await res.json());
   }
   return cache.get(key);
 }
 
-const current = () => cache.get(`${state.hut}:${state.limit}`);
+const current = () => cache.get(`${state.hut}:${settingsQuery()}`);
 
 export async function showConnections(hutId) {
-  const limit = state.limit;
+  const query = settingsQuery();
   let data;
   try {
-    data = await load(hutId, limit);
+    data = await load(hutId, query);
   } catch (err) {
     console.error(err);
     if ($("#connList")) $("#connList").innerHTML = `<p class="hint">Could not load connections.</p>`;
     return;
   }
-  if (state.hut !== hutId || state.limit !== limit || !$("#connList")) return;
+  if (state.hut !== hutId || settingsQuery() !== query || !$("#connList")) return;
   render(data);
   draw(data);
 }
 
 function edgeRow(e, label, kind, extra = "") {
   const cat = CATEGORY[e.max_category];
-  const meta = [`${(e.distance_m / 1000).toFixed(1)} km`, `↑ ${e.ascent_m} m`, `↓ ${e.descent_m} m`];
+  const meta = [formatDistance(e.distance_m), `↑ ${formatHeight(e.ascent_m)}`, `↓ ${formatHeight(e.descent_m)}`];
   const sac = e.sac_time_min ? `<span class="sac" title="Time given by the SAC for this route">SAC ${formatMinutes(e.sac_time_min)}` +
     `${e.sac_grade ? ` · ${esc(e.sac_grade)}` : ""}</span>` : "";
   return `<li class="conn${e.excluded ? " excluded" : ""}" data-edge="${e.id}" data-place="${e.place.id}" data-kind="${kind}">
@@ -200,13 +198,6 @@ export function bindConnectionEvents() {
   detail.addEventListener("mouseover", (e) => setHover(Number(e.target.closest(".conn")?.dataset.edge) || null));
   detail.addEventListener("mouseleave", () => setHover(null));
   detail.addEventListener("click", (e) => {
-    const limitButton = e.target.closest("#limit button");
-    if (limitButton) {
-      setState({ limit: Number(limitButton.dataset.v) });
-      document.querySelectorAll("#limit button").forEach((x) => x.setAttribute("aria-pressed", x === limitButton));
-      showConnections(state.hut);
-      return;
-    }
     const x = e.target.closest("[data-exclude]");
     if (x) { toggleExcluded(Number(x.dataset.exclude)); return; }
     const row = e.target.closest(".conn");

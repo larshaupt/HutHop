@@ -2,7 +2,8 @@
 
 A tour is its key (start date, places stop → hut … → stop, a trail limit per day, hours), so every edit is just
 another key; the API builds them with build_tour. Edits keep the tour valid as a path through stored edges (each
-day an edge) but not within the search rules (hours, trail level): a tour you design yourself needn't follow them.
+day an edge) and within the general settings (Rules: hardest trail, highest point, no mountain-lift stops), but not
+the search's hours: a tour you design yourself needn't follow them.
 
   start / end   another stop for the first / last day (stops with an edge to the first / from the last hut)
   swap N        another hut for night N (connected to both neighbours; at an end, the stop is kept if it connects,
@@ -16,8 +17,8 @@ day an edge) but not within the search rules (hours, trail level): a tour you de
 from dataclasses import dataclass
 from datetime import date, timedelta
 
-from app.planner.graph import Graph
-from app.planner.tours import TourKey, access_options, exit_options
+from app.planner.graph import Graph, Leg
+from app.planner.tours import TourKey, access_options, below, exit_options, is_lift
 
 MAX_STOP_OPTIONS = 12  # stops offered per end, closest first
 
@@ -30,17 +31,31 @@ class Edit:
     key: TourKey
 
 
-def leg_limit(graph: Graph, frm: int, to: int, cap: int) -> int | None:
-    """The trail limit to name a day frm → to with: `cap` if an edge at or below it exists (build_tour then takes
-    the hardest such), else the easiest harder one. None if the places aren't connected."""
-    limits = [lim for lim in (1, 2, 3) if (frm, to, lim) in graph.legs]
-    if not limits:
-        return None
-    return cap if min(limits) <= cap else min(limits)
+@dataclass(frozen=True)
+class Rules:
+    """The general settings every offered route must keep to."""
+
+    cap: int = 3  # hardest trail: 1 yellow, 2 red-white, 3 blue-white
+    max_altitude: int | None = None  # highest point of a route (m)
+    avoid_lifts: bool = False  # no start or end stop served only by mountain lifts
+    pace: float = 1.0  # for the connection times at the start and end stop
+
+    def allows(self, leg: Leg) -> bool:
+        return leg.category_limit <= self.cap and below(leg, self.max_altitude)
+
+    def stop_ok(self, graph: Graph, stop_id: int) -> bool:
+        return not (self.avoid_lifts and is_lift(graph.stops[stop_id]))
 
 
-def edits(graph: Graph, key: TourKey, cap: int, today: date | None = None) -> list[Edit]:
-    """All single edits of a tour. `cap`: the planner's trail limit, used for days that change."""
+def leg_limit(graph: Graph, frm: int, to: int, rules: Rules = Rules()) -> int | None:
+    """The trail limit to name a day frm → to with: the hardest variant of that edge the rules allow (build_tour
+    takes exactly it). None if no allowed edge connects the places."""
+    limits = [lim for lim in (1, 2, 3) if (frm, to, lim) in graph.legs and rules.allows(graph.legs[(frm, to, lim)])]
+    return max(limits) if limits else None
+
+
+def edits(graph: Graph, key: TourKey, rules: Rules = Rules(), today: date | None = None) -> list[Edit]:
+    """All single edits of a tour that keep to the rules (for the days they change)."""
     today = today or date.today()
     places, limits = key.places, key.limits
     huts = places[1:-1]
@@ -50,10 +65,26 @@ def edits(graph: Graph, key: TourKey, cap: int, today: date | None = None) -> li
     hut_in: dict[int, set[int]] = {}
     for frm, legs in graph.hut_out.items():
         for leg in legs:
-            hut_in.setdefault(leg.to, set()).add(frm)
+            if rules.allows(leg):
+                hut_in.setdefault(leg.to, set()).add(frm)
 
     def out_huts(h: int) -> set[int]:
-        return {leg.to for leg in graph.hut_out.get(h, ())}
+        return {leg.to for leg in graph.hut_out.get(h, ()) if rules.allows(leg)}
+
+    def stops_in(h: int) -> list[Leg]:
+        """Allowed stop → hut legs, closest first."""
+        return sorted((x for x in graph.stop_in.get(h, ()) if rules.allows(x) and rules.stop_ok(graph, x.frm)),
+                      key=lambda x: x.time_min)
+
+    def stops_out(h: int) -> list[Leg]:
+        return sorted((x for x in graph.stop_out.get(h, ()) if rules.allows(x) and rules.stop_ok(graph, x.to)),
+                      key=lambda x: x.time_min)
+
+    def access(h: int, day: date) -> list[Leg]:
+        return access_options(graph, h, day, max_minutes, rules.avoid_lifts, None, rules.max_altitude, rules.pace)
+
+    def exits(h: int, day: date) -> list[Leg]:
+        return exit_options(graph, h, day, max_minutes, rules.avoid_lifts, None, rules.max_altitude, rules.pace)
 
     def make(kind: str, slot: int | None, place: int | None, new_places: list[int], start: date = key.start_date,
              keep: dict[int, int] | None = None) -> Edit | None:
@@ -61,7 +92,7 @@ def edits(graph: Graph, key: TourKey, cap: int, today: date | None = None) -> li
         new_limits = []
         for d in range(len(new_places) - 1):
             old = (keep or {}).get(d)
-            lim = limits[old] if old is not None else leg_limit(graph, new_places[d], new_places[d + 1], cap)
+            lim = limits[old] if old is not None else leg_limit(graph, new_places[d], new_places[d + 1], rules)
             if lim is None:
                 return None
             new_limits.append(lim)
@@ -69,27 +100,25 @@ def edits(graph: Graph, key: TourKey, cap: int, today: date | None = None) -> li
 
     def first_stop(h: int, day: date) -> int | None:
         """The current start stop if it connects to `h`, else the closest usable one (else the closest at all)."""
-        if leg_limit(graph, places[0], h, 3) is not None:
+        if leg_limit(graph, places[0], h, rules) is not None:
             return places[0]
-        options = access_options(graph, h, day, max_minutes) or sorted(graph.stop_in.get(h, ()),
-                                                                     key=lambda x: x.time_min)
+        options = [x for x in access(h, day) if rules.allows(x)] or stops_in(h)
         return options[0].frm if options else None
 
     def last_stop(h: int, day: date) -> int | None:
-        if leg_limit(graph, h, places[-1], 3) is not None:
+        if leg_limit(graph, h, places[-1], rules) is not None:
             return places[-1]
-        options = exit_options(graph, h, day, max_minutes) or sorted(graph.stop_out.get(h, ()),
-                                                                    key=lambda x: x.time_min)
+        options = [x for x in exits(h, day) if rules.allows(x)] or stops_out(h)
         return options[0].to if options else None
 
     found: list[Edit | None] = []
 
     # Start / end stop
-    for stop in dict.fromkeys(leg.frm for leg in sorted(graph.stop_in.get(huts[0], ()), key=lambda x: x.time_min)):
+    for stop in dict.fromkeys(leg.frm for leg in stops_in(huts[0])):
         if stop != places[0] and len(found) < MAX_STOP_OPTIONS:
             found.append(make("start", None, stop, [stop, *places[1:]], keep={d: d for d in range(1, n + 1)}))
     count = len(found)
-    for stop in dict.fromkeys(leg.to for leg in sorted(graph.stop_out.get(huts[-1], ()), key=lambda x: x.time_min)):
+    for stop in dict.fromkeys(leg.to for leg in stops_out(huts[-1])):
         if stop != places[-1] and len(found) - count < MAX_STOP_OPTIONS:
             found.append(make("end", None, stop, [*places[:-1], stop], keep={d: d for d in range(n)}))
 
@@ -97,9 +126,9 @@ def edits(graph: Graph, key: TourKey, cap: int, today: date | None = None) -> li
     for i, current in enumerate(huts):
         others = set(huts) - {current}
         if n == 1:
-            candidates = {leg.to for leg in graph.stop_out.get(places[0], ())} | \
-                {h for h, legs in graph.stop_in.items() if any(leg.frm == places[0] for leg in legs)} | \
-                {h for h, legs in graph.stop_out.items() if any(leg.to == places[-1] for leg in legs)}
+            candidates = {x.to for legs in graph.stop_in.values() for x in legs
+                          if x.frm == places[0] and rules.allows(x)} | \
+                {x.frm for legs in graph.stop_out.values() for x in legs if x.to == places[-1] and rules.allows(x)}
         elif i == 0:
             candidates = hut_in.get(huts[1], set())
         elif i == n - 1:
@@ -132,13 +161,13 @@ def edits(graph: Graph, key: TourKey, cap: int, today: date | None = None) -> li
             if k == 0:
                 start = key.start_date - timedelta(days=1)
                 start = start if start >= today else key.start_date
-                options = access_options(graph, h, start, max_minutes)
+                options = [x for x in access(h, start) if rules.allows(x)]
                 if not options:
                     continue
                 new = [options[0].frm, h, *places[1:]]
                 found.append(make("insert", k, h, new, start, keep={d + 1: d for d in range(1, n + 1)}))
             elif k == n:
-                options = exit_options(graph, h, end_day + timedelta(days=1), max_minutes)
+                options = [x for x in exits(h, end_day + timedelta(days=1)) if rules.allows(x)]
                 if not options:
                     continue
                 new = [*places[:-1], h, options[0].to]
@@ -160,7 +189,7 @@ def edits(graph: Graph, key: TourKey, cap: int, today: date | None = None) -> li
                 stop = last_stop(huts[-2], end_day - timedelta(days=1))
                 if stop is not None:
                     found.append(make("remove", i, None, [*places[:-2], stop], keep={d: d for d in range(n - 1)}))
-            elif leg_limit(graph, huts[i - 1], huts[i + 1], cap) is not None:
+            elif leg_limit(graph, huts[i - 1], huts[i + 1], rules) is not None:
                 new = [*places[:i + 1], *places[i + 2:]]
                 found.append(make("remove", i, None, new, keep={d: d for d in range(i)} |
                                   {d - 1: d for d in range(i + 2, n + 1)}))
@@ -170,22 +199,28 @@ def edits(graph: Graph, key: TourKey, cap: int, today: date | None = None) -> li
         frm, to = places[d], places[d + 1]
         used = next((lim for lim in range(limits[d], 0, -1) if (frm, to, lim) in graph.legs), None)
         for lim in (1, 2, 3):
-            if lim != used and (frm, to, lim) in graph.legs:
+            if lim != used and (frm, to, lim) in graph.legs and rules.allows(graph.legs[(frm, to, lim)]):
                 new_limits = list(limits)
                 new_limits[d] = lim
                 found.append(Edit("limit", d, None, TourKey(key.start_date, list(places), new_limits, key.hours)))
     return [e for e in found if e is not None]
 
 
-def tour_from_hut(graph: Graph, hut_id: int, start: date, hours: tuple[float, float], cap: int) -> TourKey | None:
-    """One night at a hut, with the closest stops that run on those days (else the closest at all)."""
+def tour_from_hut(graph: Graph, hut_id: int, start: date, hours: tuple[float, float],
+                  rules: Rules = Rules()) -> TourKey | None:
+    """One night at a hut, with the closest stops (within the rules) that run on those days, else the closest."""
     max_minutes = hours[1] * 60
-    access = access_options(graph, hut_id, start, max_minutes) or \
-        sorted(graph.stop_in.get(hut_id, ()), key=lambda x: x.time_min)
-    exits = exit_options(graph, hut_id, start + timedelta(days=1), max_minutes) or \
-        sorted(graph.stop_out.get(hut_id, ()), key=lambda x: x.time_min)
+
+    def fits(legs, stop_of):
+        return [x for x in legs if rules.allows(x) and rules.stop_ok(graph, stop_of(x))]
+    access = fits(access_options(graph, hut_id, start, max_minutes, rules.avoid_lifts, None, rules.max_altitude,
+                                 rules.pace), lambda x: x.frm) or \
+        sorted(fits(graph.stop_in.get(hut_id, ()), lambda x: x.frm), key=lambda x: x.time_min)
+    exits = fits(exit_options(graph, hut_id, start + timedelta(days=1), max_minutes, rules.avoid_lifts, None,
+                              rules.max_altitude, rules.pace), lambda x: x.to) or \
+        sorted(fits(graph.stop_out.get(hut_id, ()), lambda x: x.to), key=lambda x: x.time_min)
     if not access or not exits:
         return None
     places = [access[0].frm, hut_id, exits[0].to]
-    limits = [leg_limit(graph, places[0], hut_id, cap), leg_limit(graph, hut_id, places[2], cap)]
+    limits = [leg_limit(graph, places[0], hut_id, rules), leg_limit(graph, hut_id, places[2], rules)]
     return TourKey(start, places, limits, hours)

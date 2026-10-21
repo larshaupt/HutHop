@@ -71,7 +71,8 @@ app/
 web/         static frontend (MapLibre + swisstopo tiles, no build step), ES modules in web/js/:
              main (wiring), state (URL hash), map, huts (list, detail), beds (free-beds calendar),
              connections, tours (form, results, sorting, opening a tour), tour-detail (timeline, profiles),
-             tour-editor (editing a tour), your-tours (kept in the browser), editor (hut data),
+             tour-editor (editing a tour), your-tours (kept in the browser), settings (general
+             settings and units, kept in the browser), editor (hut data),
              info (About dialog), util
 server/      compose.yaml, update.sh (deploy) and refresh.sh (data refresh and graph build) for server2
 docs/        deployment plan, route graph figure

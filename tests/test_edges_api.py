@@ -172,3 +172,18 @@ def test_editor_options_and_tour_from_hut(client):
         assert c.get(f"/api/tours/{o['tour_id']}").status_code == 200
     assert c.get(f"/api/huts/{ids['b']}/tour", params=params).status_code == 404  # no stop connects to B
     assert c.get("/api/huts/999999/tour", params=params).status_code == 404
+
+
+def test_settings_pace_and_altitude(client):
+    c, ids = client
+    body = {"start_date": "2027-07-10", "nights": 1, "min_hours": 1, "max_hours": 2, "check_availability": False}
+    tour = c.post("/api/tours/suggest", json=body).json()["tours"][0]
+    assert tour["time_min"] == 150 and tour["outside_settings"] == []
+    slow = c.get(f"/api/tours/{tour['id']}", params={"pace": 1.2}).json()
+    assert slow["time_min"] == 180 and [d["time_min"] for d in slow["days"]] == [108, 72]  # 90 and 60 min at 120 %
+    # At 150 % the 90-minute day takes 2:15 h, more than the 2 hours asked for: no tour
+    assert c.post("/api/tours/suggest", json=body | {"pace": 1.5}).json()["tours"] == []
+    edges = c.get(f"/api/huts/{ids['a']}/edges", params={"pace": 2}).json()
+    assert edges["stops"][0]["to_hut"]["time_min"] == 180
+    yellow = c.get(f"/api/tours/{tour['id']}", params={"limit": 1}).json()
+    assert yellow["outside_settings"] == []  # its days are yellow
