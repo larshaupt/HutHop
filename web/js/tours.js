@@ -370,7 +370,7 @@ function selectTour(n) {
 
 /** A tour by id (my tours, a shared link, the editor's result), or null if it no longer exists. */
 export async function openTourById(id, { edit = false } = {}) {
-  const res = await fetch(`/api/tours/${encodeURIComponent(id)}?people=${state.tPeople}&limit=${state.limit}`);
+  const res = await fetch(`/api/tours/${encodeURIComponent(id)}?people=${state.tPeople}`);
   if (!res.ok) {
     $("#tourResults").insertAdjacentHTML("afterbegin", `<p class="warn">This tour is no longer available (a connection
       was removed or excluded).</p>`);
@@ -404,13 +404,12 @@ export async function checkTourBeds(t) {
   const check = fromSearch ? results.query.check_availability : state.tAvail;
   const people = fromSearch ? results.query.people : state.tPeople;
   if (!check || !t.days.some((d) => d.night && (!d.night.availability || d.night.availability.state === "not_checked"))) return;
-  const res = await fetch(`/api/tours/${encodeURIComponent(t.id)}?people=${people}&check_availability=true&limit=${state.limit}`);
+  const res = await fetch(`/api/tours/${encodeURIComponent(t.id)}?people=${people}&check_availability=true`);
   if (!res.ok) return;
   const fresh = await res.json();
-  // Keep score and order (computed for the search's hours); take only the nights' availability and warnings.
+  // Keep score and order (computed for the search's hours); take only the nights' availability.
   t.days.forEach((d, i) => { d.night = fresh.days[i].night; });
   t.availability = fresh.availability;
-  t.warnings = fresh.warnings;
   if (fromSearch) renderResults();  // the card's badge, for when the list is shown again
   if (current === t && !$("#tourDetail").hidden) {
     if (isEditing()) refreshEditor(t);

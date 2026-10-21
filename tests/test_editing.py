@@ -9,7 +9,7 @@ from datetime import date, timedelta
 
 import pytest
 
-from app.planner.editing import edits, leg_limit, tour_from_hut, warnings
+from app.planner.editing import edits, leg_limit, tour_from_hut
 from app.planner.graph import Graph, Hut, Leg, Stop
 from app.planner.tours import TourKey, build_tour
 
@@ -109,17 +109,6 @@ def test_other_trail_limit(graph):
 def test_every_edit_builds(graph):
     for e in edits(graph, TOUR, 1, today=date(2027, 1, 1)):
         build_tour(graph, e.key)  # raises if a day has no edge
-
-
-def test_warnings(graph):
-    long_day = build_tour(graph, TourKey(START, [S1, A, B, S2], [1, 1, 1], (3.0, 4.5)))
-    assert {"code": "too_long", "day": 2} in warnings(graph, long_day)  # 5 h between huts, at most 4.5
-    short = build_tour(graph, TourKey(START, [S1, A, B, S2], [1, 1, 1], (5.5, 8.0)))
-    assert warnings(graph, short) == [{"code": "too_short", "day": 2}]  # the first and last day have no minimum
-    harder = build_tour(graph, TourKey(START, [S1, A, B, S2], [1, 2, 1], (3.0, 6.0)))
-    assert warnings(graph, harder, limit=1) == [{"code": "harder_trail", "day": 2}]
-    november = build_tour(graph, TourKey(date(2027, 11, 10), [S1, A, B, S2], [1, 1, 1], (3.0, 6.0)))
-    assert {"code": "closed", "night": 1} in warnings(graph, november)
 
 
 def test_tour_from_hut(graph):

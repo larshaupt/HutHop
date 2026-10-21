@@ -1,16 +1,15 @@
 // Tour editor: change any tour by hand. The server lists every single edit of a tour with the tour it gives
 // (GET /api/tours/{id}/options, planner/editing.py): another start or end stop, another hut for a night, a night
 // added or removed, another trail variant for a day; the start date is edited here. Edit mode replaces the tour
-// view: each slot opens its candidates in the panel and on the map, and a click on a
-// hut on the map offers the edits it fits. Candidates are ordered by the tour's resulting "best" score, which isn't
-// shown: when you design your own tour, the order is all it is good for. Undo and redo; the result is kept in
-// "My tours" as a new entry (the
-// tour it started from stays as it was). Days outside the hours, closed huts and the like are flagged, not refused.
+// view: each slot opens its candidates (huts and stops nearest first) in the panel and on the map, and a click on
+// a hut on the map offers the edits it fits. Undo and redo; the result is kept in "My tours" as a new entry (the
+// tour it started from stays as it was). A tour you design needn't follow the search settings (hours, trail
+// level), so nothing is refused or flagged for them.
 import { $, CATEGORY, EMPTY, esc, formatMinutes, revealPanel } from "./util.js";
 import { setState, state } from "./state.js";
 import { fitCoords, map } from "./map.js";
 import { closeDetail } from "./huts.js";
-import { NIGHT_LABEL, connectionLine, formatDay, stopLabel, warningList } from "./tour-detail.js";
+import { NIGHT_LABEL, connectionLine, formatDay, stopLabel } from "./tour-detail.js";
 import { checkTourBeds, drawTour, openTourById, setCurrent, showTour } from "./tours.js";
 import { keepTour, updateEntry } from "./your-tours.js";
 
@@ -104,9 +103,9 @@ function candidateList(list) {
     const extra = o.service ? serviceSummary(o) : o.night ? `<span class="night ${o.night.status}">${NIGHT_LABEL[o.night.status]}</span>` : "";
     return `<li><button class="cand" data-apply="${esc(o.tour_id)}"${o.place ? ` data-place="${o.place.id}"` : ""}>
         <span class="cand-name">${name}</span>
-        <span class="cand-meta">${formatMinutes(o.time_min)} walking
-          (${o.days.map((m) => (m / 60).toFixed(1).replace(".0", "")).join(" / ")} h) · ↑ ${o.ascent_m.toLocaleString("de-CH")} m
-          ${extra ? ` · ${extra}` : ""}${o.warnings ? ` · <span class="warn-text">${o.warnings} warning${o.warnings > 1 ? "s" : ""}</span>` : ""}</span>
+        <span class="cand-meta">${o.distance_m !== undefined ? `<b>${(o.distance_m / 1000).toFixed(1)} km · ${formatMinutes(o.walk_min)}</b> away · ` : ""}tour
+          ${formatMinutes(o.time_min)} (${o.days.map((m) => (m / 60).toFixed(1).replace(".0", "")).join(" / ")} h) ·
+          ↑ ${o.ascent_m.toLocaleString("de-CH")} m${extra ? ` · ${extra}` : ""}</span>
       </button></li>`;
   }).join("");
   const more = !ed.showAll && list.length > SHOWN ? `<button class="link inline" id="edAll">Show all ${list.length}</button>` : "";
@@ -186,7 +185,6 @@ function render({ loading = false } = {}) {
         <div class="fact"><b>${(t.distance_m / 1000).toFixed(1)}</b><span>km</span></div>
         <div class="fact"><b>${t.ascent_m.toLocaleString("de-CH")}</b><span>m ascent</span></div>
       </div>
-      ${warningList(t)}
       <p class="hint" id="edStatus">${loading ? "Updating…" : "Choose a part of the tour to change it, or click a hut on the map."}</p>
       ${ed.pick ? pickMenu() : ""}
     </div>

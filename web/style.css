@@ -510,8 +510,6 @@ code { font-size: 12px; background: var(--bg-soft); padding: 0 4px; border-radiu
 .your-tour:hover { background: var(--bg-hover); }
 .your-tour span { color: var(--text-soft); font-size: 12px; }
 .your-tours .conn-x { opacity: 1; }
-.tour-warnings { margin: 10px 0 0; padding-left: 26px; }
-.tour-warnings li + li { margin-top: 2px; }
 
 /* ---------- Tour editor ---------- */
 .editor-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }

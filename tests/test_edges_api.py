@@ -164,9 +164,11 @@ def test_editor_options_and_tour_from_hut(client):
     tour_id = c.get(f"/api/huts/{ids['a']}/tour", params=params).json()["tour_id"]
     assert tour_id == f"2027-07-10_{ids['stop']}-{ids['a']}-{ids['stop']}_1-1_1-2"
     data = c.get(f"/api/tours/{tour_id}/options", params={"limit": 2}).json()
-    assert data["tour"]["id"] == tour_id and data["tour"]["warnings"] == [] and data["tour"]["hours"] == [1, 2]
+    assert data["tour"]["id"] == tour_id and "warnings" not in data["tour"] and data["tour"]["hours"] == [1, 2]
+    placed = [o for o in data["options"] if o["place"]]
+    assert all(o["distance_m"] > 0 and o["walk_min"] > 0 for o in placed)
+    assert [o["distance_m"] for o in placed] == sorted(o["distance_m"] for o in placed)  # nearest first
     for o in data["options"]:  # every option names a tour that exists
         assert c.get(f"/api/tours/{o['tour_id']}").status_code == 200
-    assert [o["score"] for o in data["options"]] == sorted((o["score"] for o in data["options"]), reverse=True)
     assert c.get(f"/api/huts/{ids['b']}/tour", params=params).status_code == 404  # no stop connects to B
     assert c.get("/api/huts/999999/tour", params=params).status_code == 404

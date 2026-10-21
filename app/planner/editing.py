@@ -1,8 +1,8 @@
-"""Tour editor, planner side: every edit possible on a tour, and the warnings for a tour that was edited by hand.
+"""Tour editor, planner side: every edit possible on a tour, and a one-night tour to start from at a hut.
 
 A tour is its key (start date, places stop → hut … → stop, a trail limit per day, hours), so every edit is just
-another key; the API scores them with build_tour. Edits keep the tour valid as a path through stored edges (each
-day an edge) but not necessarily within the search rules: those become warnings, not refusals.
+another key; the API builds them with build_tour. Edits keep the tour valid as a path through stored edges (each
+day an edge) but not within the search rules (hours, trail level): a tour you design yourself needn't follow them.
 
   start / end   another stop for the first / last day (stops with an edge to the first / from the last hut)
   swap N        another hut for night N (connected to both neighbours; at an end, the stop is kept if it connects,
@@ -16,9 +16,8 @@ day an edge) but not necessarily within the search rules: those become warnings,
 from dataclasses import dataclass
 from datetime import date, timedelta
 
-from app.planner import transit
 from app.planner.graph import Graph
-from app.planner.tours import Tour, TourKey, access_options, exit_options
+from app.planner.tours import TourKey, access_options, exit_options
 
 MAX_STOP_OPTIONS = 12  # stops offered per end, closest first
 
@@ -176,40 +175,6 @@ def edits(graph: Graph, key: TourKey, cap: int, today: date | None = None) -> li
                 new_limits[d] = lim
                 found.append(Edit("limit", d, None, TourKey(key.start_date, list(places), new_limits, key.hours)))
     return [e for e in found if e is not None]
-
-
-def warnings(graph: Graph, tour: Tour, limit: int | None = None) -> list[dict]:
-    """What doesn't fit the usual search rules, for tours edited by hand: [{code, day} or {code, night}], 1-based.
-    Codes: too_short / too_long (day outside the hours; the first and last day only have a maximum),
-    harder_trail (above `limit`), closed / full (night), no_service / late / early (start or end stop)."""
-    lo, hi = tour.hours[0] * 60, tour.hours[1] * 60
-    out = []
-    last = len(tour.legs) - 1
-    for d, leg in enumerate(tour.legs):
-        if leg.time_min > hi:
-            out.append({"code": "too_long", "day": d + 1})
-        elif 0 < d < last and leg.time_min < lo:
-            out.append({"code": "too_short", "day": d + 1})
-        if limit is not None and leg.max_category > limit:
-            out.append({"code": "harder_trail", "day": d + 1})
-    for i, night in enumerate(tour.nights):
-        state = night.availability.state if night.availability else None
-        if night.status == "closed" or state == "closed":
-            out.append({"code": "closed", "night": i + 1})
-        elif state == "full":
-            out.append({"code": "full", "night": i + 1})
-    end_day = tour.start_date + timedelta(days=last)
-    access = graph.timetable.day(tour.legs[0].frm, tour.start_date)
-    exit_ = graph.timetable.day(tour.legs[-1].to, end_day)
-    if not access.served:
-        out.append({"code": "no_service", "day": 1})
-    elif access.first_min is not None and access.first_min + tour.legs[0].time_min > transit.LATEST_HUT_ARRIVAL:
-        out.append({"code": "late", "day": 1})
-    if not exit_.served:
-        out.append({"code": "no_service", "day": last + 1})
-    elif exit_.last_min is not None and exit_.last_min - tour.legs[-1].time_min < transit.EARLIEST_HUT_DEPARTURE:
-        out.append({"code": "early", "day": last + 1})
-    return out
 
 
 def tour_from_hut(graph: Graph, hut_id: int, start: date, hours: tuple[float, float], cap: int) -> TourKey | None:

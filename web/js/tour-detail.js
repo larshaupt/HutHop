@@ -60,23 +60,6 @@ function connectionLine(s, role) {
     ${s.leave_by}${s.early ? " – a very early start" : ""}</div>`;
 }
 
-/** Warnings of a tour (from the API: days outside the hours, harder trails, closed or full huts, connections). */
-export const WARNING_TEXT = {
-  too_long: (w) => `Day ${w.day} is longer than your hours per day`,
-  too_short: (w) => `Day ${w.day} is shorter than your hours per day`,
-  harder_trail: (w) => `Day ${w.day} uses a harder trail than you searched for`,
-  closed: (w) => `The hut of night ${w.night} is closed then`,
-  full: (w) => `The hut of night ${w.night} is full`,
-  no_service: (w) => `No public transport at the ${w.day === 1 ? "start" : "end"} stop on that day`,
-  late: () => "With the first connection you reach the first hut only in the evening",
-  early: () => "To catch the last connection you have to leave the last hut very early",
-};
-
-export function warningList(t) {
-  if (!t.warnings?.length) return "";
-  return `<ul class="warn tour-warnings">${t.warnings.map((w) => `<li>${esc(WARNING_TEXT[w.code]?.(w) ?? w.code)}</li>`).join("")}</ul>`;
-}
-
 export { connectionLine, formatDay, stopLabel, NIGHT_LABEL };
 
 export function renderTourDetail(t, { kept = false } = {}) {
@@ -126,7 +109,6 @@ export function renderTourDetail(t, { kept = false } = {}) {
         <button class="btn" id="tourKeep" aria-pressed="${kept}">${kept ? "★ In my tours" : "☆ Add to my tours"}</button>
         <a class="btn" href="/api/tours/${encodeURIComponent(t.id)}/gpx" download>Download GPX</a>
       </div>
-      ${warningList(t)}
     </div>
     <div class="detail-body">
       <ol class="timeline">${rows}</ol>
