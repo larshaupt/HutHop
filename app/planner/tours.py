@@ -1,12 +1,12 @@
 """Tours: stop → hut (one per night) → … → stop over the place graph (graph.py). Search, scoring, rebuilding.
 
 Beam search over hut sequences. Each day is one edge; its hiking time must lie in [min, max]. Each hut must be
-open on its night (SAC monthly codes, or the booking calendar where known) in the requested way. The beam keeps
-partial tours with days near the middle of the range and little retraced trail; complete tours are ranked by the
-"best" score (ranking.py) and diversified into a pool that the browser sorts.
+open on its night (SAC monthly codes, or the booking calendar where known) in the requested way. The beam keeps the
+partial tours with the lowest cost, which is what each day loses of the "best" score (ranking.py, same weights),
+and only a few variants (start stop, trail limit) per hut sequence; complete tours are ranked by "best" and
+diversified into a pool that the browser sorts.
 """
 
-import heapq
 import math
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -17,19 +17,18 @@ from app.planner.availability import NightAvailability
 from app.planner.graph import Graph, Hut, Leg, Stop
 
 Catering = opening.Wanted
-BEAM_WIDTH = 3000
+BEAM_WIDTH = 1000
+# Partial tours kept per hut sequence: variants differ only in the start stop or a day's trail limit. Keeping few
+# lets the beam hold many different hut sequences; the result list has at most one tour per set of huts anyway.
+# Chosen on 9 typical searches (Oct 2026): as good as the old 3000-wide beam without grouping, 2–3× faster.
+START_VARIANTS = 8
+VARIANTS_PER_CHAIN = 3
 END_LEGS_PER_STATE = 2
 POOL_SIZE = 40  # varied tours returned per search; the browser sorts them
 MAX_TOURS_PER_HUT = 3  # in one result list, so the list isn't the same few huts in different orders
 MIN_RESULTS = 10
 LOOP_RADIUS_M = 3000
 START_RADIUS_M = 1500  # a chosen start stop means "start around here" (nearby bus stops, stations)
-UNKNOWN_PENALTY = 0.15
-PARTIAL_PENALTY = 0.05
-CATEGORY_PENALTY = 0.01  # per day and trail category above yellow: easier wins between otherwise equal tours
-RETRACE_PENALTY = 0.5  # per day, times the share of that day on trail already walked (a full day ≈ 3 h off target)
-# Nights without confirmed free beds rank lower (not bookable yet, no online booking, not checked).
-AVAILABILITY_PENALTY = {"available": 0.0, "not_released": 0.03, "no_booking": 0.03, "not_checked": 0.05, "error": 0.05}
 HRS_STATUS = {"SERVICED": "catered", "UNSERVICED": "self_service"}
 DEFAULT_HOURS = (3.0, 6.0)
 
@@ -137,8 +136,26 @@ def suggest(graph: Graph, req: TourRequest, availability: AvailabilityLookup | N
     lo, hi = req.min_hours * 60, req.max_hours * 60
     target = (lo + hi) / 2
 
-    def day_cost(leg: Leg) -> float:
-        return ((leg.time_min - target) / target) ** 2 + CATEGORY_PENALTY * (leg.max_category - 1)
+    # The beam cost is the "best" score's loss (ranking.metrics), split into what each day adds: weighted like the
+    # score, so the beam keeps what the final order prefers. Shape needs the whole tour and only counts at the end.
+    w = req.weights
+    n_legs, n_nights = req.nights + 1, req.nights
+    w_fit, w_ease, w_approach = w.get("fit", 0), w.get("ease", 0), w.get("approach", 0)
+    w_fresh, w_even = w.get("fresh", 0), w.get("even", 0)
+    w_certainty, w_beds, w_altitude = w.get("certainty", 0), w.get("beds", 0), w.get("altitude", 0)
+    if not any(w.get(m, 0) for m in ranking.METRICS):
+        w_fit = 1  # "best" is then the day-length fit alone
+
+    def day_cost(leg: Leg, first_or_last: bool = False) -> float:
+        c = (w_fit * ((leg.time_min - target) / target) ** 2 + w_ease * (leg.max_category - 1) / 2) / n_legs
+        return c + w_approach * leg.time_min / (2 * hi) if first_or_last else c
+
+    def even_cost(legs: tuple[Leg, ...], leg: Leg) -> float:
+        mean = sum(x.time_min for x in legs) / len(legs)
+        return w_even * 2 * abs(leg.time_min - mean) / mean / n_legs if mean else 0.0
+
+    def retrace_cost(r: float) -> float:
+        return w_fresh * 2 * r / n_legs
 
     def in_region(hut_id: int) -> bool:
         if req.bbox is None:
@@ -156,8 +173,11 @@ def suggest(graph: Graph, req: TourRequest, availability: AvailabilityLookup | N
         return math.hypot(stop.e - point[0], stop.n - point[1]) <= START_RADIUS_M
 
     def penalty(n: Night) -> float:
-        p = UNKNOWN_PENALTY if n.status == "unknown" else PARTIAL_PENALTY if n.partial else 0.0
-        return p + (AVAILABILITY_PENALTY[n.availability.state] if n.availability else 0.0)
+        uncertain = 1.0 if n.status == "unknown" or n.partial else 0.0
+        beds = ranking.BED_VALUE.get(n.availability.state, 0.5) if n.availability else 0.5
+        altitude = graph.huts[n.hut].altitude
+        alt = ranking.clip((altitude - 1500) / 1500) if altitude else 0.5
+        return (w_certainty * uncertain + w_beds * (1 - beds) + w_altitude * (1 - alt)) / n_nights
 
     fp = graph.footprints
 
@@ -172,8 +192,8 @@ def suggest(graph: Graph, req: TourRequest, availability: AvailabilityLookup | N
             continue
         for leg in legs:
             if lo <= leg.time_min <= hi and (req.start_near is None or near(graph.stops[leg.frm], req.start_near)):
-                states.append((day_cost(leg) + penalty(n), (leg,), (n,), 0.0))
-    states = heapq.nsmallest(BEAM_WIDTH, states, key=lambda s: s[0])
+                states.append((day_cost(leg, True) + penalty(n), (leg,), (n,), 0.0))
+    states = best_per_chain(states, START_VARIANTS)
 
     # Days 2..nights: hut → hut
     for i in range(1, req.nights):
@@ -185,18 +205,32 @@ def suggest(graph: Graph, req: TourRequest, availability: AvailabilityLookup | N
                     continue
                 if n := night(leg.to, i):
                     r = repeated(legs, leg)
-                    nxt.append((cost + day_cost(leg) + RETRACE_PENALTY * r + penalty(n), legs + (leg,),
-                                nights + (n,), walked + r * len(fp.cells(leg.edge_id))))
-        states = heapq.nsmallest(BEAM_WIDTH, nxt, key=lambda s: s[0])
+                    nxt.append((cost + day_cost(leg) + even_cost(legs, leg) + retrace_cost(r) + penalty(n),
+                                legs + (leg,), nights + (n,), walked + r * len(fp.cells(leg.edge_id))))
+        states = best_per_chain(nxt, VARIANTS_PER_CHAIN)
 
-    # Last day: hut → stop. Then order all complete tours by "best" (other orders are applied in the browser).
+    # Last day: hut → stop. The END_LEGS_PER_STATE ends with the lowest cost. Ends are tried in order of day cost
+    # (sorted once per hut); the even and retrace costs only add, so once an end's day cost alone is above the worst
+    # kept total, no later end can beat it.
+    ends_by_hut: dict[int, list[tuple[float, Leg]]] = {}
     tours = []
     for cost, legs, nights, walked in states:
+        hut = legs[-1].to
+        if hut not in ends_by_hut:
+            ends_by_hut[hut] = sorted(((day_cost(leg, True), leg) for leg in graph.stop_out.get(hut, ())
+                                       if lo <= leg.time_min <= hi), key=lambda x: x[0])
         start = graph.stops[legs[0].frm]
-        ends = [(leg, repeated(legs, leg)) for leg in graph.stop_out.get(legs[-1].to, ()) if lo <= leg.time_min <= hi
-                and (not req.loop or math.hypot(graph.stops[leg.to].e - start.e,
-                                                graph.stops[leg.to].n - start.n) <= LOOP_RADIUS_M)]
-        for leg, r in heapq.nsmallest(END_LEGS_PER_STATE, ends, key=lambda x: day_cost(x[0]) + RETRACE_PENALTY * x[1]):
+        best: list[tuple[float, Leg, float]] = []
+        for dc, leg in ends_by_hut[hut]:
+            if len(best) == END_LEGS_PER_STATE and dc >= best[-1][0]:
+                break
+            if req.loop and math.hypot(graph.stops[leg.to].e - start.e, graph.stops[leg.to].n - start.n) > LOOP_RADIUS_M:
+                continue
+            r = repeated(legs, leg)
+            best.append((dc + even_cost(legs, leg) + retrace_cost(r), leg, r))
+            best.sort(key=lambda x: x[0])
+            del best[END_LEGS_PER_STATE:]
+        for _, leg, r in best:
             tour_legs = legs + (leg,)
             total = sum(len(fp.cells(x.edge_id)) for x in tour_legs)
             retraced = min(1.0, (walked + r * len(fp.cells(leg.edge_id))) / total) if total else 0.0
@@ -204,6 +238,20 @@ def suggest(graph: Graph, req: TourRequest, availability: AvailabilityLookup | N
                                 req.weights, retraced))
     tours.sort(key=lambda t: -t.score)
     return diversify(tours, req.max_results)
+
+
+def best_per_chain(states: list[tuple], variants: int) -> list[tuple]:
+    """The BEAM_WIDTH cheapest states (cost first), at most `variants` per hut sequence."""
+    states.sort(key=lambda s: s[0])
+    kept, count = [], {}
+    for state in states:
+        chain = tuple(n.hut for n in state[2])
+        if count.get(chain, 0) < variants:
+            count[chain] = count.get(chain, 0) + 1
+            kept.append(state)
+            if len(kept) == BEAM_WIDTH:
+                break
+    return kept
 
 
 def scored(graph: Graph, legs: tuple[Leg, ...], nights: tuple[Night, ...], start_date: date,

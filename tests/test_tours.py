@@ -173,3 +173,81 @@ def test_gpx_has_heights():
     xml = to_gpx({"nights": 0, "days": [day]})
     assert "<ele>1500</ele>" in xml and "<ele>1510</ele>" in xml
     assert "<ele>" not in to_gpx({"nights": 0, "days": [day | {"elevation": None}]})
+
+
+def test_best_per_chain_keeps_few_variants(monkeypatch):
+    from types import SimpleNamespace
+
+    from app.planner import tours
+
+    def state(cost, *huts):
+        return (cost, (), tuple(SimpleNamespace(hut=h) for h in huts), 0.0)
+
+    states = [state(0.1, 1, 2), state(0.2, 1, 2), state(0.3, 1, 2), state(0.15, 1, 3), state(0.05, 2, 1)]
+    kept = tours.best_per_chain(states, 2)
+    assert [s[0] for s in kept] == [0.05, 0.1, 0.15, 0.2]  # cheapest first, third (1, 2) variant dropped
+    monkeypatch.setattr(tours, "BEAM_WIDTH", 2)
+    assert [s[0] for s in tours.best_per_chain(states, 2)] == [0.05, 0.1]
+
+
+def test_one_tour_per_hut_sequence_best_start(graph):
+    """Two start stops for the same huts: the result has the tour once, with the better start (easier trail)."""
+    graph.stop_in[1] = graph.stop_in[1] + [Leg(9, 13, 1, 240, 12_000, 500, 400, 1, None, 2)]
+    tours = suggest(graph, TourRequest(date(2027, 7, 10), 2, 3, 6))
+    sequences = [tuple(n.hut for n in t.nights) for t in tours]
+    assert len(sequences) == len(set(sequences))
+    first = next(t for t in tours if sequences[tours.index(t)] == (1, 2))
+    assert first.legs[0].frm == 13 and first.legs[0].max_category == 1
+
+
+def test_free_bed_search_reuses_last_pass(monkeypatch):
+    """Rounds: search, fetch calendars, search again; once nothing is left to fetch, that search is the result."""
+    from types import SimpleNamespace
+
+    from app.planner import planning
+
+    pending = {5}
+    calls = []
+
+    def fake_suggest(graph, req, lookup=None):
+        calls.append("suggest")
+        state = "not_checked" if pending else "available"
+        return [SimpleNamespace(nights=[SimpleNamespace(hut=5, availability=SimpleNamespace(state=state))])]
+
+    def fake_refresh(conn, huts, limit):
+        calls.append("fetch")
+        pending.clear()
+        return len(huts)
+
+    monkeypatch.setattr(planning, "cached_graph", lambda conn, limit: "graph")
+    monkeypatch.setattr(planning, "suggest", fake_suggest)
+    monkeypatch.setattr(planning.availability, "Snapshot", lambda *a: None)
+    monkeypatch.setattr(planning.availability, "refresh", fake_refresh)
+    req = TourRequest(date(2027, 7, 10), 2, 3, 6)
+    _, found, fetched = planning.search_tours(None, req, 2, True)
+    assert calls == ["suggest", "fetch", "suggest"] and fetched == 1 and len(found) == 1
+    calls.clear()
+    planning.search_tours(None, req, 2, True)
+    assert calls == ["suggest"]  # calendars already known: one search pass
+
+
+def test_warm_up_loads_everything_once(tmp_path):
+    from app.db import connect
+    from app.planner import graph as graph_mod
+    from app.planner.geometry import footprint, pack
+
+    conn = connect(tmp_path / "test.db")
+    for kind in ("hut", "stop"):
+        conn.execute("INSERT INTO place (kind, name, e_lv95, n_lv95, lat, lon) VALUES (?, 'p', 0, 0, 46.5, 8)", (kind,))
+    conn.execute("INSERT INTO hut (place_id, sac_id, source) VALUES (1, 1, 'manual')")
+    conn.execute("INSERT INTO stop (place_id, uic, mode) VALUES (2, 1, 'bus')")
+    line = "_p~iF~ps|U_ulLnnqC"
+    conn.execute("INSERT INTO edge (from_place, to_place, category_limit, max_category, time_min, source, geometry, "
+                 "footprint, samples) VALUES (2, 1, 1, 1, 60, 'tlm_routed', ?, ?, ?)", (line, *pack(*footprint(line))))
+    conn.commit()
+    assert graph_mod.warm_up(conn) and not graph_mod.warm_up(conn)
+    fp = graph_mod.cached_graph(conn, 2).footprints
+    assert set(fp._cells) == {1}  # unpacked ahead of any search
+    conn.execute("UPDATE edge SET time_min = 70")
+    conn.commit()
+    assert graph_mod.warm_up(conn)  # data changed: loaded again

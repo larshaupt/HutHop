@@ -24,14 +24,14 @@ def search_tours(conn: sqlite3.Connection, req: TourRequest, people: int,
     if not check_availability:
         return graph, suggest(graph, req), 0
     end = req.start_date + timedelta(days=req.nights)
-    wide = TourRequest(**{**req.__dict__, "max_results": CANDIDATES_PER_ROUND})
     fetched = 0
     for _ in range(AVAILABILITY_ROUNDS):
         snapshot = availability.Snapshot(conn, req.start_date, end, people)
-        tours = suggest(graph, wide, _lookup(snapshot))
-        needed = {n.hut for t in tours for n in t.nights if n.availability and n.availability.state == "not_checked"}
+        tours = suggest(graph, req, _lookup(snapshot))
+        needed = {n.hut for t in tours[:CANDIDATES_PER_ROUND] for n in t.nights
+                  if n.availability and n.availability.state == "not_checked"}
         if not needed or fetched >= availability.MAX_FETCHES:
-            break
+            return graph, tours, fetched  # nothing new fetched: this search is already the final one
         fetched += availability.refresh(conn, needed, availability.MAX_FETCHES - fetched)
     snapshot = availability.Snapshot(conn, req.start_date, end, people)
     return graph, suggest(graph, req, _lookup(snapshot)), fetched

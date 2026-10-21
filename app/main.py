@@ -3,7 +3,9 @@
     uv run uvicorn app.main:app --reload
 """
 
+import logging
 import sqlite3
+import threading
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
@@ -13,12 +15,31 @@ from fastapi.staticfiles import StaticFiles
 from app.api import edges, huts, info, manual, tours
 from app.api.deps import get_db
 from app.db import ROOT, connect
+from app.planner import graph
+
+WARM_CHECK_S = 60  # how often the warm-up thread looks for changed data (e.g. after a refresh)
+
+
+def keep_warm(stop: threading.Event) -> None:
+    """Load the route graph and footprints at start-up and again after the data changed, so no search waits."""
+    conn = connect(init=False)
+    while not stop.is_set():
+        try:
+            if graph.warm_up(conn):
+                logging.getLogger("uvicorn.error").info("route graph loaded")
+        except Exception:  # e.g. a database being replaced; try again later
+            logging.getLogger("uvicorn.error").exception("route graph warm-up failed")
+        stop.wait(WARM_CHECK_S)
+    conn.close()
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     connect().close()  # create tables and views once
+    stop = threading.Event()
+    threading.Thread(target=keep_warm, args=(stop,), name="warm-up", daemon=True).start()
     yield
+    stop.set()
 
 
 app = FastAPI(title="HutHop", lifespan=lifespan)

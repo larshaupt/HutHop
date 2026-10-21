@@ -82,6 +82,12 @@ class Footprints:
         else:
             self._parts[edge_id] = None
 
+    def unpack_all(self) -> None:
+        """Decode every known edge now (app start-up), so no search waits for it."""
+        for edge_id in [*self.packed, *self.geometry]:
+            if edge_id not in self._cells:
+                self._decode(edge_id)
+
     def cells(self, edge_id: int) -> np.ndarray:
         if edge_id not in self._cells:
             self._decode(edge_id)
