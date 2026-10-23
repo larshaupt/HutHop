@@ -13,6 +13,7 @@ from typing import Literal
 from app.clients import hut_reservation
 
 CACHE_TTL_S = 600
+FRESH_TTL_S = 60  # "check again" right before booking: calendars at most a minute old
 MAX_PARALLEL = 2
 MAX_FETCHES = 40
 
@@ -28,12 +29,12 @@ class NightAvailability:
     checked_at: str | None = None
 
 
-def _cutoff() -> str:
-    return (datetime.now(UTC) - timedelta(seconds=CACHE_TTL_S)).isoformat(timespec="seconds")
+def _cutoff(max_age_s: int = CACHE_TTL_S) -> str:
+    return (datetime.now(UTC) - timedelta(seconds=max_age_s)).isoformat(timespec="seconds")
 
 
-def stale_huts(conn: sqlite3.Connection, hut_ids: set[int]) -> list[tuple[int, int]]:
-    """(hut id, hrs id) of bookable huts whose cached calendar is missing or older than the TTL."""
+def stale_huts(conn: sqlite3.Connection, hut_ids: set[int], max_age_s: int = CACHE_TTL_S) -> list[tuple[int, int]]:
+    """(hut id, hrs id) of bookable huts whose cached calendar is missing or older than `max_age_s`."""
     if not hut_ids:
         return []
     ids = list(hut_ids)
@@ -41,13 +42,14 @@ def stale_huts(conn: sqlite3.Connection, hut_ids: set[int]) -> list[tuple[int, i
         f"""SELECT h.id, h.hrs_id FROM hut_effective h
             LEFT JOIN availability_fetch f ON f.hut_id = h.id
             WHERE h.id IN ({','.join('?' * len(ids))}) AND h.hrs_id IS NOT NULL
-              AND (f.fetched_at IS NULL OR f.fetched_at < ?)""", ids + [_cutoff()]).fetchall()
+              AND (f.fetched_at IS NULL OR f.fetched_at < ?)""", ids + [_cutoff(max_age_s)]).fetchall()
     return [(r["id"], r["hrs_id"]) for r in rows]
 
 
-def refresh(conn: sqlite3.Connection, hut_ids: set[int], max_fetches: int = MAX_FETCHES) -> int:
-    """Fetch calendars for huts whose cache is stale. Returns the number of huts fetched."""
-    todo = stale_huts(conn, hut_ids)[:max_fetches]
+def refresh(conn: sqlite3.Connection, hut_ids: set[int], max_fetches: int = MAX_FETCHES,
+            max_age_s: int = CACHE_TTL_S) -> int:
+    """Fetch calendars for huts whose cache is older than `max_age_s`. Returns the number of huts fetched."""
+    todo = stale_huts(conn, hut_ids, max_age_s)[:max_fetches]
     if not todo:
         return 0
     client = hut_reservation.make_client()

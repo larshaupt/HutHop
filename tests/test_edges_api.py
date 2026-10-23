@@ -1,5 +1,7 @@
 """Tests for the connections API: best edge per category limit, stop grouping and review."""
 
+from datetime import UTC, datetime, timedelta
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -187,3 +189,26 @@ def test_settings_pace_and_altitude(client):
     assert edges["stops"][0]["to_hut"]["time_min"] == 180
     yellow = c.get(f"/api/tours/{tour['id']}", params={"limit": 1}).json()
     assert yellow["outside_settings"] == []  # its days are yellow
+
+
+def test_booking_helper_fresh_beds_and_contact(client, monkeypatch):
+    """The booking helper checks free beds again right before booking: calendars older than a minute are fetched
+    again (not only after the usual 10 minutes). Each night carries the hut's contact for booking by hand."""
+    c, ids = client
+    calls = []
+    monkeypatch.setattr("app.clients.hut_reservation.fetch_calendar",
+                        lambda hrs_id, _client: calls.append(hrs_id) or calendar("2027-07-10", "SERVICED", 10, 40))
+    tour_id = f"2027-07-10_{ids['stop']}-{ids['a']}-{ids['stop']}_1-1"
+    params = {"check_availability": True}
+    night = c.get(f"/api/tours/{tour_id}", params=params).json()["days"][0]["night"]
+    assert calls == [7] and night["availability"]["state"] == "available"
+    assert night["contact"]["booking_methods"] == [] and "phone" in night["contact"]
+    conn = app.dependency_overrides[get_db]()
+    two_min_ago = (datetime.now(UTC) - timedelta(minutes=2)).isoformat(timespec="seconds")
+    conn.execute("UPDATE availability_fetch SET fetched_at = ?", (two_min_ago,))  # within the usual 10 minutes
+    c.get(f"/api/tours/{tour_id}", params=params)
+    assert calls == [7]
+    c.get(f"/api/tours/{tour_id}", params=params | {"fresh": True})
+    assert calls == [7, 7]
+    c.get(f"/api/tours/{tour_id}", params=params | {"fresh": True})  # just fetched: not again
+    assert calls == [7, 7]

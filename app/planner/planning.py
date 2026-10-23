@@ -38,13 +38,15 @@ def search_tours(conn: sqlite3.Connection, req: TourRequest, people: int,
 
 
 def rebuild_tour(conn: sqlite3.Connection, tour_id: str, people: int, check_availability: bool,
-                 weights: dict[str, float]) -> tuple[Graph, Tour]:
-    """Raises ValueError for a malformed id, LookupError if a connection of the tour no longer exists."""
+                 weights: dict[str, float], fresh: bool = False) -> tuple[Graph, Tour]:
+    """Raises ValueError for a malformed id, LookupError if a connection of the tour no longer exists. `fresh`:
+    free beds from calendars at most a minute old (right before booking), not the usual 10 minutes."""
     key = parse_tour_id(tour_id)
     graph = cached_graph(conn, 3)  # all trail categories; a tour id names its edges explicitly
     lookup = None
     if check_availability:
-        availability.refresh(conn, set(key.places[1:-1]))
+        availability.refresh(conn, set(key.places[1:-1]),
+                             max_age_s=availability.FRESH_TTL_S if fresh else availability.CACHE_TTL_S)
         lookup = _lookup(availability.Snapshot(conn, key.start_date,
                                                key.start_date + timedelta(days=len(key.limits) - 1), people))
     try:

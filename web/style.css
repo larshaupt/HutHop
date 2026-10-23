@@ -238,6 +238,7 @@ input[type="range"] { width: 100%; accent-color: var(--text); margin: 4px 0; }
 .btn:hover { background: var(--bg-soft); }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
 .btn.primary:hover { filter: brightness(1.06); background: var(--accent); }
+.btn[aria-pressed="true"] { background: var(--bg-soft); border-color: var(--text-faint); }
 
 .section { margin-top: 20px; }
 .section h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-soft); margin: 0 0 10px; }
@@ -398,7 +399,24 @@ label.field-label { display: flex; }
 .avail { font-weight: 500; }
 .avail.available { color: var(--catered); }
 .avail.not_released, .avail.no_booking, .avail.not_checked, .avail.error { color: #a36a00; }
-.book { margin-left: 6px; font-weight: 600; color: var(--accent) !important; border-bottom: 0 !important; }
+/* Booking helper: a checklist of the tour's nights above the timeline */
+.booking { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px 4px; margin-bottom: 18px; }
+.booking-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.booking-head h3 { margin: 0; font-size: 15px; }
+.booking-head span { color: var(--text-soft); font-size: 12.5px; }
+.booking .actions { margin: 10px 0 12px; align-items: center; }
+.booking .btn[disabled] { opacity: .6; }
+.booked-all { color: var(--catered); font-weight: 600; font-size: 13.5px; }
+.book-list { list-style: none; margin: 0; padding: 0; }
+.book-list li { padding: 8px 0; border-top: 1px solid var(--line); font-size: 13.5px; }
+.book-list label { display: flex; gap: 8px; align-items: flex-start; cursor: pointer; }
+.book-list input { margin: 3px 0 0; flex: none; width: 16px; height: 16px; accent-color: var(--catered); }
+.book-list li > div { margin-left: 24px; }
+.book-list li.booked label > span { color: var(--text-soft); }
+.book-list a { color: var(--text); text-decoration: none; border-bottom: 1px solid var(--line); }
+.book-list a:hover { border-bottom-color: var(--text); }
+.book-links { color: var(--text-soft); font-size: 12.5px; margin-top: 4px; overflow-wrap: anywhere; }
+.book-links a { color: var(--accent); border-bottom: 0; font-weight: 600; }
 
 /* ---------- Editor ---------- */
 .editor .edit-field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; font-size: 12.5px; font-weight: 600; color: var(--text-soft); }

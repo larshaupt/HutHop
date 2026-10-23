@@ -9,6 +9,7 @@ import { selectHut } from "./huts.js";
 import { clearConnections } from "./connections.js";
 import { loadInfo } from "./info.js";
 import { renderTourDetail } from "./tour-detail.js";
+import { setBooked } from "./booking.js";
 import { findEntry, keepTour, onYourToursChange, removeEntry, yourTours } from "./your-tours.js";
 import { isEditing, openEditor, refreshEditor } from "./tour-editor.js";
 
@@ -27,6 +28,7 @@ const PAGE = 10;
 let results = null;
 let order = []; // results.tours in the chosen sort order; state.tour is a 1-based index into it
 let current = null; // the open tour: a search result (state.tour) or one opened by id (state.tid)
+let booking = false; // the booking checklist is open
 let shown = PAGE;
 let metricLabels = {};
 const stopSearch = { timer: null, seq: 0 };
@@ -126,6 +128,13 @@ export function bindTourForm() {
     if (isEditing()) return;  // the editor handles its own clicks
     if (e.target.closest("#tourBack")) { closeTour(); return; }
     if (e.target.closest("#tourEdit")) { openEditor(current); return; }
+    if (e.target.closest("#tourBook")) {
+      booking = !booking;
+      renderTourDetail(current, detailOptions());
+      if (booking) recheckBeds();
+      return;
+    }
+    if (e.target.closest("#bookRecheck")) { recheckBeds(); return; }
     if (e.target.closest("#tourKeep")) {
       const entry = findEntry(current.id);
       entry ? removeEntry(entry.key) : keepTour(current);
@@ -136,6 +145,12 @@ export function bindTourForm() {
     if (hut) { e.preventDefault(); selectHut(Number(hut.dataset.hut)); return; }
     const day = e.target.closest("[data-day]");
     if (day && !e.target.closest("a")) focusDay(Number(day.dataset.day));
+  });
+  $("#tourDetail").addEventListener("change", (e) => {
+    const box = e.target.closest("[data-booked]");
+    if (!box) return;
+    setBooked(box.dataset.booked, box.checked);
+    renderTourDetail(current, detailOptions());
   });
 }
 
@@ -330,7 +345,9 @@ function renderYourTours() {
 }
 
 // ---------- Tour detail ----------
-const detailOptions = () => ({ kept: !!(current && findEntry(current.id)) });
+const detailOptions = () => ({ kept: !!(current && findEntry(current.id)), booking, people: bedsPeople() });
+/** The group size free beds are checked for: the search's, else the form's. */
+const bedsPeople = () => (state.tour && results ? results.query.people : state.tPeople);
 
 function selectTour(n) {
   const t = order[n - 1];
@@ -357,6 +374,7 @@ export async function openTourById(id, { edit = false } = {}) {
 
 /** Show a tour in the detail view (also used by the editor for its result). */
 export function showTour(t) {
+  if (t !== current) booking = false;
   current = t;
   renderTourDetail(t, detailOptions());
   $("#browse").hidden = true;
@@ -371,22 +389,31 @@ export function showTour(t) {
 
 /** Free beds of a tour's nights not checked yet (beyond a search's first candidates, or edited / opened by id):
  * checked when the tour is shown, if the search asks for free beds. */
-export async function checkTourBeds(t) {
+export async function checkTourBeds(t, { fresh = false } = {}) {
   const fromSearch = !!(state.tour && results);
   const check = fromSearch ? results.query.check_availability : settings().checkBeds;
-  const people = fromSearch ? results.query.people : state.tPeople;
-  if (!check || !t.days.some((d) => d.night && (!d.night.availability || d.night.availability.state === "not_checked"))) return;
-  const res = await fetch(`/api/tours/${encodeURIComponent(t.id)}?people=${people}&check_availability=true&${settingsQuery()}`);
+  const unchecked = t.days.some((d) => d.night && (!d.night.availability || d.night.availability.state === "not_checked"));
+  if (!fresh && !(check && unchecked)) return;
+  const res = await fetch(`/api/tours/${encodeURIComponent(t.id)}?people=${bedsPeople()}&check_availability=true` +
+    `${fresh ? "&fresh=true" : ""}&${settingsQuery()}`);
   if (!res.ok) return;
-  const fresh = await res.json();
+  const checked = await res.json();
   // Keep score and order (computed for the search's hours); take only the nights' availability.
-  t.days.forEach((d, i) => { d.night = fresh.days[i].night; });
-  t.availability = fresh.availability;
+  t.days.forEach((d, i) => { d.night = checked.days[i].night; });
+  t.availability = checked.availability;
   if (fromSearch) renderResults();  // the card's badge, for when the list is shown again
   if (current === t && !$("#tourDetail").hidden) {
     if (isEditing()) refreshEditor(t);
     else renderTourDetail(t, detailOptions());
   }
+}
+
+/** Right before booking: free beds of every night, from calendars at most a minute old. */
+async function recheckBeds() {
+  const button = $("#bookRecheck");
+  if (button) { button.disabled = true; button.textContent = "Checking free beds…"; }
+  await checkTourBeds(current, { fresh: true });
+  if (button?.isConnected) { button.disabled = false; button.textContent = "Check free beds again"; }
 }
 
 export function closeTour() {

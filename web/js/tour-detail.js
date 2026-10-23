@@ -2,6 +2,7 @@
 import { $, CATEGORY, costTitle, decodePolyline, decodeValues, distanceM, esc, formatCost, formatMinutes, modeLabel }
   from "./util.js";
 import { state } from "./state.js";
+import { bookingPanel, isBooked } from "./booking.js";
 import { distanceUnit, distanceValue, formatDistance, formatHeight, heightUnit, heightValue, settings } from "./settings.js";
 
 const NIGHT_LABEL = { catered: "Catered", self_service: "Self-service", unknown: "No opening data", closed: "Closed" };
@@ -61,9 +62,9 @@ function connectionLine(s, role) {
     ${s.leave_by}${s.early ? " – a very early start" : ""}</div>`;
 }
 
-export { connectionLine, formatDay, stopLabel, NIGHT_LABEL };
+export { AVAIL_LABEL, connectionLine, formatDay, stopLabel, NIGHT_LABEL };
 
-export function renderTourDetail(t, { kept = false } = {}) {
+export function renderTourDetail(t, { kept = false, booking = false, people = 2 } = {}) {
   const start = t.days[0].from, end = t.days[t.days.length - 1].to;
   const profiles = t.days.map(dayProfile);
   const heights = profiles.filter(Boolean).flatMap((p) => p.map(([, z]) => z));
@@ -79,7 +80,7 @@ export function renderTourDetail(t, { kept = false } = {}) {
         <div><b><a href="#" data-hut="${d.to.id}">${esc(d.to.name)}</a></b>
           <div class="tl-meta">Night of ${formatDay(d.date)} ·
             <span class="night ${d.night.status}">${NIGHT_LABEL[d.night.status]}${d.night.partial ? ", part of the month – check dates" : ""}</span></div>
-          ${nightAvailability(d.night)}
+          ${nightAvailability(d)}
           ${nightCost(d.night.cost)}
         </div></li>` : "";
     return `<li class="tl-day" data-day="${d.day}">
@@ -108,11 +109,13 @@ export function renderTourDetail(t, { kept = false } = {}) {
       ${tourCost(t)}
       <div class="actions">
         <button class="btn primary" id="tourEdit">Edit tour</button>
+        <button class="btn" id="tourBook" aria-pressed="${booking}">Book this tour</button>
         <button class="btn" id="tourKeep" aria-pressed="${kept}">${kept ? "★ In my tours" : "☆ Add to my tours"}</button>
         <a class="btn" href="/api/tours/${encodeURIComponent(t.id)}/gpx" download>Download GPX</a>
       </div>
     </div>
     <div class="detail-body">
+      ${booking ? bookingPanel(t, people) : ""}
       <ol class="timeline">${rows}</ol>
       <p class="source">Walking times use the Swiss hiking-time formula without breaks. Opening data from the SAC;
         free beds from hut-reservation.org (cached up to 10 minutes; not a reservation). Check conditions, weather
@@ -145,11 +148,16 @@ export function outsideSettings(t) {
   return list.length ? `<p class="warn">Outside your settings (⚙): this tour uses ${list.join(" and ")}.</p>` : "";
 }
 
-function nightAvailability(n) {
-  const a = n.availability;
+function nightAvailability(d) {
+  if (isBooked(d)) return `<div class="tl-meta avail available">✓ Booked</div>`;
+  const a = d.night.availability;
   if (!a) return "";
-  const ago = a.checked_at ? Math.max(0, Math.round((Date.now() - new Date(a.checked_at)) / 60000)) : null;
-  const when = ago === null ? "" : ago < 1 ? " · checked just now" : ` · checked ${ago} min ago`;
-  const book = n.booking_url ? ` <a class="book" href="${esc(n.booking_url)}" target="_blank" rel="noopener">Book</a>` : "";
-  return `<div class="tl-meta avail ${a.state}">${AVAIL_LABEL[a.state](a)}${a.state === "available" ? when : ""}${book}</div>`;
+  return `<div class="tl-meta avail ${a.state}">${AVAIL_LABEL[a.state](a)}${a.state === "available" ? checkedAgo(a) : ""}</div>`;
+}
+
+/** " · checked N min ago" for a night's free beds. */
+export function checkedAgo(a) {
+  if (!a.checked_at) return "";
+  const min = Math.max(0, Math.round((Date.now() - new Date(a.checked_at)) / 60000));
+  return min < 1 ? " · checked just now" : ` · checked ${min} min ago`;
 }

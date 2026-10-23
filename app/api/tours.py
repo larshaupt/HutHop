@@ -1,6 +1,7 @@
 """Tour suggestions, single tours by id (JSON and GPX), the tour editor's options, a tour from a hut, and the
 stop search used to pick a start point."""
 
+import json
 import sqlite3
 from datetime import date, timedelta
 
@@ -74,9 +75,10 @@ def suggest_tours(q: TourQuery, conn: sqlite3.Connection = Depends(get_db)) -> d
 
 @router.get("/tours/{tour_id}")
 def get_tour(tour_id: str, people: int = Query(2, ge=1, le=30), check_availability: bool = False,
+             fresh: bool = Query(False, description="free beds at most a minute old (the booking helper)"),
              rules: editing.Rules = Depends(settings), conn: sqlite3.Connection = Depends(get_db)) -> dict:
     """A tour rebuilt from its id (start date, places, per-day trail limits, hours), e.g. for sharing or export."""
-    graph, tour = rebuild(conn, tour_id, people, check_availability)
+    graph, tour = rebuild(conn, tour_id, people, check_availability, fresh)
     return tour_json(conn, graph, [tour], rules)[0]
 
 
@@ -146,9 +148,10 @@ def get_tour_gpx(tour_id: str, conn: sqlite3.Connection = Depends(get_db)) -> Re
                     headers={"Content-Disposition": f'attachment; filename="{gpx.filename(data)}"'})
 
 
-def rebuild(conn: sqlite3.Connection, tour_id: str, people: int, check_availability: bool) -> tuple[Graph, Tour]:
+def rebuild(conn: sqlite3.Connection, tour_id: str, people: int, check_availability: bool,
+            fresh: bool = False) -> tuple[Graph, Tour]:
     try:
-        return planning.rebuild_tour(conn, tour_id, people, check_availability, config.ranking_weights())
+        return planning.rebuild_tour(conn, tour_id, people, check_availability, config.ranking_weights(), fresh)
     except LookupError as err:
         raise HTTPException(404, str(err)) from None
     except ValueError:
@@ -166,6 +169,7 @@ def tour_json(conn: sqlite3.Connection, graph: Graph, tours: list[Tour],
     lines = {r["id"]: r for r in conn.execute(
         f"SELECT id, geometry, elevation FROM edge WHERE id IN ({','.join('?' * len(edge_ids))})", edge_ids)}
     prices = costs.load_prices(conn, {n.hut for t in tours for n in t.nights})
+    contacts = hut_contacts(conn, {n.hut for t in tours for n in t.nights})
     estimates = [costs.tour_cost(t.nights, prices) for t in tours]
     return [{
         "id": t.id,
@@ -198,10 +202,25 @@ def tour_json(conn: sqlite3.Connection, graph: Graph, tours: list[Tour],
             "time_min": round(leg.time_min * pace),
             "geometry": lines[leg.edge_id]["geometry"] if leg.edge_id in lines else None,
             "elevation": lines[leg.edge_id]["elevation"] if leg.edge_id in lines else None,  # heights per point
-            "night": night_json(t.nights[i], graph.huts[leg.to].hrs_id) | {"cost": cost["nights"][i]}
+            "night": night_json(t.nights[i], graph.huts[leg.to].hrs_id)
+            | {"cost": cost["nights"][i], "contact": contacts.get(leg.to)}
             if i < len(t.nights) else None,
         } for i, leg in enumerate(t.legs)],
     } for t, cost in zip(tours, estimates)]
+
+
+def hut_contacts(conn: sqlite3.Connection, hut_ids: set[int]) -> dict[int, dict]:
+    """How to book each hut without hut-reservation.org: website, phone, email, and what its website says
+    (booking methods and page, see app/ingest/scrape_huts.py)."""
+    if not hut_ids:
+        return {}
+    ids = sorted(hut_ids)
+    rows = conn.execute(
+        f"""SELECT h.id, h.website, h.phone, h.email, w.booking_methods, w.booking_url FROM hut_effective h
+            LEFT JOIN hut_web w ON w.hut_id = h.id WHERE h.id IN ({','.join('?' * len(ids))})""", ids)
+    return {r["id"]: {"website": r["website"], "phone": r["phone"], "email": r["email"],
+                      "booking_methods": json.loads(r["booking_methods"] or "[]"), "booking_url": r["booking_url"]}
+            for r in rows}
 
 
 def outside_settings(graph: Graph, t: Tour, rules: editing.Rules) -> list[str]:
