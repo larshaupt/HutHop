@@ -1,6 +1,8 @@
 """Client for the (undocumented) SAC route portal API. See spikes/sac_findings.md."""
 
+import re
 import time
+import unicodedata
 
 import httpx
 
@@ -17,6 +19,14 @@ SEARCH_PARAMS = {
     "limit": 100,
 }
 REQUEST_DELAY_S = 2.0
+# A hut's page in the route portal, as linked from hut websites: name slug and POI id
+PAGE_URL = "https://www.sac-cas.ch/en/huts-and-tours/sac-route-portal/{}-{}/"
+
+
+def page_url(sac_id: int, name: str) -> str:
+    """The hut's route portal page, e.g. "Refuge de Chalin CAS" → …/refuge-de-chalin-cas-2147000060/."""
+    ascii_name = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
+    return PAGE_URL.format(re.sub(r"[^a-z0-9]+", "-", ascii_name.lower()).strip("-"), sac_id)
 
 
 def fetch_huts(client: httpx.Client | None = None) -> list[dict]:

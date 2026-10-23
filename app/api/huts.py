@@ -7,7 +7,7 @@ from typing import Literal
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.api.deps import get_db
-from app.clients import hut_reservation
+from app.clients import hut_reservation, sac
 from app.planner import availability, opening
 
 router = APIRouter(prefix="/api/huts", tags=["huts"])
@@ -106,6 +106,7 @@ def hut_detail(hut_id: int, conn: sqlite3.Connection = Depends(get_db)) -> dict:
         "owner": row["owner"],
         "description": row["description"],
         "website": row["website"],
+        "sac_url": sac.page_url(row["sac_id"], row["source_name"]) if row["sac_id"] else None,
         "phone": row["phone"],
         "email": row["email"],
         "web": website_info(conn, hut_id),

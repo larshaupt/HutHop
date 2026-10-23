@@ -107,6 +107,7 @@ def test_detail(client):
     assert detail["months"][6] == "catered" and detail["months"][0] == "self_service"
     assert detail["partial_months"][5] is True
     assert detail["booking_url"].endswith("/book-hut/7/wizard")
+    assert detail["sac_url"].startswith("https://www.sac-cas.ch/en/huts-and-tours/sac-route-portal/summer-hut-")
     assert client.get("/api/huts/999999").status_code == 404
 
 
@@ -117,3 +118,10 @@ def test_frontend_is_revalidated():
 
     for path in ("/", "/js/main.js", "/style.css"):
         assert TestClient(app).get(path).headers["cache-control"] == "no-cache"
+
+
+def test_sac_page_url():
+    from app.clients.sac import page_url
+    assert page_url(2147000060, "Refuge de Chalin CAS") == \
+        "https://www.sac-cas.ch/en/huts-and-tours/sac-route-portal/refuge-de-chalin-cas-2147000060/"
+    assert page_url(2147000234, "Sardonahütte SAC").endswith("/sardonahutte-sac-2147000234/")

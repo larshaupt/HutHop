@@ -385,6 +385,7 @@ function renderDetail(d) {
       <div class="actions">
         ${d.booking_url ? `<a class="btn primary" href="${esc(d.booking_url)}" target="_blank" rel="noopener">Check availability</a>` : ""}
         ${d.website ? `<a class="btn" href="${esc(d.website)}" target="_blank" rel="noopener">Website</a>` : ""}
+        ${d.sac_url ? `<a class="btn" href="${esc(d.sac_url)}" target="_blank" rel="noopener">SAC page</a>` : ""}
         ${d.email ? `<a class="btn" href="mailto:${esc(d.email)}">Email</a>` : ""}
         ${d.phone ? `<a class="btn" href="tel:${esc(d.phone.replace(/[^\d+]/g, ""))}">${esc(d.phone)}</a>` : ""}
         <a class="btn" href="${geoAdmin}" target="_blank" rel="noopener">swisstopo map</a>
