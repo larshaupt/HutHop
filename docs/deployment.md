@@ -101,10 +101,12 @@ For local development, copy a backup from `data/backups/` to the Mac.
 
 **Hut websites** (prices, season dates, booking; once or twice per season) are the exception: reading them needs
 Gemini through the gcloud login on the Mac. Fetch and extract on the Mac, then load the results on the server
-(only the `.json` files are needed, not `pdf/`):
+(only the `.json` files are needed, not `pdf/`). Without `--refetch`, fetch and extract only do huts that
+have no saved result yet; the second `extract` retries huts that timed out:
 
 ```sh
-uv run python -m app.ingest.scrape_huts fetch && uv run python -m app.ingest.scrape_huts extract   # Mac
+uv run python -m app.ingest.scrape_huts fetch --refetch                                  # Mac
+uv run python -m app.ingest.scrape_huts extract --refetch && uv run python -m app.ingest.scrape_huts extract  # Mac
 (cd data/raw/web && COPYFILE_DISABLE=1 tar -cf - --no-xattrs *.json) | \
   ssh server2 'mkdir -p /opt/huthop/data/raw/web && tar -xf - -C /opt/huthop/data/raw/web'          # Mac (no rsync on server2)
 cd /opt/huthop/server && docker compose exec -T huthop python -m app.backup && \
