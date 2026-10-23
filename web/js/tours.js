@@ -2,7 +2,7 @@
 // search result, or by id: my tours, shared links, the editor), map drawing.
 import { $, CATEGORY, EMPTY, categoryColor, costTitle, decodePolyline, esc, formatCost, formatMinutes, modeLabel,
   revealPanel } from "./util.js";
-import { DEFAULTS, setState, state } from "./state.js";
+import { setState, state } from "./state.js";
 import { distanceValue, distanceUnit, formatHeight, settings, settingsParams, settingsQuery } from "./settings.js";
 import { fitCoords, map, visibleBox } from "./map.js";
 import { selectHut } from "./huts.js";
@@ -62,16 +62,6 @@ function defaultTourDate() {
 }
 
 // ---------- Form ----------
-// Search settings behind "Options" (start date, nights, people and start stay visible); hours count as one. The
-// general settings (⚙, settings.js) apply to every search.
-const OPTION_KEYS = [["tMin", "tMax"], ["tCat"], ["tLoop"], ["tUnknown"]];
-
-/** "· 2 changed" on the Options button, so settings that differ from the defaults are visible while it is closed. */
-function optionsChanged() {
-  const n = OPTION_KEYS.filter((keys) => keys.some((k) => state[k] !== DEFAULTS[k])).length;
-  return n ? `· ${n} changed` : "";
-}
-
 export function syncTourForm() {
   if (!state.tDate || state.tDate < todayIso()) state.tDate = defaultTourDate();
   $("#tDate").min = todayIso();
@@ -91,7 +81,6 @@ export function syncTourForm() {
   $("#tStartInput").hidden = !!state.tStart;
   $("#tStartName").textContent = state.tStartName;
   $("#tAreaHint").hidden = !!state.tStart;
-  $("#tOptionsChanged").textContent = optionsChanged();
 }
 
 export function bindTourForm() {
@@ -113,7 +102,7 @@ export function bindTourForm() {
       if (b) { setState({ [key]: parse(b.dataset.v) }); syncTourForm(); }
     });
   }
-  $("#tUnknown").addEventListener("change", (e) => { setState({ tUnknown: e.target.checked }); syncTourForm(); });
+  $("#tUnknown").addEventListener("change", (e) => setState({ tUnknown: e.target.checked }));
   bindStopPicker();
   bindYourTours();
 

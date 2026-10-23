@@ -135,6 +135,22 @@
           </div>
 
           <div class="field">
+            <div class="field-label">Hiking per day <output id="tHoursLabel"></output></div>
+            <div class="range2">
+              <input type="range" id="tMin" min="1" max="10" step="0.5" aria-label="Minimum hours per day">
+              <input type="range" id="tMax" min="1" max="10" step="0.5" aria-label="Maximum hours per day">
+              <div class="range2-track"><div class="range2-fill" id="tHoursFill"></div></div>
+            </div>
+          </div>
+
+          <div class="field">
+            <div class="field-label">Huts</div>
+            <div class="seg" id="tCat" role="group" aria-label="Catering">
+              <button type="button" data-v="any">Any</button><button type="button" data-v="catered">Catered</button><button type="button" data-v="self_service">Self-service</button>
+            </div>
+          </div>
+
+          <div class="field">
             <label class="field-label" for="tStartInput">Start</label>
             <div class="stop-picker">
               <div class="chip-picked" id="tStartPicked" hidden><span id="tStartName"></span><button type="button" id="tStartClear" aria-label="Clear start">×</button></div>
@@ -144,33 +160,14 @@
             <p class="hint" id="tAreaHint">Without a start, tours are searched in the area visible on the map.</p>
           </div>
 
-          <details class="options" id="tOptions">
-            <summary>Options <span id="tOptionsChanged"></span></summary>
-            <div class="field">
-              <div class="field-label">Hiking per day <output id="tHoursLabel"></output></div>
-              <div class="range2">
-                <input type="range" id="tMin" min="1" max="10" step="0.5" aria-label="Minimum hours per day">
-                <input type="range" id="tMax" min="1" max="10" step="0.5" aria-label="Maximum hours per day">
-                <div class="range2-track"><div class="range2-fill" id="tHoursFill"></div></div>
-              </div>
+          <div class="field" id="tLoopField" hidden>
+            <div class="field-label">End</div>
+            <div class="seg" id="tLoop" role="group" aria-label="End">
+              <button type="button" data-v="0">Anywhere</button><button type="button" data-v="1">Back to start</button>
             </div>
+          </div>
 
-            <div class="field">
-              <div class="field-label">Huts</div>
-              <div class="seg" id="tCat" role="group" aria-label="Catering">
-                <button type="button" data-v="any">Any</button><button type="button" data-v="catered">Catered</button><button type="button" data-v="self_service">Self-service</button>
-              </div>
-            </div>
-
-            <div class="field" id="tLoopField" hidden>
-              <div class="field-label">End</div>
-              <div class="seg" id="tLoop" role="group" aria-label="End">
-                <button type="button" data-v="0">Anywhere</button><button type="button" data-v="1">Back to start</button>
-              </div>
-            </div>
-
-            <label class="check"><input type="checkbox" id="tUnknown"> Include huts without opening data</label>
-          </details>
+          <label class="check"><input type="checkbox" id="tUnknown"> Include huts without opening data</label>
 
           <button class="btn primary wide" type="submit" id="tFind">Find tours</button>
         </form>

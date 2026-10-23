@@ -532,16 +532,6 @@ code { font-size: 12px; background: var(--bg-soft); padding: 0 4px; border-radiu
 .chip.small { font-size: 12px; padding: 2px 8px; }
 .pick { margin-top: 10px; border: 1px solid var(--accent); border-radius: 10px; padding: 8px 10px; background: var(--accent-soft); }
 
-/* ---------- Search options (collapsed by default) ---------- */
-.options { margin: 4px 0 14px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg); }
-.options > summary { cursor: pointer; padding: 9px 12px; font-weight: 600; list-style: none; display: flex; align-items: center; gap: 6px; }
-.options > summary::-webkit-details-marker { display: none; }
-.options > summary::after { content: "▾"; margin-left: auto; color: var(--text-soft); transition: transform .15s; }
-.options[open] > summary::after { transform: rotate(180deg); }
-#tOptionsChanged { color: var(--accent); font-weight: 600; font-size: 12.5px; }
-.options > :not(summary) { margin-left: 12px; margin-right: 12px; }
-.options > :last-child { margin-bottom: 12px; }
-
 /* ---------- Settings dialog ---------- */
 #aboutBtn { margin-left: 6px; }
 .settings-body .field { margin: 14px 0; }
