@@ -43,6 +43,13 @@ export function refreshEditor(t) {
   render();
 }
 
+/** Leave the editor without showing the tour again (the tour is being closed). */
+export function closeEditor() {
+  if (!ed) return;
+  ed = null;
+  clearCandidates();
+}
+
 function done() {
   const t = ed.tour;
   ed = null;

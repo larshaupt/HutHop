@@ -11,7 +11,7 @@ import { loadInfo } from "./info.js";
 import { renderTourDetail } from "./tour-detail.js";
 import { setBooked } from "./booking.js";
 import { findEntry, keepTour, onYourToursChange, removeEntry, yourTours } from "./your-tours.js";
-import { isEditing, openEditor, refreshEditor } from "./tour-editor.js";
+import { closeEditor, isEditing, openEditor, refreshEditor } from "./tour-editor.js";
 
 const SORTS = { best: "Best", time: "Shortest", ascent: "Least ascent", altitude: "Highest huts",
   beds: "Most free beds", cost: "Cheapest" };
@@ -417,6 +417,7 @@ async function recheckBeds() {
 }
 
 export function closeTour() {
+  closeEditor();
   setState({ tour: 0, tid: "", tEdit: false });
   current = null;
   clearTour();

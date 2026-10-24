@@ -109,6 +109,7 @@ def test_tour_id_roundtrip_and_rebuild(graph):
     assert rebuilt.legs == tour.legs and [n.hut for n in rebuilt.nights] == [1, 2]
     assert rebuilt.metrics == tour.metrics  # scored for the same hours as in the search
     assert parse_tour_id("2027-07-10_11-1-2-12_2-2-2").hours == (3, 6)  # older links without hours
+    assert parse_tour_id("2027-07-10_11-1-12_2-2_7-14.29").hours == (7, 14.29)  # 10 h at pace 0.7
     start = key.start_date
     assert build_tour(graph, TourKey(start, key.places, [3, 3, 3])).legs == tour.legs  # falls back to an easier variant
     with pytest.raises(ValueError, match="no longer available"):
@@ -118,7 +119,8 @@ def test_tour_id_roundtrip_and_rebuild(graph):
     with pytest.raises(ValueError, match="no longer available"):
         build_tour(graph, TourKey(start, [11, 2, 12], [2, 2]))   # there is no stop 11 → hut B edge
     for bad in ("2027-07-10_11-1", "2027-07-10_11-1-12_2", "2027-07-10_11-1-12_2-9", "nonsense",
-                "2027-07-10_11-1-12_2-2_6-3", "2027-07-10_11-1-12_2-2_3-6_x"):
+                "2027-07-10_11-1-12_2-2_6-3", "2027-07-10_11-1-12_2-2_3-6_x",
+                "2027-07-10_11-1-12_2-2_0-0", "2027-07-10_11-1-12_2-2_3-25"):
         with pytest.raises(ValueError):
             parse_tour_id(bad)
     # A night that doesn't fit any more is kept and marked: hut 3 is closed in August

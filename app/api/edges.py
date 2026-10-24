@@ -94,9 +94,10 @@ def review_edge(edge_id: int, review: EdgeReview, conn: sqlite3.Connection = Dep
     changes = review.model_dump(exclude_unset=True)
     if not changes:
         raise HTTPException(400, "nothing to change")
-    with conn:
+    with conn:  # every trail-limit variant of the connection, or the planner keeps using the easier one
         updated = conn.execute(
-            f"UPDATE edge SET {', '.join(f'{k} = :{k}' for k in changes)} WHERE id = :id",
+            f"UPDATE edge SET {', '.join(f'{k} = :{k}' for k in changes)} "
+            "WHERE (from_place, to_place) = (SELECT from_place, to_place FROM edge WHERE id = :id)",
             {k: (int(v) if k == "excluded" else v) for k, v in changes.items()} | {"id": edge_id},
         ).rowcount
     if not updated:

@@ -107,7 +107,7 @@ def parse_tour_id(tour_id: str) -> TourKey:
     hours = DEFAULT_HOURS
     if len(parts) == 4:
         lo, hi = (float(h) for h in parts[3].split("-"))
-        if not 0 <= lo <= hi <= 12:
+        if not (0 <= lo <= hi <= 24 and hi > 0):  # standard time: the API allows 12 h at pace 0.5
             raise ValueError("malformed tour id")
         hours = (lo, hi)
     return TourKey(date.fromisoformat(parts[0]), place_ids, limit_ids, hours)

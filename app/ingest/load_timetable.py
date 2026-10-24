@@ -171,15 +171,15 @@ def read(path: Path, since: date | None = None) -> Feed:
         info = next(_rows(z, "feed_info.txt"))
         start, end = _day(info["feed_start_date"]), _day(info["feed_end_date"])
         feed = Feed(end.year, info["feed_version"], start, end)
-        days = service_days(z, start, end)
-        if since > start:
-            past = (1 << (since - start).days) - 1
-            days = {s: bits & ~past for s, bits in days.items()}
+        all_days = service_days(z, start, end)
+        # Summer departures count the whole summer, even once it is past; only the served days stored drop the past
+        past = (1 << (since - start).days) - 1 if since > start else 0
+        days = {s: bits & ~past for s, bits in all_days.items()}
         first, last = max(start, date(end.year, *SUMMER[0])), min(end, date(end.year, *SUMMER[1]))
         if first > last:  # a feed that doesn't cover the summer: average over all of it
             first, last = start, end
         summer_mask = ((1 << ((last - start).days + 1)) - 1) ^ ((1 << (first - start).days) - 1)
-        summer_days = {s: (bits & summer_mask).bit_count() for s, bits in days.items()}
+        summer_days = {s: (bits & summer_mask).bit_count() for s, bits in all_days.items()}
         n_summer = (last - first).days + 1
 
         uic = {r["stop_id"]: int(r["didok"]) for r in _rows(z, "stops.txt") if r.get("didok", "").isdigit()}
@@ -199,7 +199,7 @@ def read(path: Path, since: date | None = None) -> Feed:
             f[2] = max(f[2], round(begin + (runs - 1) * headway))
         trips = {}
         for r in _rows(z, "trips.txt"):
-            if days.get(r["service_id"]):
+            if all_days.get(r["service_id"]):
                 trips[r["trip_id"]] = (lines[r["route_id"]], r["service_id"], frequency.get(r["trip_id"]))
 
         line_calls: dict[tuple[int, str], int] = defaultdict(int)
@@ -223,6 +223,8 @@ def read(path: Path, since: date | None = None) -> Feed:
             runs, t_first, t_last = (1, t, t) if freq is None else \
                 (freq[0], freq[1] + (t or trip_start) - trip_start, freq[2] + (t or trip_start) - trip_start)
             line_calls[(stop, line)] += summer_days[service] * runs
+            if not days[service]:  # no future days: counts towards the lines only
+                continue
             agg = service_calls.get((stop, service))
             if agg is None:
                 service_calls[(stop, service)] = [t_first, t_last, runs]

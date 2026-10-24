@@ -91,6 +91,11 @@ def test_service_days_and_times(feed):
     assert "extra" not in later.services and not any(s == "extra" for _, s, *_ in later.stop_services)
 
 
+def test_summer_departures_once_summer_is_past(feed):
+    for since in (date(2027, 8, 1), date(2027, 9, 6)):  # the newest feed's summer partly or fully past
+        assert load_timetable.read(feed, since).lines == load_timetable.read(feed, SINCE).lines
+
+
 def stops_and_hut(conn):
     """Two stops with the fixture's numbers, each connected to a hut (the planner loads stops with edges only)."""
     hut = conn.execute("INSERT INTO place (kind, name, e_lv95, n_lv95, lat, lon) "
