@@ -500,9 +500,11 @@ code { font-size: 12px; background: var(--bg-soft); padding: 0 4px; border-radiu
   .panel[data-sheet="half"] :is(#hutsTab, #toursTab, #mineTab, #detail, #tourDetail) { padding-bottom: calc(92dvh - 55dvh); }
   .sheet-handle {
     display: flex; justify-content: center; align-items: center; flex: none;
-    height: 22px; border: 0; background: none; padding: 0;
+    height: 26px; border: 0; background: none; padding: 0;
   }
   .sheet-handle span { width: 40px; height: 5px; border-radius: 3px; background: var(--line); }
+  /* Drag zones of the sheet (main.js): no browser panning there, so the drag reaches the page */
+  .sheet-handle, #browse .brand, #tabs { touch-action: none; }
   .brand { padding: 2px 16px 8px; }
   .brand p { display: none; }
   .search kbd { display: none; }

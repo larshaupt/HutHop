@@ -68,8 +68,10 @@ function bindGlobalEvents() {
     setTrailsVisible(state.trails);
   });
   $("#sheetHandle").addEventListener("click", () => {
+    if (sheetDragged) return;  // the end of a drag, not a tap
     setSheet({ peek: "half", half: "full", full: "peek" }[$("#panel").dataset.sheet]);
   });
+  bindSheetDrag();
   $("#q").addEventListener("focus", () => { if (isMobile()) setSheet("full"); });
   document.addEventListener("keydown", (e) => {
     if (e.key === "/" && !e.target.closest("input, textarea")) {
@@ -89,6 +91,63 @@ function bindGlobalEvents() {
     update();
     if (state.hut !== previousHut) state.hut ? selectHut(state.hut) : closeDetail();
   });
+}
+
+const SHEETS = ["full", "half", "peek"];  // top to bottom
+const DRAG_ZONES = "#sheetHandle, #browse .brand, #tabs";
+let sheetDragged = false;
+
+/** Mobile: drag the bottom sheet by its handle, header or tabs. It follows the finger and settles at the nearest
+ * position (full, half, peek), or the next one in the direction of a quick flick. A tap on the handle still cycles. */
+function bindSheetDrag() {
+  const panel = $("#panel");
+  let drag = null;
+  // translateY of each position, as in style.css: the panel is 92dvh high, half shows 55dvh, peek shows --peek
+  const offsets = () => {
+    const h = panel.offsetHeight, peek = parseFloat(getComputedStyle(panel).getPropertyValue("--peek")) || 148;
+    return { full: 0, half: h - (h / 0.92) * 0.55, peek: h - peek };
+  };
+  panel.addEventListener("pointerdown", (e) => {
+    if (!isMobile() || !e.isPrimary || !e.target.closest(DRAG_ZONES)) return;
+    const y = new DOMMatrix(getComputedStyle(panel).transform).m42;
+    drag = { id: e.pointerId, startY: e.clientY, y, from: y, moved: false, at: e.timeStamp, v: 0 };
+    sheetDragged = false;
+  });
+  panel.addEventListener("pointermove", (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const dy = e.clientY - drag.startY;
+    if (!drag.moved) {
+      if (Math.abs(dy) < 6) return;
+      drag.moved = true;
+      panel.setPointerCapture(e.pointerId);
+      panel.style.transition = "none";
+      document.activeElement?.blur();  // e.g. the hut search, so the keyboard doesn't fight the drag
+    }
+    const y = Math.min(Math.max(drag.from + dy, 0), offsets().peek);
+    drag.v = (y - drag.y) / Math.max(1, e.timeStamp - drag.at);  // px per ms, downwards positive
+    drag.y = y;
+    drag.at = e.timeStamp;
+    panel.style.transform = `translateY(${y}px)`;
+  });
+  const end = (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const { moved, y, v } = drag;
+    drag = null;
+    if (!moved) return;
+    sheetDragged = true;
+    setTimeout(() => { sheetDragged = false; });  // swallow only the click that ends this drag
+    const pos = offsets();
+    let target = SHEETS.reduce((a, b) => (Math.abs(pos[b] - y) < Math.abs(pos[a] - y) ? b : a));
+    if (Math.abs(v) > 0.5) {  // a flick: the next position in its direction
+      const next = v > 0 ? SHEETS.find((m) => pos[m] > y + 1) : [...SHEETS].reverse().find((m) => pos[m] < y - 1);
+      target = next || target;
+    }
+    panel.style.transition = "";
+    panel.style.transform = "";
+    setSheet(target);
+  };
+  panel.addEventListener("pointerup", end);
+  panel.addEventListener("pointercancel", end);
 }
 
 async function main() {
