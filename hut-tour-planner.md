@@ -2,7 +2,7 @@
 
 A private web app to browse and filter Swiss mountain huts (SAC plus selected non-SAC huts) and to **suggest multi-day summer hut tours** from user constraints, including availability checks and cost estimates.
 
-> Status (21 Oct 2026): Phases 0–4 done; prices, season dates and contacts read from the hut websites since 21 Oct (§3.7). Deployed on server2, tailnet only (`docs/deployment.md`). Since Phase 4: GPX export with heights, height profiles, free-beds calendar, manual corrections, "best" ranking with route geometry, About dialog. Items marked **(verify)** are assumptions or partial observations and must be checked before relying on them.
+> Status (21 Oct 2026): Phases 0–4 done; prices, season dates and contacts read from the hut websites since 21 Oct (§3.7). Deployed on the Oracle VM at huthop.larshauptmann.com behind a Cloudflare Access login since 26 Oct (`docs/deployment.md`). Since Phase 4: GPX export with heights, height profiles, free-beds calendar, manual corrections, "best" ranking with route geometry, About dialog. Items marked **(verify)** are assumptions or partial observations and must be checked before relying on them.
 
 ---
 
@@ -110,7 +110,7 @@ A private web app to browse and filter Swiss mountain huts (SAC plus selected no
 - Store the **raw API JSON** so fields can be re-parsed without re-fetching.
 - Store prices as **components**, not totals. Compute estimates per request.
 - Tour suggestions and price estimates are **computed, not stored** (until saved tours exist).
-- **Offline build and app are separate.** The full trail graph (~389k nodes) only exists inside `build_edges`, which runs in its own process (on server2: a one-off container, `server/refresh.sh`). The app only reads the small place graph (huts + stops) and simplified route lines from SQLite.
+- **Offline build and app are separate.** The full trail graph (~389k nodes) only exists inside `build_edges`, which runs in its own process (on the server: a one-off container, `server/refresh.sh`). The app only reads the small place graph (huts + stops) and simplified route lines from SQLite.
 - Store **LV95 coordinates** next to WGS84. All Swiss sources use LV95, and the map uses WGS84.
 
 ### Routing approach
@@ -214,7 +214,7 @@ Notes:
 - **No price fields** in the SAC data.
 - `opening`/`catering` codes: **0 = yes (whole month), 1 = partly, 2 = no**. `catering` = staffed/catered (confirmed). `opening` = self-service part (winter room) open (strong hypothesis). All-2 = no data (82 huts).
 - `hrs_id` links to hut-reservation.org (0 = none).
-- `tel` and `email` are shown in the app (private, tailnet only; decided 2026-10-21) as call and mail buttons, kept as `hut.phone` / `hut.email` (website values as fallback). Don't republish them.
+- `tel` and `email` are shown in the app (private, invited users only; decided 2026-10-21) as call and mail buttons, kept as `hut.phone` / `hut.email` (website values as fallback). Don't republish them.
 
 ### 3.2 hut-reservation.org (availability, bookings)
 
@@ -325,7 +325,7 @@ Answer the open questions before building:
 - **Public transport within a tour:** allow a day to include a bus/train/cable car ride, e.g. walk down from a hut, take the bus through the valley, walk up to the next hut. Approach: combine a hut→stop edge, a timetable ride (or a simple stop→stop transfer table from the official timetable data), and a stop→hut edge into one day, counting only the walking time against the daily limit. Needs timetable data (e.g. opentransportdata.swiss GTFS) and a cap on rides per day.
 - Warnings for official trail closures and military shooting zones (geo.admin layers, see via-helvetica).
 - **Mobile testing:** the app has a phone layout (bottom sheet below 720 px) but no frontend tests at all, and it is mostly checked on a desktop. Two parts:
-  1. *Manual checklist* on a real iPhone and Android phone over the tailnet: map gestures (pinch, pan, tap on huts), bottom sheet, filter panel, tour form and results, tour detail with height profiles, free-beds calendar, GPX download/share to the swisstopo app, editor dialogs, landscape orientation, dark mode.
+  1. *Manual checklist* on a real iPhone and Android phone on the live site: map gestures (pinch, pan, tap on huts), bottom sheet, filter panel, tour form and results, tour detail with height profiles, free-beds calendar, GPX download/share to the swisstopo app, editor dialogs, landscape orientation, dark mode.
   2. *Automated browser tests* with Playwright (Python, `pytest-playwright`) in mobile emulation (e.g. iPhone 13 and Pixel 7 viewports, touch enabled) against the app on a small test database: no horizontal scrolling, key flows work (select a hut, open connections, search tours, open a tour), no console errors. Run in CI next to pytest; screenshots of failures as build artifacts.
 - **Winter tours (ski touring, snowshoe hiking):** the same planner for winter, with a season switch. What changes:
   - *Routes:* winter routes don't follow the summer hiking network. Candidates: swisstopo's ski touring and snowshoe route layers (geo.admin, `ch.swisstopo-karto.skitouren`, `ch.swisstopo-karto.schneeschuhrouten`; check license and whether the geometry can be downloaded) and SAC's ski touring and snowshoe routes (only routes with `availability == "free"`, see §6). Probably a separate winter edge set (`season` column on `edge`) with its own build.
@@ -333,7 +333,7 @@ Answer the open questions before building:
   - *Huts:* winter opening (SAC monthly codes, catered in winter vs. winter room only) and winter free beds from hut-reservation.org (same API).
   - *Public transport:* `load_timetable` averages departures over July and August; winter needs a second window (e.g. January to March), otherwise winter-only ski buses and lifts get no connections (they are dropped today).
   - *Safety:* a link to the SLF avalanche bulletin per tour and wildlife rest areas (`ch.bafu.wrz-wildruhezonen`) on the map. No avalanche risk assessment by the app; tours are planning aids only.
-- ~~Docker Compose for a home server~~ done (server2, see `docs/deployment.md`).
+- ~~Docker Compose for a home server~~ done (server2, since 26 Oct the Oracle VM; see `docs/deployment.md`).
 
 ---
 
@@ -342,7 +342,7 @@ Answer the open questions before building:
 - **Backend:** Python 3.12, FastAPI, `httpx`, `pyproj`, plain `sqlite3` (WAL mode)
 - **Routing:** own graph on swissTLM3D (pyogrio, shapely, SciPy sparse Dijkstra; networkx only in the spikes)
 - **Frontend:** plain HTML/JS ES modules + MapLibre GL, no build step
-- **Ops:** `uv run` locally; Docker image built by GitHub Actions, Docker Compose on server2
+- **Ops:** `uv run` locally; Docker image built by GitHub Actions, Docker Compose on the Oracle VM
 
 The repo layout is described in `README.md`.
 

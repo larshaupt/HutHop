@@ -1,10 +1,10 @@
 """Admin password for data-changing endpoints (edge exclusions, hut corrections, added huts).
 
-Viewing and tour planning stay open to everyone who can reach the app (on server2: the tailnet). Changes need
+Viewing and tour planning stay open to everyone who can reach the app (on the server: invited users, via the Cloudflare Access login). Changes need
 HTTP Basic auth with the admin password, whose salted hash lives in data/admin_password (not in git):
 
     uv run python -m app.admin set-password                                    # on the Mac
-    docker compose exec huthop python -m app.admin set-password                # on server2, in /opt/huthop/server
+    docker compose exec huthop python -m app.admin set-password                # on the server, in /opt/huthop/server
 
 Rules:
 - A password is set → changes need it.

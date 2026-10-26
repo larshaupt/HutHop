@@ -2,7 +2,7 @@
 
 A private web app to browse Swiss mountain huts (SAC plus huts added by hand) and to suggest multi-day summer hut tours from your constraints, with live free-bed checks.
 
-**Status (Oct 2026):** deployed on server2 (tailnet only). Hut map with filters, free-beds calendar and hand
+**Status (Oct 2026):** deployed at huthop.larshauptmann.com (Oracle VM, Cloudflare Access login). Hut map with filters, free-beds calendar and hand
 corrections; walking connections on swisstopo's trail network; multi-day tour suggestions ranked by a fixed "best"
 score (new trail, shape, free beds, opening data, …), sortable in the browser; height profiles; GPX export; About
 dialog. Prices are postponed. See [`hut-tour-planner.md`](hut-tour-planner.md) for the project brief (requirements,
@@ -30,7 +30,7 @@ only when swisstopo publishes one, and rebuilds the route graph only when hut/st
 (`--rebuild` forces it). Each run is logged to `data/refresh_log.json`. Run it weekly during the season.
 `sync_sac --from-file data/raw/sac/huts.json` re-imports the last saved API response without fetching.
 
-Deployment (server2, tailnet only), backups and the data workflow: see [`docs/deployment.md`](docs/deployment.md).
+Deployment (Oracle VM, Cloudflare tunnel and Access), backups and the data workflow: see [`docs/deployment.md`](docs/deployment.md).
 Changing data needs the admin password once one is set (`python -m app.admin set-password`); on the server,
 changes are refused until then.
 
@@ -44,7 +44,7 @@ and the official timetables (GTFS, opentransportdata.swiss, about 90 MB each: th
 year's) into `data/gtfs/` when a new edition is out. They give the lines and summer departures of each stop (a hut
 only gets a connection to the closest stop of each line) and on which days and from when to when each stop is
 served: tours start and end at the closest stop that runs on that day.
-On server2, `server/refresh.sh` does the same in a one-off container (see the deployment doc). Edges without a stored
+On the server, `server/refresh.sh` does the same in a one-off container (see the deployment doc). Edges without a stored
 footprint (grid cells and shape samples for the tour search) get one with `python -m app.ingest.footprints`, which
 `refresh` also runs.
 
@@ -74,7 +74,7 @@ web/         static frontend (MapLibre + swisstopo tiles, no build step), ES mod
              tour-editor (editing a tour), your-tours (kept in the browser), settings (general
              settings and units, kept in the browser), editor (hut data),
              info (About dialog), util
-server/      compose.yaml, update.sh (deploy) and refresh.sh (data refresh and graph build) for server2
+server/      compose.yaml, update.sh (deploy) and refresh.sh (data refresh and graph build) for the server
 docs/        deployment plan, route graph figure
 spikes/      Phase 0 experiments and findings (historical)
 tests/

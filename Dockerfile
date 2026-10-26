@@ -1,5 +1,5 @@
 # HutHop web app: FastAPI + static frontend. The SQLite database lives in /app/data (a volume).
-# The heavy ingest jobs (build_edges, load_stops) run on the Mac; see docs/deployment.md.
+# Ingest jobs run from the same image in a one-off container (server/refresh.sh); see docs/deployment.md.
 
 FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
 

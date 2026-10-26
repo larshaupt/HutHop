@@ -1,7 +1,7 @@
 """Database backup: a consistent copy of huthop.db in data/backups/, one file per day.
 
     uv run python -m app.backup                                          # on the Mac
-    docker compose exec -T huthop python -m app.backup                   # on server2, in /opt/huthop/server
+    docker compose exec -T huthop python -m app.backup                   # on the server, in /opt/huthop/server
 
 Uses SQLite's backup API, so it is safe while the app is running and writing. Keeps the newest KEEP copies.
 """

@@ -33,7 +33,7 @@ services:
     profiles: [jobs]
     volumes: [../data:/app/data]
     environment: [PYTHONUNBUFFERED=1]  # progress lines appear as they happen
-    mem_limit: 3g  # a graph build needs ~2 GB; never more, whatever else runs on server2
+    mem_limit: 3g  # a graph build needs ~2 GB; never more, whatever else runs on the VM
     read_only: true
     tmpfs: [/tmp]
     cap_drop: [ALL]
