@@ -1,5 +1,6 @@
-# Lives on server2 (larsbox) at /opt/huthop/server/compose.yaml (cloned repo). See docs/deployment.md.
-# Only reachable on localhost; `tailscale serve` on the host publishes it to the tailnet.
+# Lives on the Oracle VM at /opt/huthop/server/compose.yaml (cloned repo). See docs/deployment.md.
+# Published by the website's Cloudflare tunnel (huthop.larshauptmann.com, behind Cloudflare Access): the container
+# joins the website's Docker network, where cloudflared reaches it as huthop:8000. Port 8100 is for the host only.
 
 # Without a name the project would be "server", the same as /opt/website/server, and
 # `up --remove-orphans` in update.sh would remove the website's containers.
@@ -10,6 +11,7 @@ services:
     image: ghcr.io/larshaupt/huthop:latest
     restart: unless-stopped
     ports: ["127.0.0.1:8100:8000"]
+    networks: [default, tunnel]
     volumes: [../data:/app/data]
     # Changing data (hut corrections, edge exclusions) needs the admin password; refused until one is set.
     environment: [HUTHOP_REQUIRE_ADMIN=1]
@@ -37,3 +39,8 @@ services:
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
     command: ["python", "-m", "app.ingest.refresh"]
+
+networks:
+  tunnel:
+    name: server_web  # created by /opt/website/server/compose.yaml (project "server")
+    external: true
