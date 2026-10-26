@@ -333,6 +333,8 @@ def store(conn: sqlite3.Connection, places: list[dict], edges: list[dict], netwo
     kept = {(r["from_place"], r["to_place"], r["category_limit"]): (r["excluded"], r["note"]) for r in conn.execute(
         "SELECT from_place, to_place, category_limit, excluded, note FROM edge "
         "WHERE source = 'tlm_routed' AND (excluded = 1 OR note IS NOT NULL)")}
+    # A connection whose limit variant is gone (e.g. new trails made the easier route as fast) keeps its pair's flags
+    by_pair = {(f, t): flags for (f, t, _), flags in sorted(kept.items(), key=lambda kv: kv[1][0])}
     with conn:
         conn.executemany("UPDATE place SET snap_m = :snap_m WHERE id = :id",
                          [{"id": p["id"], "snap_m": round(p["snap_m"], 1)} for p in places])
@@ -348,8 +350,8 @@ def store(conn: sqlite3.Connection, places: list[dict], edges: list[dict], netwo
             ":category_limit, 'tlm_routed', :geometry, :elevation, :max_altitude_m, :footprint, :samples, :excluded, "
             ":note, "
             ":computed_at)",
-            [e | dict(zip(("excluded", "note"), kept.get((e["from_place"], e["to_place"], e["category_limit"]),
-                                                          (0, None))))
+            [e | dict(zip(("excluded", "note"), kept.get((e["from_place"], e["to_place"], e["category_limit"]))
+                          or by_pair.get((e["from_place"], e["to_place"]), (0, None))))
              | {"computed_at": computed_at} for e in edges],
         )
         matched = match_sac_routes(conn)

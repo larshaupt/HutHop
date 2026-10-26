@@ -36,8 +36,6 @@ class Metrics:
     ease: float
     altitude: float
     approach: float
-    time_min: int
-    ascent_m: int
     mean_altitude: float
 
     def best(self, weights: dict[str, float]) -> float:
@@ -73,7 +71,5 @@ def metrics(legs, nights, altitudes: list[int | None], min_minutes: float, max_m
         ease=1 - sum(leg.max_category - 1 for leg in legs) / (2 * len(legs)),
         altitude=clip((mean_alt - 1500) / 1500),
         approach=clip(1 - (legs[0].time_min + legs[-1].time_min) / (2 * max_minutes)),
-        time_min=sum(leg.time_min for leg in legs),
-        ascent_m=sum(leg.ascent_m for leg in legs),
         mean_altitude=mean_alt,
     )

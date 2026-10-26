@@ -37,16 +37,16 @@ changes are refused until then.
 Settings: `huthop.toml`, read on every request and baked into the Docker image: the weights of the "best" tour
 order (shown in the app's About dialog) and the impressum. Manual corrections: "Edit hut data" in a hut's detail
 view, "+ Add hut" in the hut list, and excluding a connection in a hut's connection list; all survive re-syncs and
-rebuilds. New huts get walking connections at the next `refresh --rebuild`.
+rebuilds. New huts get walking connections at the next `refresh`.
 
 `refresh` downloads the swissTLM3D hiking network (swisstopo open data, about 200 MB) into `data/tlm/` when needed,
 and the official timetables (GTFS, opentransportdata.swiss, about 90 MB each: this year's and, from autumn, next
 year's) into `data/gtfs/` when a new edition is out. They give the lines and summer departures of each stop (a hut
 only gets a connection to the closest stop of each line) and on which days and from when to when each stop is
 served: tours start and end at the closest stop that runs on that day.
-On server2, `server/refresh.sh` does the same in a one-off container (see the deployment doc). Edges built before
-height profiles existed get them with `python -m app.ingest.profiles`; edges without a stored footprint (grid cells
-and shape samples for the tour search) get one with `python -m app.ingest.footprints`, which `refresh` also runs.
+On server2, `server/refresh.sh` does the same in a one-off container (see the deployment doc). Edges without a stored
+footprint (grid cells and shape samples for the tour search) get one with `python -m app.ingest.footprints`, which
+`refresh` also runs.
 
 Other commands: `python -m app.backup` (dated copy in `data/backups/`, keeps 14), `python -m app.admin set-password`.
 
@@ -61,7 +61,7 @@ app/
              (overrides, added huts), tours (/suggest, /{id}, /{id}/gpx, /{id}/options for the editor, /huts/{id}/tour, /stops),
              info (About dialog)
   db/        schema.sql (tables, views, change-counter triggers) and connect() (migrations, WAL)
-  ingest/    offline jobs: refresh, sync_sac, load_stops, load_timetable, build_edges, profiles, footprints
+  ingest/    offline jobs: refresh, sync_sac, load_stops, load_timetable, build_edges, footprints
   planner/   graph (model, loading, cache), tours (beam search, scoring, rebuilding, diversity),
              planning (search with free-bed rounds, rebuild by id: what the API calls), ranking (sub-scores,
              "best"), geometry (retracing, shape), availability (cache, classification, calendar), opening,

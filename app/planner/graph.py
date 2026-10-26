@@ -7,6 +7,7 @@ limits.
 
 import json
 import sqlite3
+import threading
 from dataclasses import dataclass, field
 
 from app.planner import opening, transit
@@ -111,6 +112,7 @@ def load_graph(conn: sqlite3.Connection, limit: int, footprints: Footprints | No
 
 # database file → (data version, shared footprints, {limit: graph}, shared timetable)
 _cache: dict[str, tuple[int, Footprints, dict[int, Graph], transit.Timetable]] = {}
+_cache_lock = threading.Lock()  # after a data change, the warm-up thread and requests would each load the graph
 
 
 def cached_graph(conn: sqlite3.Connection, limit: int) -> Graph:
@@ -118,12 +120,13 @@ def cached_graph(conn: sqlite3.Connection, limit: int) -> Graph:
     share them."""
     version = conn.execute("SELECT version FROM data_version").fetchone()[0]
     db = conn.execute("PRAGMA database_list").fetchone()["file"]
-    if db not in _cache or _cache[db][0] != version:
-        _cache[db] = (version, Footprints({}), {}, transit.load(conn))
-    _, footprints, graphs, timetable = _cache[db]
-    if limit not in graphs:
-        graphs[limit] = load_graph(conn, limit, footprints, timetable)
-    return graphs[limit]
+    with _cache_lock:
+        if db not in _cache or _cache[db][0] != version:
+            _cache[db] = (version, Footprints({}), {}, transit.load(conn))
+        _, footprints, graphs, timetable = _cache[db]
+        if limit not in graphs:
+            graphs[limit] = load_graph(conn, limit, footprints, timetable)
+        return graphs[limit]
 
 
 def warm_up(conn: sqlite3.Connection) -> bool:

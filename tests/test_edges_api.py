@@ -63,6 +63,7 @@ def test_exclude_edge(client):
     assert c.get(f"/api/huts/{ids['a']}/edges", params={"limit": 1}).json()["huts"][0]["excluded"] is True
     assert c.patch("/api/edges/999999", json={"excluded": True}).status_code == 404
     assert c.patch(f"/api/edges/{edge['id']}", json={}).status_code == 400
+    assert c.patch(f"/api/edges/{edge['id']}", json={"excluded": None}).status_code == 422
 
 
 def test_unknown_hut(client):

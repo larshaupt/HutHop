@@ -87,18 +87,8 @@ def test_month_status(catering, self_service, month, expected):
     assert month_status(catering, self_service, month) == expected
 
 
-def test_list_filters(client):
-    def names(**params):
-        return [h["name"] for h in client.get("/api/huts", params=params).json()]
-
-    assert names() == ["Mystery Hut", "Summer Hut", "Winter Room Only"]
-    assert names(month=7) == ["Summer Hut", "Winter Room Only"]
-    assert names(month=7, open_as="catered") == ["Summer Hut"]
-    assert names(month=1, open_as="self_service") == ["Summer Hut", "Winter Room Only"]
-    assert names(half_board=True) == ["Summer Hut"]
-    assert names(alt_min=3000) == ["Winter Room Only"]
-    assert names(operator="private") == ["Mystery Hut"]
-    assert names(q="winter") == ["Winter Room Only"]
+def test_list(client):
+    assert [h["name"] for h in client.get("/api/huts").json()] == ["Mystery Hut", "Summer Hut", "Winter Room Only"]
 
 
 def test_detail(client):

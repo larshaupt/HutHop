@@ -1,13 +1,16 @@
 // Free-beds calendar in the hut detail: one month at a time from hut-reservation.org (via /api/huts/{id}/availability).
 import { $, esc } from "./util.js";
 import { setState, state } from "./state.js";
+import { checkedAgo } from "./tour-detail.js";
 
 let beds = null; // { id, data, month: "YYYY-MM" } for the free-beds calendar of the open hut
 const WEEKDAYS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"];
 const MONTH_FMT = new Intl.DateTimeFormat("en-GB", { month: "long", year: "numeric" });
 const BED_TITLE = { available: "beds free", full: "full", closed: "closed", not_released: "not bookable yet" };
+let seq = 0;
 
 export async function loadBeds(id) {
+  const mine = ++seq;
   let data = null;
   try {
     const res = await fetch(`/api/huts/${id}/availability?people=${state.tPeople}`);
@@ -15,7 +18,7 @@ export async function loadBeds(id) {
   } catch (err) {
     console.error(err);
   }
-  if (state.hut !== id || !$("#bedCal")) return; // another hut was opened meanwhile
+  if (mine !== seq || state.hut !== id || !$("#bedCal")) return; // another hut or group size was asked for meanwhile
   if (!data || data.error) {
     $("#bedCal").innerHTML = `<p class="hint">Could not check free beds right now.</p>`;
     return;
@@ -50,7 +53,6 @@ function renderBeds() {
     cells.push(`<span class="bd ${d.state}${self}" title="${title}${self ? " (self-service)" : ""}">${day}${free}</span>`);
   }
   const i = months.indexOf(month);
-  const ago = Math.max(0, Math.round((Date.now() - new Date(data.checked_at)) / 60000));
   $("#bedCal").innerHTML = `
     <div class="cal-head">
       <button class="cal-nav" data-cal="-1" ${i <= 0 ? "disabled" : ""} aria-label="Previous month">‹</button>
@@ -65,7 +67,7 @@ function renderBeds() {
     </div>
     <p class="hint cal-foot">For <span class="people-step"><button data-people-cal="-1" aria-label="Fewer people">−</button>
       <b>${data.people}</b><button data-people-cal="1" aria-label="More people">+</button></span>
-      ${data.people === 1 ? "person" : "people"} · numbers are free beds · checked ${ago < 1 ? "just now" : `${ago} min ago`} ·
+      ${data.people === 1 ? "person" : "people"} · numbers are free beds${checkedAgo(data)} ·
       <a href="${esc(data.booking_url)}" target="_blank" rel="noopener">Book</a></p>`;
   $("#bedCal").onclick = (e) => {
     const nav = e.target.closest("[data-cal]");

@@ -7,8 +7,8 @@ import { addHutLayers, bindHutEvents, bindHutMap, closeDetail, loadHuts, renderC
 import { addEdgeLayers, bindConnectionEvents, redrawConnections } from "./connections.js";
 import { bindEditorEvents } from "./editor.js";
 import { bindAbout } from "./info.js";
-import { addTourLayers, bindTourForm, clearTour, closeTour, hasResults, openTourById, redrawTour, runTourSearch, syncTourForm }
-  from "./tours.js";
+import { addTourLayers, bindTourForm, clearTour, closeTour, hasResults, openTourById, redrawTour, rerenderTours, runTourSearch,
+  syncTourForm } from "./tours.js";
 import { addEditorLayers, bindEditorEvents as bindTourEditorEvents, editorHutClick, isEditing, reloadEditor }
   from "./tour-editor.js";
 import { bindSettings, onSettingsChange } from "./settings.js";
@@ -30,17 +30,26 @@ function setView(view) {
   $("#hutsTab").hidden = view !== "huts";
   $("#toursTab").hidden = view !== "tours";
   $("#mineTab").hidden = view !== "mine";
+  if (view === "tours") syncTourForm();  // e.g. the group size, also changed in a hut's free-beds calendar
   if (view === "huts" && state.tour) setState({ tour: 0 });
   if (view !== "tours" || (hasResults() && !state.tour)) clearTour();
 }
 
 /** After a change in the settings (⚙): show everything open again within them (units, pace, what is offered). */
-let settingsTimer = null;
-function applySettings() {
+let settingsTimer = null, settingsSearch = false;
+function applySettings(patch) {
   clearTimeout(settingsTimer);
+  // Units and member prices only change how things are shown: no new search for them.
+  settingsSearch ||= Object.keys(patch).some((k) => k !== "units" && k !== "member");
   settingsTimer = setTimeout(() => {
     update();
     syncControls();
+    if (!settingsSearch) {
+      rerenderTours();
+      if (state.hut) selectHut(state.hut, { fly: false });
+      return;
+    }
+    settingsSearch = false;
     if (state.hut) {
       selectHut(state.hut, { fly: false });
       if (hasResults() && !state.tour && !state.tid) runTourSearch();  // the list behind it, without opening a tour

@@ -15,7 +15,8 @@ ADDED_COLUMNS = [("edge", "elevation", "TEXT"), ("edge", "footprint", "BLOB"), (
 
 def connect(path: Path | str = DB_PATH, init: bool = True) -> sqlite3.Connection:
     Path(path).parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path, check_same_thread=False)
+    # The refresh holds the write lock for long stretches (timetable, edges); app writes wait instead of failing
+    conn = sqlite3.connect(path, timeout=60, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     if init:
         for table, column, sql_type in ADDED_COLUMNS:

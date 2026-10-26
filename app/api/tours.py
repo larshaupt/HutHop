@@ -231,7 +231,7 @@ def outside_settings(graph: Graph, t: Tour, rules: editing.Rules) -> list[str]:
         out.append("trail")
     if rules.max_altitude is not None and any((leg.max_altitude_m or 0) > rules.max_altitude for leg in t.legs):
         out.append("altitude")
-    if rules.avoid_lifts and (is_lift(graph.stops[t.legs[0].frm]) or is_lift(graph.stops[t.legs[-1].to])):
+    if rules.avoid_lifts and (is_lift(graph.stops[t.legs[0].frm].mode) or is_lift(graph.stops[t.legs[-1].to].mode)):
         out.append("lift")
     return out
 

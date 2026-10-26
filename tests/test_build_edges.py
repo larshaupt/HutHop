@@ -10,7 +10,7 @@ All flat at 1000 m, so times follow the flat pace of 4.2 km/h (14.271 min/km).
 import numpy as np
 import pytest
 
-from app.ingest.build_edges import network_from_lines, search, snap
+from app.ingest.build_edges import network_from_lines, search, snap, store
 from app.planner import hiking_time, polyline
 
 A, J, B, C = (2600000.0, 1200000.0), (2601000.0, 1200800.0), (2602000.0, 1200000.0), (2603000.0, 1200000.0)
@@ -160,3 +160,21 @@ def test_footprints_stored_and_backfilled(network, places, tmp_path):
     assert footprints.fill(conn) == 1 and footprints.fill(conn) == 0
     row = conn.execute("SELECT footprint, samples FROM edge").fetchone()
     assert (unpack(row["footprint"], row["samples"])[0] == expected_cells).all()
+
+
+def test_exclusion_kept_when_its_limit_variant_is_gone(network, places, tmp_path):
+    from app.db import connect
+
+    conn = connect(tmp_path / "test.db")
+    for p in places:
+        conn.execute("INSERT INTO place (id, kind, name, e_lv95, n_lv95, lat, lon) VALUES (?, ?, 'p', ?, ?, 46, 8)",
+                     (p["id"], p["kind"], *p["xy"]))
+    edges = search(network, places)
+    store(conn, places, edges, network)
+    conn.execute("UPDATE edge SET excluded = 1, note = 'path closed' "
+                 "WHERE from_place = 1 AND to_place = 2 AND category_limit = 3")
+    store(conn, places, [e for e in edges if (e["from_place"], e["to_place"], e["category_limit"]) != (1, 2, 3)],
+          network)  # the rebuild only finds the yellow route between the two huts
+    rows = conn.execute("SELECT category_limit, excluded, note FROM edge WHERE from_place = 1 AND to_place = 2")
+    assert [tuple(r) for r in rows] == [(1, 1, "path closed")]
+    assert not conn.execute("SELECT 1 FROM edge WHERE from_place = 2 AND to_place = 1 AND excluded = 1").fetchone()

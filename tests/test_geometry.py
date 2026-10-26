@@ -135,7 +135,7 @@ def reference_shape(fp, edge_ids):
 
     from app.planner import geometry as g
 
-    pts = np.concatenate([fp.samples(e) for e in edge_ids])
+    pts = np.concatenate([g.footprint(fp.geometry[e])[1] for e in edge_ids])
     length = float(np.hypot(*np.diff(pts, axis=0).T).sum())
     progress = float(np.hypot(*(pts[-1] - pts[0]))) / length
     closed = np.vstack((pts, pts[:1]))
@@ -161,7 +161,7 @@ def test_packed_footprint_roundtrip_and_same_overlaps():
     packed = Footprints({}, {e: pack(*footprint(g)) for e, g in lines.items()})
     for e, g in lines.items():
         cells, samples = unpack(*pack(*footprint(g)))
-        assert (cells == decoded.cells(e)).all() and (samples == decoded.samples(e)).all()
+        assert (cells == decoded.cells(e)).all() and (samples == footprint(g)[1]).all()
         assert cells.dtype.name == "int32" and (cells[1:] > cells[:-1]).all()  # sorted, unique
     for a, b in ((1, 2), (1, 3), (2, 3)):
         assert packed.overlap(a, b) == decoded.overlap(a, b)

@@ -1,11 +1,10 @@
 // Booking helper ("Book this tour"): a checklist of the tour's nights. HutHop doesn't book: each night opens the
 // hut's booking page on hut-reservation.org, or shows how else to reach the hut, and you tick it off once booked.
 // Ticks are kept in this browser (local storage, per device) per hut and night, so they stay with a tour you edit.
-import { esc } from "./util.js";
+import { BOOKING_LABEL, esc, telHref } from "./util.js";
 import { AVAIL_LABEL, checkedAgo, formatDay } from "./tour-detail.js";
 
 const KEY = "huthop.booked";
-const METHOD_LABEL = { online_other: "online", email: "by email", phone: "by phone", not_needed: "not needed" };
 
 function read() {
   try {
@@ -69,12 +68,12 @@ function bookingLinks(n) {
     `<a href="${esc(href)}"${external ? ` target="_blank" rel="noopener"` : ""}>${text}</a>`;
   if (n.booking_url) return link(n.booking_url, "Booking page ↗");
   const c = n.contact || {};
-  const methods = c.booking_methods?.map((m) => METHOD_LABEL[m]).filter(Boolean) || [];
+  const methods = c.booking_methods?.filter((m) => m !== "hut_reservation_org").map((m) => BOOKING_LABEL[m]).filter(Boolean) || [];
   const links = [
-    c.booking_url && link(c.booking_url, "Booking page ↗"),
+    /^https?:\/\//i.test(c.booking_url) && link(c.booking_url, "Booking page ↗"),
     c.website && link(c.website, "Website ↗"),
     c.email && link(`mailto:${c.email}`, "Email", false),
-    c.phone && link(`tel:${c.phone.replace(/[^\d+]/g, "")}`, esc(c.phone), false),
+    c.phone && link(telHref(c.phone), esc(c.phone), false),
   ].filter(Boolean);
   return `<span>Not on hut-reservation.org${methods.length ? ` · books ${methods.join(", ")}` : ""}</span>` +
     (links.length ? ` · ${links.join(" · ")}` : " · no contact known");

@@ -27,6 +27,7 @@ TLM_STAC_ITEMS = "https://data.geo.admin.ch/api/stac/v1/collections/ch.swisstopo
 TLM_DIR = ROOT / "data/tlm"
 TLM_EDITION = TLM_DIR / "edition.json"
 LOG = ROOT / "data/refresh_log.json"
+BUILT = ROOT / "data/built_from.json"  # what the edges were last built from (see run)
 USER_AGENT = "HutHop/0.1 (private hut planner)"
 
 
@@ -63,26 +64,29 @@ def run(skip_huts: bool = False, skip_stops: bool = False, skip_timetable: bool 
     report: dict = {"started_at": datetime.now(UTC).isoformat(timespec="seconds")}
 
     if not skip_huts:
-        before = positions_fingerprint(conn, "hut")
         report["huts"] = sync_sac.sync(conn, sync_sac.fetch_and_save())
-        report["huts_moved"] = positions_fingerprint(conn, "hut") != before
     if not skip_stops:
-        before = positions_fingerprint(conn, "stop")
         load_stops.download()
         report["stops"] = load_stops.load(conn, load_stops.read_stops())
-        report["stops_moved"] = positions_fingerprint(conn, "stop") != before
     if not skip_timetable:
         # Loaded every time (~30 s, from the local file) so new stops get their lines too.
-        before = load_timetable.lines_fingerprint(conn)
         report["timetable_updated"] = load_timetable.download()
         report["stop_lines"] = load_timetable.load(conn, load_timetable.read_all())
-        report["lines_changed"] = load_timetable.lines_fingerprint(conn) != before
     if not skip_trails:
         report["trails_updated"] = refresh_trails()
 
-    needs_rebuild = rebuild or any(report.get(k) for k in ("huts_moved", "stops_moved", "lines_changed",
-                                                          "trails_updated"))
-    report["edges"] = build_edges.build(conn) if needs_rebuild else "unchanged"
+    # Compared with the last successful build, not the start of this run: a run that failed after a change (e.g. a
+    # download error, or the build killed) leaves it for the next run to rebuild.
+    state = {"huts": positions_fingerprint(conn, "hut"), "stops": positions_fingerprint(conn, "stop"),
+             "lines": load_timetable.lines_fingerprint(conn),
+             "trails": TLM_EDITION.read_text() if TLM_EDITION.exists() else None}
+    built = json.loads(BUILT.read_text()) if BUILT.exists() else {}
+    report["changed"] = [k for k in state if state[k] != built.get(k)]
+    if rebuild or report["changed"]:
+        report["edges"] = build_edges.build(conn)
+        BUILT.write_text(json.dumps(state, indent=1))
+    else:
+        report["edges"] = "unchanged"
     report["footprints_filled"] = footprints.fill(conn)  # edges from before footprints, and hand-made ones
     report["seconds"] = round(time.time() - started)
 

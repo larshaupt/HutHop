@@ -62,14 +62,12 @@ class Footprints:
         self.packed = packed if packed is not None else {}
         self._cells: dict[int, np.ndarray] = {}
         self._coarse: dict[int, frozenset[int]] = {}
-        self._samples: dict[int, np.ndarray] = {}
         self._parts: dict[int, tuple | None] = {}  # per edge: what shape() needs (see _decode)
         self._overlap: dict[int, int] = {}
 
     def _decode(self, edge_id: int) -> None:
         stored = self.packed.get(edge_id)
         cells, samples = unpack(*stored) if stored else footprint(self.geometry.get(edge_id) or "")
-        self._cells[edge_id], self._samples[edge_id] = cells, samples
         mask = (1 << CELL_Y_BITS) - 1
         coarse = ((cells >> CELL_Y_BITS) // COARSE_CELLS) << CELL_Y_BITS | (cells & mask) // COARSE_CELLS
         self._coarse[edge_id] = frozenset(np.unique(coarse).tolist())
@@ -81,6 +79,7 @@ class Footprints:
             self._parts[edge_id] = (len(x), length, shoelace, x[0], y[0], x[-1], y[-1])
         else:
             self._parts[edge_id] = None
+        self._cells[edge_id] = cells  # last: other threads take an edge in _cells as fully decoded
 
     def unpack_all(self) -> None:
         """Decode every known edge now (app start-up), so no search waits for it."""
@@ -92,11 +91,6 @@ class Footprints:
         if edge_id not in self._cells:
             self._decode(edge_id)
         return self._cells[edge_id]
-
-    def samples(self, edge_id: int) -> np.ndarray:
-        if edge_id not in self._samples:
-            self._decode(edge_id)
-        return self._samples[edge_id]
 
     def overlap(self, a: int, b: int) -> int:
         """Grid cells shared by two edges' route lines."""

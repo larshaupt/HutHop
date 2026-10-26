@@ -3,7 +3,7 @@
 Date: 2026-10-18. Answers brief open question 3.
 Sources: `domwoe/hut-reservation-mcp` (MIT; `src/upstream.ts`, `src/types.ts`, `data/catalog.json`,
 local clone in `reference/hut-reservation-mcp`), `KlaraSaary/find-free-huts` (AGPL, endpoints only, no code copied),
-`miloszpp/sac-hut-checker`, plus 14 live unauthenticated requests (script: `spikes/hut_reservation_probe.py`,
+`miloszpp/sac-hut-checker`, plus 14 live unauthenticated requests (script: `spikes/hut_reservation_probe.py`, removed, in git history,
 raw responses: `data/raw/hrs/`).
 
 ## TL;DR

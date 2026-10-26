@@ -1,7 +1,7 @@
 // Tour planner: form, search, result cards (sorted here, without a new search), "My tours", opening a tour (a
 // search result, or by id: my tours, shared links, the editor), map drawing.
-import { $, CATEGORY, EMPTY, categoryColor, costTitle, decodePolyline, esc, formatCost, formatMinutes, modeLabel,
-  revealPanel } from "./util.js";
+import { $, CATEGORY, EMPTY, categoryColor, costTitle, decodePolyline, esc, formatCost, formatMinutes, localIso,
+  modeLabel, revealPanel } from "./util.js";
 import { setState, state } from "./state.js";
 import { distanceValue, distanceUnit, formatHeight, settings, settingsParams, settingsQuery } from "./settings.js";
 import { fitCoords, map, visibleBox } from "./map.js";
@@ -32,9 +32,8 @@ let booking = false; // the booking checklist is open
 let shown = PAGE;
 let metricLabels = {};
 const stopSearch = { timer: null, seq: 0 };
+let searchSeq = 0;
 
-const selectedTour = () => current;
-export const currentTour = () => current;
 /** The editor's tour becomes the open tour (opened by id). */
 export function setCurrent(t) {
   current = t;
@@ -51,22 +50,17 @@ function sortResults() {
   order = results ? results.tours.slice().sort(cmp) : [];
 }
 
-function todayIso() {
-  const d = new Date();
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
-}
-
 /** The coming Saturday (today if it is a Saturday), as a local date. */
 function defaultTourDate() {
   const d = new Date();
   d.setDate(d.getDate() + ((6 - d.getDay() + 7) % 7));
-  return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+  return localIso(d);
 }
 
 // ---------- Form ----------
 export function syncTourForm() {
-  if (!state.tDate || state.tDate < todayIso()) state.tDate = defaultTourDate();
-  $("#tDate").min = todayIso();
+  if (!state.tDate || state.tDate < localIso()) state.tDate = defaultTourDate();
+  $("#tDate").min = localIso();
   $("#tDate").value = state.tDate;
   $("#tNightsLabel").textContent = state.tNights;
   $("#tPeopleLabel").textContent = state.tPeople;
@@ -87,7 +81,7 @@ export function syncTourForm() {
 
 export function bindTourForm() {
   $("#tDate").addEventListener("change", (e) => {
-    setState({ tDate: e.target.value && e.target.value >= todayIso() ? e.target.value : defaultTourDate() });
+    setState({ tDate: e.target.value && e.target.value >= localIso() ? e.target.value : defaultTourDate() });
     syncTourForm();
   });
   const stepper = (attr, key, max) => document.querySelectorAll(`[${attr}]`).forEach((b) => b.addEventListener("click", () => {
@@ -197,6 +191,7 @@ export async function runTourSearch() {
     people: state.tPeople, check_availability: settings().checkBeds,
     bbox: state.tBox ? state.tBox.split(",").map(Number) : null,
   };
+  const seq = ++searchSeq;
   const button = $("#tFind");
   button.disabled = true;
   button.textContent = settings().checkBeds ? "Searching and checking free beds…" : "Searching…";
@@ -205,27 +200,45 @@ export async function runTourSearch() {
     const res = await fetch("/api/tours/suggest", {
       method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
     });
+    if (seq !== searchSeq) return;  // a newer search was started meanwhile
     if (res.status === 422) {
       const detail = (await res.json()).detail;
+      if (seq !== searchSeq) return;
       $("#tourResults").innerHTML = `<p class="empty">${esc(detail?.[0]?.msg?.replace("Value error, ", "") || "Invalid search.")}</p>`;
       return;
     }
     if (!res.ok) throw new Error(`${res.status}`);
-    results = await res.json();
+    const data = await res.json();
     // Only the criteria that count towards "best" (weight > 0) appear in the score tooltip.
-    metricLabels = Object.fromEntries(((await loadInfo())?.metrics || []).filter((m) => m.weight > 0).map((m) => [m.key, m.label]));
+    const labels = Object.fromEntries(((await loadInfo())?.metrics || []).filter((m) => m.weight > 0).map((m) => [m.key, m.label]));
+    if (seq !== searchSeq) return;
+    results = data;
+    metricLabels = labels;
   } catch (err) {
     console.error(err);
-    $("#tourResults").innerHTML = `<p class="empty">Search failed. Is the server running?</p>`;
+    if (seq === searchSeq) $("#tourResults").innerHTML = `<p class="empty">Search failed. Is the server running?</p>`;
     return;
   } finally {
-    button.disabled = false;
-    button.textContent = "Find tours";
+    if (seq === searchSeq) {
+      button.disabled = false;
+      button.textContent = "Find tours";
+    }
   }
   sortResults();
-  shown = Math.max(PAGE, Math.ceil(state.tour / PAGE) * PAGE);
+  // The open tour by its id (new settings can move it or drop it); a shared link's tour by its position.
+  const n = current && state.tour ? order.findIndex((t) => t.id === current.id) + 1 : state.tour;
+  shown = Math.max(PAGE, Math.ceil(n / PAGE) * PAGE);
   renderResults();
-  if (state.tour && order[state.tour - 1]) selectTour(state.tour);
+  if (n && order[n - 1]) selectTour(n);
+  else if (state.tour) closeTour();
+}
+
+/** After a display-only settings change (units, member prices): show the loaded results and tour again. */
+export function rerenderTours() {
+  sortResults();  // "Cheapest" depends on member prices
+  if (state.tour) setState({ tour: order.indexOf(current) + 1 });
+  if (results) renderResults();
+  if (current) isEditing() ? refreshEditor(current) : renderTourDetail(current, detailOptions());
 }
 
 function renderResults() {
@@ -360,9 +373,11 @@ function selectTour(n) {
 /** A tour by id (my tours, a shared link, the editor's result), or null if it no longer exists. */
 export async function openTourById(id, { edit = false } = {}) {
   const res = await fetch(`/api/tours/${encodeURIComponent(id)}?people=${state.tPeople}&${settingsQuery()}`);
+  $("#tourGone")?.remove();
   if (!res.ok) {
-    $("#tourResults").insertAdjacentHTML("afterbegin", `<p class="warn">This tour is no longer available (a connection
-      was removed or excluded).</p>`);
+    // in the tab you are looking at, replacing an earlier warning
+    $(state.view === "mine" ? "#mineTab" : "#tourResults").insertAdjacentHTML("afterbegin", `<p class="warn" id="tourGone">
+      This tour is no longer available (a connection was removed or excluded).</p>`);
     return null;
   }
   current = await res.json();
@@ -453,7 +468,7 @@ export function drawTour(t, { fit = true } = {}) {
 }
 
 function focusDay(day) {
-  const t = selectedTour();
+  const t = current;
   if (t) fitCoords(decodePolyline(t.days[day - 1].geometry || ""), 14);
 }
 
@@ -461,7 +476,7 @@ function focusDay(day) {
 export function clearTour() {
   map?.getSource("tour")?.setData(EMPTY);
   map?.getSource("tour-points")?.setData(EMPTY);
-  if (!$("#tourDetail").hidden) drawTour(selectedTour(), { fit: false });
+  if (!$("#tourDetail").hidden) drawTour(current, { fit: false });
 }
 
 export function redrawTour() {

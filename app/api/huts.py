@@ -1,8 +1,7 @@
-"""Hut endpoints: a compact list for the map (with optional filters) and a detail view."""
+"""Hut endpoints: a compact list for the map and a detail view."""
 
 import json
 import sqlite3
-from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -36,39 +35,11 @@ def summary(row: sqlite3.Row, codes: tuple[str, str]) -> dict:
 
 
 @router.get("")
-def list_huts(
-    month: int | None = Query(None, ge=1, le=12, description="only huts open in this month"),
-    open_as: Literal["any", "catered", "self_service"] = Query("any", description="how the hut must be open"),
-    half_board: bool = False,
-    self_catering: bool = False,
-    min_beds: int | None = None,
-    alt_min: int | None = None,
-    alt_max: int | None = None,
-    operator: Literal["sac", "private"] | None = None,
-    q: str | None = Query(None, description="name contains"),
-    conn: sqlite3.Connection = Depends(get_db),
-) -> list[dict]:
+def list_huts(conn: sqlite3.Connection = Depends(get_db)) -> list[dict]:
+    """Every hut, by name; the app filters them itself."""
     codes = opening.load_codes(conn)
-    huts = [summary(r, codes.get(r["id"], (opening.NO_DATA, opening.NO_DATA)))
+    return [summary(r, codes.get(r["id"], (opening.NO_DATA, opening.NO_DATA)))
             for r in conn.execute("SELECT * FROM hut_effective ORDER BY name")]
-
-    def keep(h: dict) -> bool:
-        if month:
-            allowed = {"any": ("catered", "self_service"), "catered": ("catered",),
-                       "self_service": ("self_service",)}[open_as]
-            if h["months"][month - 1] not in allowed:
-                return False
-        return not (
-            (half_board and not h["half_board"])
-            or (self_catering and not h["self_catering"])
-            or (min_beds and (h["beds"] or 0) < min_beds)
-            or (alt_min and (h["altitude"] or 0) < alt_min)
-            or (alt_max and (h["altitude"] or 0) > alt_max)
-            or (operator and h["operator"] != operator)
-            or (q and q.casefold() not in h["name"].casefold())
-        )
-
-    return [h for h in huts if keep(h)]
 
 
 def website_info(conn: sqlite3.Connection, hut_id: int) -> dict | None:

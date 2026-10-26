@@ -7,15 +7,9 @@ from pydantic import BaseModel
 
 from app.admin import require_admin
 from app.api.deps import get_db
-from app.planner.tours import LIFT_MODES
+from app.planner.tours import is_lift
 
 router = APIRouter(prefix="/api", tags=["edges"])
-
-
-def is_lift_mode(mode: str | None) -> bool:
-    """Served only by mountain lifts (as tours.is_lift, from the stop's mode list)."""
-    modes = set((mode or "").split(","))
-    return bool(modes) and modes <= LIFT_MODES
 
 # One edge per (from, to) for the requested category limit and altitude: the most permissive stored limit ≤ the
 # request wins (it is only stored when it differs), and manual edges win over computed ones.
@@ -66,7 +60,7 @@ def hut_edges(hut_id: int, limit: int = Query(3, ge=1, le=3, description="max tr
     huts = [item(r) for r in rows if r["from_place"] == hut_id and r["kind"] == "hut"]
     stops: dict[int, dict] = {}
     for r in rows:
-        if r["kind"] != "stop" or (avoid_lifts and is_lift_mode(r["mode"])):
+        if r["kind"] != "stop" or (avoid_lifts and is_lift(r["mode"])):
             continue
         direction = "to_hut" if r["to_place"] == hut_id else "from_hut"
         e = item(r)
@@ -85,7 +79,7 @@ def hut_edges(hut_id: int, limit: int = Query(3, ge=1, le=3, description="max tr
 
 
 class EdgeReview(BaseModel):
-    excluded: bool | None = None
+    excluded: bool = False  # only applied when sent (exclude_unset); null is refused
     note: str | None = None
 
 

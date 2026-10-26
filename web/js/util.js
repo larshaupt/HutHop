@@ -10,12 +10,19 @@ export const CATEGORY = {
 };
 export const MODE_LABELS = { cableway: "Cable car", chairlift: "Chairlift", funicular: "Funicular",
   rack_railway: "Rack railway", train: "Train", boat: "Boat", tram: "Tram", metro: "Metro", elevator: "Lift", bus: "Bus" };
+export const BOOKING_LABEL = { hut_reservation_org: "hut-reservation.org", online_other: "online", email: "by email",
+  phone: "by phone", not_needed: "not needed" };
 export const EMPTY = { type: "FeatureCollection", features: [] };
 
 export const $ = (sel) => document.querySelector(sel);
 export const esc = (s) => String(s ?? "").replace(/[&<>"']/g,
   (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 export const isMobile = () => matchMedia("(max-width: 720px)").matches;
+
+/** A date as YYYY-MM-DD in local time (toISOString alone would give the UTC date). */
+export const localIso = (d = new Date()) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+/** Phone number as a tel: link (digits and + only). */
+export const telHref = (phone) => `tel:${phone.replace(/[^\d+]/g, "")}`;
 
 export function setSheet(mode) {
   $("#panel").dataset.sheet = mode;
@@ -42,30 +49,10 @@ export function formatDuration(min, max) {
   return `${fmt(max || min)} h`;
 }
 
-/** Encoded polyline (precision 5) → [[lon, lat], …]. */
-export function decodePolyline(text) {
-  const points = [];
-  let index = 0, lat = 0, lon = 0;
-  while (index < text.length) {
-    for (const axis of [0, 1]) {
-      let shift = 0, result = 0, b;
-      do {
-        b = text.charCodeAt(index++) - 63;
-        result |= (b & 0x1f) << shift;
-        shift += 5;
-      } while (b >= 0x20);
-      const delta = result & 1 ? ~(result >> 1) : result >> 1;
-      if (axis === 0) lat += delta; else lon += delta;
-    }
-    points.push([lon / 1e5, lat / 1e5]);
-  }
-  return points;
-}
-
-/** Encoded whole numbers (heights in metres, one per route point; see app/planner/polyline.py) → [z, …]. */
-export function decodeValues(text) {
+/** Polyline-encoded whole numbers (as in Google's polyline format) → [n, …]. */
+function decodeInts(text) {
   const values = [];
-  let index = 0, v = 0;
+  let index = 0;
   while (index < text.length) {
     let shift = 0, result = 0, b;
     do {
@@ -73,10 +60,22 @@ export function decodeValues(text) {
       result |= (b & 0x1f) << shift;
       shift += 5;
     } while (b >= 0x20);
-    v += result & 1 ? ~(result >> 1) : result >> 1;
-    values.push(v);
+    values.push(result & 1 ? ~(result >> 1) : result >> 1);
   }
   return values;
+}
+
+/** Encoded polyline (precision 5) → [[lon, lat], …]. Each value is the change from the previous point. */
+export function decodePolyline(text) {
+  const d = decodeInts(text), points = [];
+  for (let i = 0, lat = 0, lon = 0; i + 1 < d.length; i += 2) points.push([(lon += d[i + 1]) / 1e5, (lat += d[i]) / 1e5]);
+  return points;
+}
+
+/** Encoded whole numbers (heights in metres, one per route point; see app/planner/polyline.py) → [z, …]. */
+export function decodeValues(text) {
+  let v = 0;
+  return decodeInts(text).map((d) => (v += d));
 }
 
 /** Distance in metres between two [lon, lat] points (haversine). */

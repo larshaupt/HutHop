@@ -1,6 +1,6 @@
 # Spike: SAC route portal API
 
-Date: 2026-10-18. Script: `spikes/sac_fetch_huts.py`. Raw data: `data/raw/sac/` (gitignored).
+Date: 2026-10-18. Script: `spikes/sac_fetch_huts.py`, removed, in git history. Raw data: `data/raw/sac/` (gitignored).
 
 ## Endpoints
 

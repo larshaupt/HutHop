@@ -304,7 +304,7 @@ Answer the open questions before building:
 
 - ~~GPX export~~ done: `GET /api/tours/{id}/gpx`, one track per day + waypoints. Tour ids are `date_places_limits` (e.g. `2027-07-17_123-45-67-89_2-2-3`), stable across edge rebuilds, so they also serve sharing, saved tours and the editor.
 - Saved tours, non-SAC huts, PWA/offline, better ranking.
-- ~~Elevation in GPX~~ done: `edge.elevation` holds the swissTLM3D height of each route point (from `build_edges`, or `app.ingest.profiles` for older edges); used for `<ele>` in GPX and a height profile per day in the tour view.
+- ~~Elevation in GPX~~ done: `edge.elevation` holds the swissTLM3D height of each route point (from `build_edges`); used for `<ele>` in GPX and a height profile per day in the tour view.
 - ~~Tour links keep the search hours~~ done: tour ids end in the hours per day (`…_2-2-3_3-6.5`), so a shared or reopened tour is scored as in its search; older ids default to 3–6 h.
 - ~~Free-beds calendar~~ done: `GET /api/huts/{id}/availability?people=N`, a month calendar in the hut details (same 10-minute cache as tour checks).
 - **Export to Komoot and the swisstopo app.** Neither seems to have a public import API (Komoot's API is for partners only; no documented import link for the swisstopo app; check both before building), so both go through GPX files. Komoot: one GPX per day (it imports one tour per file), then its upload page (komoot.com/upload). swisstopo app: on a phone, "share" the GPX to the app, which imports it as a track. map.geo.admin.ch can show a GPX by URL only if the file is publicly reachable, which HutHop isn't (tailnet only). Needs elevation in the GPX, so both apps show correct ascent.

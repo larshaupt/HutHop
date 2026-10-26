@@ -143,9 +143,9 @@ def below(leg: Leg, max_altitude: int | None) -> bool:
     return max_altitude is None or leg.max_altitude_m is None or leg.max_altitude_m <= max_altitude
 
 
-def is_lift(stop: Stop) -> bool:
-    modes = set((stop.mode or "").split(","))
-    return bool(modes) and modes <= LIFT_MODES
+def is_lift(mode: str | None) -> bool:
+    """A stop served only by mountain lifts, from its mode list (e.g. "cableway,funicular")."""
+    return set((mode or "").split(",")) <= LIFT_MODES
 
 
 def access_options(graph: Graph, hut_id: int, day: date, max_minutes: float, avoid_lifts: bool = False,
@@ -158,7 +158,7 @@ def access_options(graph: Graph, hut_id: int, day: date, max_minutes: float, avo
     legs = []
     for leg in graph.stop_in.get(hut_id, ()):
         stop = graph.stops[leg.frm]
-        if leg.time_min > max_minutes or (avoid_lifts and is_lift(stop)) or not below(leg, max_altitude) or \
+        if leg.time_min > max_minutes or (avoid_lifts and is_lift(stop.mode)) or not below(leg, max_altitude) or \
                 (near is not None and math.hypot(stop.e - near[0], stop.n - near[1]) > START_RADIUS_M) or \
                 not graph.timetable.day(stop.id, day).served:
             continue
@@ -177,7 +177,7 @@ def exit_options(graph: Graph, hut_id: int, day: date, max_minutes: float, avoid
     legs = []
     for leg in graph.stop_out.get(hut_id, ()):
         stop = graph.stops[leg.to]
-        if leg.time_min > max_minutes or (avoid_lifts and is_lift(stop)) or not below(leg, max_altitude) or \
+        if leg.time_min > max_minutes or (avoid_lifts and is_lift(stop.mode)) or not below(leg, max_altitude) or \
                 (loop_start is not None and
                  math.hypot(stop.e - loop_start.e, stop.n - loop_start.n) > LOOP_RADIUS_M) or \
                 not graph.timetable.day(stop.id, day).served:

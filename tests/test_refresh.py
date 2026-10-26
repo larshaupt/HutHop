@@ -21,6 +21,8 @@ def fake(tmp_path, monkeypatch, lines):
     calls = []
     monkeypatch.setattr(refresh, "connect", lambda: connect(tmp_path / "test.db"))
     monkeypatch.setattr(refresh, "LOG", tmp_path / "log.json")
+    monkeypatch.setattr(refresh, "BUILT", tmp_path / "built_from.json")
+    monkeypatch.setattr(refresh, "TLM_EDITION", tmp_path / "edition.json")
     monkeypatch.setattr(refresh.sync_sac, "fetch_and_save", lambda: HUTS)
     monkeypatch.setattr(refresh.load_stops, "download", lambda: calls.append("stops-download"))
     monkeypatch.setattr(refresh.load_stops, "read_stops", lambda: [
@@ -35,11 +37,10 @@ def fake(tmp_path, monkeypatch, lines):
 
 def test_first_run_rebuilds_then_unchanged(fake):
     first = refresh.run()
-    assert first["huts"] == 3 and first["stops"] == 1 and first["huts_moved"] and first["edges"] == 42
-    assert first["stop_lines"] == 1 and first["lines_changed"]
+    assert first["huts"] == 3 and first["stops"] == 1 and first["edges"] == 42
+    assert first["stop_lines"] == 1 and first["changed"] == ["huts", "stops", "lines"]
     second = refresh.run()
-    assert not second["huts_moved"] and not second["stops_moved"] and not second["lines_changed"]
-    assert second["edges"] == "unchanged"
+    assert second["changed"] == [] and second["edges"] == "unchanged"
     assert fake.count("build") == 1
     assert len(__import__("json").loads(refresh.LOG.read_text())) == 2
 
@@ -55,3 +56,18 @@ def test_rebuild_when_lines_change(fake, lines):
     assert refresh.run()["edges"] == 42
     lines[:] = [r | {"departures": 5.0} for r in lines]  # only departure counts changed
     assert refresh.run()["edges"] == "unchanged"
+
+
+def test_failed_run_rebuilds_next_time(fake, monkeypatch):
+    refresh.run()
+    moved = [h | {"geom": {"type": "Point", "coordinates": [2621000.0, 1151000.0]}} for h in HUTS]
+    monkeypatch.setattr(refresh.sync_sac, "fetch_and_save", lambda: moved)
+
+    def fail():
+        raise RuntimeError("timetable server down")
+    monkeypatch.setattr(refresh.load_timetable, "download", fail)
+    with pytest.raises(RuntimeError):
+        refresh.run()  # the huts moved and were saved, then the run failed before the build
+    monkeypatch.setattr(refresh.load_timetable, "download", lambda: False)
+    assert refresh.run()["changed"] == ["huts"]
+    assert fake.count("build") == 2

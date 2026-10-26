@@ -5,18 +5,18 @@
 // a hut on the map offers the edits it fits. Undo and redo; the result is kept in "My tours" as a new entry (the
 // tour it started from stays as it was). A tour you design needn't follow the search settings (hours, trail
 // level), so nothing is refused or flagged for them.
-import { $, CATEGORY, EMPTY, esc, formatMinutes, revealPanel } from "./util.js";
+import { $, CATEGORY, EMPTY, esc, formatMinutes, localIso, revealPanel } from "./util.js";
 import { setState, state } from "./state.js";
 import { fitCoords, map } from "./map.js";
 import { closeDetail } from "./huts.js";
-import { NIGHT_LABEL, connectionLine, formatDay, outsideSettings, stopLabel } from "./tour-detail.js";
+import { AVAIL_LABEL, NIGHT_LABEL, connectionLine, formatDay, outsideSettings, stopLabel } from "./tour-detail.js";
 import { distanceUnit, distanceValue, formatDistance, formatHeight, heightUnit, heightValue, settingsParams,
   settingsQuery } from "./settings.js";
 import { checkTourBeds, drawTour, openTourById, setCurrent, showTour } from "./tours.js";
 import { keepTour, updateEntry } from "./your-tours.js";
 
 const SHOWN = 8; // candidates listed before "Show all"
-let ed = null; // { tour, options, history: [tour ids], pos, entryKey, slot, showAll, pick }
+let ed = null; // { tour, options, history: [tour ids], pos, entryKey, slot, showAll, pick, token }
 
 export const isEditing = () => !!ed;
 
@@ -60,14 +60,15 @@ function done() {
 
 /** Load a tour and its edits; `known` keeps the nights' availability of an already loaded version. */
 async function load(tourId, known = null) {
+  const token = ed.token = {};  // only the latest load (and editor) may show its answer
   const res = await fetch(`/api/tours/${encodeURIComponent(tourId)}/options?${settingsQuery()}`);
-  if (!ed) return false;
+  if (ed?.token !== token) return false;
   if (!res.ok) {
     $("#edStatus")?.replaceChildren(document.createTextNode("Could not load the edits for this tour."));
     return false;
   }
   const data = await res.json();
-  if (!ed) return false;
+  if (ed?.token !== token) return false;
   if (known && known.id === data.tour.id) {
     data.tour.days.forEach((d, i) => { if (d.night && known.days[i]?.night) d.night = known.days[i].night; });
     data.tour.availability = known.availability;
@@ -172,7 +173,7 @@ function render({ loading = false } = {}) {
     rows.push(`<li class="tl-night"><div class="tl-dot hut"><span>${d.day}</span></div>
         <div><b>${esc(d.to.name)}</b>
           <div class="tl-meta">Night of ${formatDay(d.date)} · <span class="night ${d.night.status}">${NIGHT_LABEL[d.night.status]}</span>${
-            a && a.state !== "not_checked" ? ` · ${esc(a.state === "available" ? `${a.free_beds} beds free` : a.state.replace("_", " "))}` : ""}</div>
+            a && a.state !== "not_checked" ? ` · ${AVAIL_LABEL[a.state](a)}` : ""}</div>
           <div class="slot-row">${slot(`swap:${i}`, "Other hut", options("swap", i))}
             ${remove ? `<button class="link inline danger" data-apply="${esc(remove.tour_id)}">Remove this night</button>` : ""}</div>
         </div></li>`);
@@ -181,7 +182,6 @@ function render({ loading = false } = {}) {
   rows.push(`<li class="tl-stop"><div class="tl-dot"></div><div><b>End</b> ${stopLabel(end)}
       ${connectionLine(t.exit, "exit")}${slot("end", "Other end stop", options("end"))}</div></li>`);
 
-  const today = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
   $("#tourDetail").innerHTML = `
     <div class="tour-top editor-top">
       <div class="editor-bar">
@@ -193,7 +193,7 @@ function render({ loading = false } = {}) {
       <h2>${esc(start.name)} → ${esc(end.name)}</h2>
       <div class="subtitle">${n} night${n > 1 ? "s" : ""} · ${formatDay(t.days[0].date)} – ${formatDay(t.days[n].date)}</div>
       <div class="field editor-date"><label class="field-label" for="edDate">Start date</label>
-        <input class="input" type="date" id="edDate" value="${t.days[0].date}" min="${today}"></div>
+        <input class="input" type="date" id="edDate" value="${t.days[0].date}" min="${localIso()}"></div>
       <div class="facts">
         <div class="fact"><b>${formatMinutes(t.time_min).replace(" h", "")}</b><span>hours walking</span></div>
         <div class="fact"><b>${distanceValue(t.distance_m)}</b><span>${distanceUnit()}</span></div>

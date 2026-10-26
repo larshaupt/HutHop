@@ -336,10 +336,12 @@ def load(conn: sqlite3.Connection) -> dict:
             out = json.loads(out_file.read_text())
             r = out["result"] or {}
             # Quotes found word for word in the fetched pages are "verified"; PDFs aren't searchable here.
-            corpus = _words(" ".join(p["text"] for p in raw["pages"]))
+            corpus = f" {_words(' '.join(p['text'] for p in raw['pages']))} "
 
             def quoted(quote: str | None) -> bool | None:
-                return None if raw["pdfs"] and _words(quote) not in corpus else _words(quote) in corpus
+                q = _words(quote)  # whole words: "Mitglieder 35" isn't "Mitglieder 350", an empty quote nothing
+                found = bool(q) and f" {q} " in corpus
+                return None if raw["pdfs"] and not found else found
 
             status = "unreachable" if not raw["pages"] else "ok" if r.get("about_this_hut") else "no_info"
             if status != "ok":

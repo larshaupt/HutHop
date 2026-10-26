@@ -132,6 +132,15 @@ def test_load_extractions(scraped):
     assert scraped.execute("SELECT count(*) FROM hut_price").fetchone()[0] == 1
 
 
+def test_quote_verified_only_word_for_word(scraped):
+    out_file = scrape_huts.RAW_DIR / "2.extract.json"
+    out = json.loads(out_file.read_text())
+    out["result"]["prices"][0]["quote"] = "Mitglieder 3"  # only part of "Mitglieder 35"
+    out_file.write_text(json.dumps(out))
+    scrape_huts.load(scraped)
+    assert scraped.execute("SELECT verified FROM hut_price").fetchone()[0] == 0
+
+
 def test_hut_detail_shows_phone_seasons_and_prices(scraped):
     scrape_huts.load(scraped)
     app.dependency_overrides[get_db] = lambda: scraped

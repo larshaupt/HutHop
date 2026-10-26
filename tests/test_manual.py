@@ -37,6 +37,13 @@ def test_override_survives_sync_and_resets(setup):
     assert c.delete(f"/api/huts/{hut_id}/overrides/beds").status_code == 404
 
 
+def test_override_clears_field(setup):
+    c, _, hut_id = setup
+    assert c.get(f"/api/huts/{hut_id}").json()["booking_url"]  # hrs_id 7 from the SAC
+    assert c.put(f"/api/huts/{hut_id}/overrides/hrs_id", json={"value": None}).status_code == 200
+    assert c.get(f"/api/huts/{hut_id}").json()["booking_url"] is None
+
+
 @pytest.mark.parametrize(("field", "value"), [("beds", -1), ("beds", "many"), ("website", "ftp://x"),
                                                ("catering.13", 0), ("catering.7", 5), ("colour", "red")])
 def test_override_validation(setup, field, value):

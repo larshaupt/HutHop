@@ -1,6 +1,6 @@
 # Spike: routing between huts (GraphHopper/OSM vs. swissTLM3D)
 
-Date: 2026-10-18. Script: `spikes/tlm_vs_sac.py` (results in `data/raw/tlm_vs_sac.json`). The GraphHopper setup and script were removed after the decision.
+Date: 2026-10-18. Script: `spikes/tlm_vs_sac.py`, removed, in git history (results in `data/raw/tlm_vs_sac.json`). The GraphHopper setup and script were removed after the decision.
 
 17 hut-to-hut pairs (T2–T5) with an official SAC route time ("From <hut>" routes) were routed by both engines and compared with the SAC values.
 

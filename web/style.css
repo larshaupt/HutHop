@@ -437,7 +437,6 @@ label.field-label { display: flex; }
 code { font-size: 12px; background: var(--bg-soft); padding: 0 4px; border-radius: 4px; }
 
 /* ---------- Connections ---------- */
-.trail-seg button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
 .trail-swatch { width: 14px; height: 4px; border-radius: 2px; display: inline-block; }
 .trail-swatch.c1 { background: #e0a800; }
 .trail-swatch.c2 { background: linear-gradient(to right, #fff 0 25%, #d52b1e 25% 75%, #fff 75%); box-shadow: 0 0 0 1px #d52b1e inset; }
@@ -548,7 +547,7 @@ code { font-size: 12px; background: var(--bg-soft); padding: 0 4px; border-radiu
   border-radius: 8px; padding: 6px 8px; font: inherit; color: var(--text); cursor: pointer; }
 .cand:hover { background: var(--bg-hover); border-color: var(--line); }
 .cand-meta { color: var(--text-soft); font-size: 12px; }
-.chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.timeline .chips { gap: 4px; margin-top: 4px; }
 .chip.small { font-size: 12px; padding: 2px 8px; }
 .pick { margin-top: 10px; border: 1px solid var(--accent); border-radius: 10px; padding: 8px 10px; background: var(--accent-soft); }
 

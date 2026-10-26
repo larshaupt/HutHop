@@ -197,24 +197,27 @@ CREATE TABLE IF NOT EXISTS availability_fetch (
   error       TEXT
 );
 
--- Source data merged with manual overrides: "override if present, else source".
+-- Source data merged with manual overrides: "override if present, else source". An override can be null (a field
+-- cleared by hand): json_type() tells it ('null') from no override (NULL), which COALESCE could not.
 DROP VIEW IF EXISTS hut_effective;
 CREATE VIEW hut_effective AS
 SELECT
   p.id, p.name AS source_name,
-  COALESCE((SELECT json_extract(o.value, '$') FROM hut_override o WHERE o.hut_id = p.id AND o.field = 'name'), p.name) AS name,
+  CASE WHEN json_type(ov.o, '$.name') IS NULL THEN p.name ELSE json_extract(ov.o, '$.name') END AS name,
   p.lat, p.lon, p.e_lv95, p.n_lv95, p.snap_m,
-  COALESCE((SELECT json_extract(o.value, '$') FROM hut_override o WHERE o.hut_id = p.id AND o.field = 'altitude'), p.altitude_m) AS altitude_m,
+  CASE WHEN json_type(ov.o, '$.altitude') IS NULL THEN p.altitude_m ELSE json_extract(ov.o, '$.altitude') END AS altitude_m,
   h.sac_id, h.operator, h.owner, h.description, h.services, h.photos, h.routes, h.source, h.synced_at,
-  COALESCE((SELECT json_extract(o.value, '$') FROM hut_override o WHERE o.hut_id = p.id AND o.field = 'hrs_id'), h.hrs_id) AS hrs_id,
-  COALESCE((SELECT json_extract(o.value, '$') FROM hut_override o WHERE o.hut_id = p.id AND o.field = 'beds'), h.beds) AS beds,
-  COALESCE((SELECT json_extract(o.value, '$') FROM hut_override o WHERE o.hut_id = p.id AND o.field = 'shelter_beds'), h.shelter_beds) AS shelter_beds,
-  COALESCE((SELECT json_extract(o.value, '$') FROM hut_override o WHERE o.hut_id = p.id AND o.field = 'website'), h.website) AS website,
-  COALESCE((SELECT json_extract(o.value, '$') FROM hut_override o WHERE o.hut_id = p.id AND o.field = 'phone'), h.phone,
-           (SELECT w.phone FROM hut_web w WHERE w.hut_id = p.id)) AS phone,
-  COALESCE((SELECT json_extract(o.value, '$') FROM hut_override o WHERE o.hut_id = p.id AND o.field = 'email'), h.email,
-           (SELECT w.email FROM hut_web w WHERE w.hut_id = p.id)) AS email
-FROM place p JOIN hut h ON h.place_id = p.id;
+  CASE WHEN json_type(ov.o, '$.hrs_id') IS NULL THEN h.hrs_id ELSE json_extract(ov.o, '$.hrs_id') END AS hrs_id,
+  CASE WHEN json_type(ov.o, '$.beds') IS NULL THEN h.beds ELSE json_extract(ov.o, '$.beds') END AS beds,
+  CASE WHEN json_type(ov.o, '$.shelter_beds') IS NULL THEN h.shelter_beds ELSE json_extract(ov.o, '$.shelter_beds') END AS shelter_beds,
+  CASE WHEN json_type(ov.o, '$.website') IS NULL THEN h.website ELSE json_extract(ov.o, '$.website') END AS website,
+  CASE WHEN json_type(ov.o, '$.phone') IS NULL THEN COALESCE(h.phone, (SELECT w.phone FROM hut_web w WHERE w.hut_id = p.id))
+       ELSE json_extract(ov.o, '$.phone') END AS phone,
+  CASE WHEN json_type(ov.o, '$.email') IS NULL THEN COALESCE(h.email, (SELECT w.email FROM hut_web w WHERE w.hut_id = p.id))
+       ELSE json_extract(ov.o, '$.email') END AS email
+FROM place p JOIN hut h ON h.place_id = p.id
+LEFT JOIN (SELECT hut_id, json_group_object(field, json(value)) AS o FROM hut_override GROUP BY hut_id) ov
+  ON ov.hut_id = p.id;
 
 DROP VIEW IF EXISTS hut_month_effective;
 CREATE VIEW hut_month_effective AS

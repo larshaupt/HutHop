@@ -1,5 +1,5 @@
 // Hut browser: filters, list, hut layers on the map and the hut detail view.
-import { $, COLORS, MONTHS, STATUS_LABEL, esc, formatDuration, revealPanel } from "./util.js";
+import { $, BOOKING_LABEL, COLORS, MONTHS, STATUS_LABEL, esc, formatDuration, revealPanel, telHref } from "./util.js";
 import { ALT_MAX, DEFAULTS, setState, state } from "./state.js";
 import { map, mapPadding } from "./map.js";
 import { clearConnections, connectionsSection, showConnections } from "./connections.js";
@@ -250,6 +250,7 @@ export function bindHutMap() {
     popup.remove();
   });
   map.on("click", "huts", (e) => {
+    if ($("#addForm") && !$("#detail").hidden) return;  // adding a hut: a click on the map picks its position
     const f = e.features[0];
     if (hutClickHook?.(f.id, f.properties.name)) return;  // e.g. the tour editor offers the edits the hut fits
     selectHut(f.id, { fly: false });
@@ -302,8 +303,6 @@ export function closeDetail() {
   if (!(state.view === "tours" && state.tour && returnToTour())) $("#browse").hidden = false;
 }
 
-const BOOKING_LABEL = { hut_reservation_org: "hut-reservation.org", online_other: "online", email: "by email",
-  phone: "by phone", not_needed: "not needed" };
 const PRICE_LABEL = { overnight: "Night", half_board: "Half board", breakfast: "Breakfast", dinner: "Dinner",
   tax: "Tourist tax", winter_room: "Winter room", self_catering_fee: "Kitchen use" };
 const UNVERIFIED = `<span class="unverified" title="Not found word for word on the website: check there">?</span>`;
@@ -326,9 +325,8 @@ function formatPrice(p) {
 function websiteSection(w) {
   if (!w || w.status !== "ok") return "";
   const seasons = w.seasons.map((s) => {
-    const kind = { catered: "Catered", self_service: "Self-service", closed: "Closed" }[s.kind];
     const range = `${s.approximate ? "about " : ""}${formatMonthDay(s.start_md)} – ${formatMonthDay(s.end_md)}${s.year ? ` ${s.year}` : ""}`;
-    return `<li><b>${kind}</b> ${range}${s.verified === 0 ? UNVERIFIED : ""}${s.note ? `<span class="route-meta"> · ${esc(s.note)}</span>` : ""}</li>`;
+    return `<li><b>${STATUS_LABEL[s.kind]}</b> ${range}${s.verified === 0 ? UNVERIFIED : ""}${s.note ? `<span class="route-meta"> · ${esc(s.note)}</span>` : ""}</li>`;
   });
   const prices = w.prices.map((p) => {
     const what = p.item === "half_board" && !p.includes_overnight ? "Half board (plus night)" : PRICE_LABEL[p.item];
@@ -341,7 +339,7 @@ function websiteSection(w) {
   try { host = new URL(w.url).hostname.replace(/^www\./, ""); } catch { /* keep the URL */ }
   if (!seasons.length && !prices.length && !booking && !w.notes) return "";
   return `<div class="section website-info"><h3>From the hut website</h3>
-    ${booking ? `<p>Booking: ${booking}${w.booking_url ? ` · <a href="${esc(w.booking_url)}" target="_blank" rel="noopener">booking page</a>` : ""}</p>` : ""}
+    ${booking ? `<p>Booking: ${booking}${/^https?:\/\//i.test(w.booking_url) ? ` · <a href="${esc(w.booking_url)}" target="_blank" rel="noopener">booking page</a>` : ""}</p>` : ""}
     ${w.notes ? `<p>${esc(w.notes)}</p>` : ""}
     ${seasons.length ? `<ul class="web-seasons">${seasons.join("")}</ul>` : ""}
     ${prices.length ? `<table class="prices"><caption>Prices per person and night${priceYear ? ` (${priceYear})` : ""}</caption>${prices.join("")}</table>` : ""}
@@ -387,7 +385,7 @@ function renderDetail(d) {
         ${d.website ? `<a class="btn" href="${esc(d.website)}" target="_blank" rel="noopener">Website</a>` : ""}
         ${d.sac_url ? `<a class="btn" href="${esc(d.sac_url)}" target="_blank" rel="noopener">SAC page</a>` : ""}
         ${d.email ? `<a class="btn" href="mailto:${esc(d.email)}">Email</a>` : ""}
-        ${d.phone ? `<a class="btn" href="tel:${esc(d.phone.replace(/[^\d+]/g, ""))}">${esc(d.phone)}</a>` : ""}
+        ${d.phone ? `<a class="btn" href="${esc(telHref(d.phone))}">${esc(d.phone)}</a>` : ""}
         <a class="btn" href="${geoAdmin}" target="_blank" rel="noopener">swisstopo map</a>
         <button class="btn" data-plan-tour="${d.id}">Plan a tour from here</button>
       </div>

@@ -44,7 +44,7 @@ class Rules:
         return leg.category_limit <= self.cap and below(leg, self.max_altitude)
 
     def stop_ok(self, graph: Graph, stop_id: int) -> bool:
-        return not (self.avoid_lifts and is_lift(graph.stops[stop_id]))
+        return not (self.avoid_lifts and is_lift(graph.stops[stop_id].mode))
 
 
 def leg_limit(graph: Graph, frm: int, to: int, rules: Rules = Rules()) -> int | None:
