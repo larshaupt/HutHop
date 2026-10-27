@@ -4,7 +4,7 @@ export const ALT_MAX = 4600;
 
 export const DEFAULTS = {
   // hut browser
-  month: 0, openAs: "any", hb: false, kitchen: false, bookable: false,
+  month: 0, openAs: "any", hb: false, kitchen: false, bookable: false, fav: false,
   altMin: 0, altMax: ALT_MAX, minBeds: 0, operator: "all", q: "", sort: "name",
   hut: 0, base: "light", trails: false,
   // tour planner
@@ -14,7 +14,7 @@ export const DEFAULTS = {
 };
 
 const HASH_KEYS = {
-  month: "m", openAs: "open", hb: "hb", kitchen: "kitchen", bookable: "book", altMin: "amin", altMax: "amax",
+  month: "m", openAs: "open", hb: "hb", kitchen: "kitchen", bookable: "book", fav: "fav", altMin: "amin", altMax: "amax",
   minBeds: "beds", operator: "type", q: "q", sort: "sort", hut: "hut", base: "map", trails: "trails",
   view: "v", tDate: "td", tNights: "tn", tMin: "tmin", tMax: "tmax", tCat: "tc", tStart: "ts", tStartName: "tsn",
   tLoop: "loop", tUnknown: "unk", tBox: "tb", tour: "tour", tPeople: "ppl", tSort: "tsort", tid: "tid", tEdit: "edit",

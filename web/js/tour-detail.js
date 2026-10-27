@@ -3,6 +3,7 @@ import { $, CATEGORY, costTitle, decodePolyline, decodeValues, distanceM, esc, f
   from "./util.js";
 import { state } from "./state.js";
 import { bookingPanel, isBooked } from "./booking.js";
+import { hutForecast, weatherLine } from "./weather.js";
 import { distanceUnit, distanceValue, formatDistance, formatHeight, heightUnit, heightValue, settings } from "./settings.js";
 
 const NIGHT_LABEL = { catered: "Catered", self_service: "Self-service", unknown: "No opening data", closed: "Closed" };
@@ -91,6 +92,7 @@ export function renderTourDetail(t, { kept = false, booking = false, people = 2 
             ↑ ${formatHeight(d.ascent_m)} · ↓ ${formatHeight(d.descent_m)} · <span style="color:${cat.color}">${cat.name}</span>${sac}</div>
           ${i === 0 ? connectionLine(t.access, "access") : ""}
           ${i === t.days.length - 1 ? connectionLine(t.exit, "exit") : ""}
+          <div data-day-notes="${d.day}"></div>
           ${profileChart(profiles[i], scale, cat.color)}
         </div></li>${night}`;
   }).join("");
@@ -118,9 +120,43 @@ export function renderTourDetail(t, { kept = false, booking = false, people = 2 
       ${booking ? bookingPanel(t, people) : ""}
       <ol class="timeline">${rows}</ol>
       <p class="source">Walking times use the Swiss hiking-time formula without breaks. Opening data from the SAC;
-        free beds from hut-reservation.org (cached up to 10 minutes; not a reservation). Check conditions, weather
-        and official sources before you go.</p>
+        free beds from hut-reservation.org (cached up to 10 minutes; not a reservation). Weather: MeteoSwiss forecast
+        (via Open-Meteo) at the day's hut, for the next 5 days. Trail closures (Swiss Hiking Federation) and military
+        shooting notices from map.geo.admin.ch. Check conditions, weather and official sources before you go.</p>
     </div>`;
+  dayNotes(t);
+}
+
+const warnings = new Map(); // tour id → promise of { days, error }, for the page's life (the server caches an hour)
+
+/** Weather and official warnings per day, filled in when they arrive (the tour shows without them). */
+async function dayNotes(t) {
+  const el = (day) => document.querySelector(`#tourDetail [data-day-notes="${day}"]`);
+  if (!warnings.has(t.id)) {
+    warnings.set(t.id, fetch(`/api/tours/${encodeURIComponent(t.id)}/warnings`)
+      .then((r) => (r.ok ? r.json() : { days: [], error: true })).catch(() => ({ days: [], error: true })));
+  }
+  const weatherOf = (d) => {
+    const hut = d.to.kind === "hut" ? d.to : d.from;  // the last day: where it starts
+    return hutForecast(hut.id).then((f) => f.days.find((w) => w.date === d.date));
+  };
+  const [found, ...forecast] = await Promise.all([warnings.get(t.id), ...t.days.map(weatherOf)]);
+  t.days.forEach((d, i) => {
+    const target = el(d.day);
+    if (!target) return;  // another tour or view meanwhile
+    const w = found.days.find((x) => x.day === d.day) || { closures: [], shooting: [] };
+    const link = (url, text) => (/^https?:\/\//i.test(url || "") ? ` · <a href="${esc(url)}" target="_blank" rel="noopener">${text}</a>` : "");
+    target.innerHTML = [
+      forecast[i] && `<div class="tl-meta" title="Forecast at ${esc(d.to.kind === "hut" ? d.to.name : d.from.name)}">${weatherLine(forecast[i])}</div>`,
+      ...w.closures.map((c) => `<div class="tl-meta warn-text">⚠ Trail closure: ${esc(c.title)}` +
+        `${c.reason ? ` – ${esc(c.reason)}` : ""}${c.duration ? ` (${esc(c.duration)})` : ""}${c.details ? `. ${esc(c.details)}` : ""}` +
+        `${link(c.url, "details")}</div>`),
+      ...w.shooting.map((z) => `<div class="tl-meta${z.times.length ? " warn-text" : ""}">` +
+        `${z.times.length ? `⚠ Military shooting on this day, ${esc(z.times.join(", "))}` : "Crosses a military danger zone, no shooting published for this day"}` +
+        `: ${esc(z.name)}${z.places.length ? ` (${esc(z.places.join(", "))})` : ""}${link(z.url, "shooting notice")}</div>`),
+    ].filter(Boolean).join("");
+  });
+  if (found.error) el(1)?.insertAdjacentHTML("beforeend", `<div class="tl-meta">Could not check trail closures and shooting notices right now.</div>`);
 }
 
 function nightCost(c) {

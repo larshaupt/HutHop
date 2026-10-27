@@ -3,6 +3,7 @@ stop search used to pick a start point."""
 
 import json
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -11,8 +12,8 @@ from pydantic import BaseModel, Field, model_validator
 
 from app import config
 from app.api.deps import get_db
-from app.clients import hut_reservation
-from app.planner import costs, editing, gpx, planning, ranking, transit
+from app.clients import geoadmin, hut_reservation
+from app.planner import costs, editing, gpx, planning, polyline, ranking, transit
 from app.planner.graph import Graph, cached_graph
 from app.planner.tours import Catering, Night, Tour, TourRequest, build_tour, is_lift, parse_tour_id
 
@@ -146,6 +147,28 @@ def get_tour_gpx(tour_id: str, conn: sqlite3.Connection = Depends(get_db)) -> Re
     data = tour_json(conn, graph, [tour])[0]
     return Response(gpx.to_gpx(data), media_type="application/gpx+xml",
                     headers={"Content-Disposition": f'attachment; filename="{gpx.filename(data)}"'})
+
+
+@router.get("/tours/{tour_id}/warnings")
+def tour_warnings(tour_id: str, conn: sqlite3.Connection = Depends(get_db)) -> dict:
+    """Official trail closures and military danger zones along each day's route, with shooting times on that day
+    (clients/geoadmin.py). Separate from the tour, so a slow or failing geoportal never holds the tour up."""
+    _, tour = rebuild(conn, tour_id, people=1, check_availability=False)
+    edge_ids = [leg.edge_id for leg in tour.legs]
+    lines = {r["id"]: r["geometry"] for r in conn.execute(
+        f"SELECT id, geometry FROM edge WHERE id IN ({','.join('?' * len(edge_ids))})", edge_ids)}
+
+    def day(i: int) -> dict:
+        line = lines.get(edge_ids[i])
+        found = geoadmin.identify(polyline.decode(line), line) if line else []
+        return {"day": i + 1, "closures": geoadmin.closures(found),
+                "shooting": geoadmin.shooting(found, tour.start_date + timedelta(days=i))}
+
+    try:
+        with ThreadPoolExecutor(4) as pool:
+            return {"days": list(pool.map(day, range(len(tour.legs)))), "error": False}
+    except Exception:  # network and HTTP errors, unexpected JSON
+        return {"days": [], "error": True}
 
 
 def rebuild(conn: sqlite3.Connection, tour_id: str, people: int, check_availability: bool,

@@ -4,8 +4,8 @@ A private web app to browse Swiss mountain huts (SAC plus huts added by hand) an
 
 **Status (Oct 2026):** deployed at huthop.larshauptmann.com (Oracle VM, Cloudflare Access login). Hut map with filters, free-beds calendar and hand
 corrections; walking connections on swisstopo's trail network; multi-day tour suggestions ranked by a fixed "best"
-score (new trail, shape, free beds, opening data, …), sortable in the browser; height profiles; GPX export; About
-dialog. Prices are postponed. See [`hut-tour-planner.md`](hut-tour-planner.md) for the project brief (requirements,
+score (new trail, shape, free beds, opening data, …), sortable in the browser; height profiles; GPX export; weather forecast, trail closures and
+military shooting notices per day; favourite huts; About dialog. Prices are postponed. See [`hut-tour-planner.md`](hut-tour-planner.md) for the project brief (requirements,
 design, APIs, plan) and [`spikes/`](spikes/) for the Phase 0 findings.
 
 ![Map of all huts with a line for each pair connected by trail within 10 hours, coloured by the hardest trail category](docs/hut-graph.svg)
@@ -57,8 +57,8 @@ app/
   main.py    FastAPI app: routers, /api/health, static frontend (revalidated on every load)
   admin.py   admin password (HTTP Basic) for data-changing routes; `python -m app.admin set-password`
   backup.py  database backup; config.py: huthop.toml
-  api/       routes: huts (list, detail, /availability calendar), edges (connections, exclude), manual
-             (overrides, added huts), tours (/suggest, /{id}, /{id}/gpx, /{id}/options for the editor, /huts/{id}/tour, /stops),
+  api/       routes: huts (list, detail, /availability calendar, /weather), edges (connections, exclude), manual
+             (overrides, added huts), tours (/suggest, /{id}, /{id}/gpx, /{id}/warnings, /{id}/options for the editor, /huts/{id}/tour, /stops),
              info (About dialog)
   db/        schema.sql (tables, views, change-counter triggers) and connect() (migrations, WAL)
   ingest/    offline jobs: refresh, sync_sac, load_stops, load_timetable, build_edges, footprints
@@ -67,11 +67,12 @@ app/
              "best"), geometry (retracing, shape), availability (cache, classification, calendar), opening,
              transit (stops served on a date), editing (tour editor: possible edits, warnings), gpx,
              hiking_time, polyline
-  clients/   external APIs (SAC, hut-reservation.org)
+  clients/   external APIs (SAC, hut-reservation.org, weather via Open-Meteo, geo.admin closures and
+             shooting notices)
 web/         static frontend (MapLibre + swisstopo tiles, no build step), ES modules in web/js/:
-             main (wiring), state (URL hash), map, huts (list, detail), beds (free-beds calendar),
+             main (wiring), state (URL hash), map, huts (list, detail), beds (free-beds calendar), weather,
              connections, tours (form, results, sorting, opening a tour), tour-detail (timeline, profiles),
-             tour-editor (editing a tour), your-tours (kept in the browser), settings (general
+             tour-editor (editing a tour), your-tours and favourites (kept in the browser), settings (general
              settings and units, kept in the browser), editor (hut data),
              info (About dialog), util
 server/      compose.yaml, update.sh (deploy) and refresh.sh (data refresh and graph build) for the server

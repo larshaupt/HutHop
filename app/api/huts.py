@@ -6,7 +6,7 @@ import sqlite3
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.api.deps import get_db
-from app.clients import hut_reservation, sac
+from app.clients import hut_reservation, sac, weather
 from app.planner import availability, opening
 
 router = APIRouter(prefix="/api/huts", tags=["huts"])
@@ -101,3 +101,15 @@ def hut_availability(hut_id: int, people: int = Query(2, ge=1, le=30), conn: sql
     if not row["hrs_id"]:
         return {"bookable": False, "days": []}
     return availability.calendar(conn, hut_id, row["hrs_id"], people)
+
+
+@router.get("/{hut_id}/weather")
+def hut_weather(hut_id: int, conn: sqlite3.Connection = Depends(get_db)) -> dict:
+    """MeteoSwiss forecast for the next days at the hut's position and altitude (clients/weather.py)."""
+    row = conn.execute("SELECT lat, lon, altitude_m FROM hut_effective WHERE id = ?", (hut_id,)).fetchone()
+    if not row:
+        raise HTTPException(404, "hut not found")
+    try:
+        return {"days": weather.forecast(row["lat"], row["lon"], row["altitude_m"]), "error": False}
+    except Exception:  # network and HTTP errors, unexpected JSON: the app just shows no forecast
+        return {"days": [], "error": True}

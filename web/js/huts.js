@@ -5,6 +5,8 @@ import { map, mapPadding } from "./map.js";
 import { clearConnections, connectionsSection, showConnections } from "./connections.js";
 import { clearTour, returnToTour } from "./tours.js";
 import { loadBeds } from "./beds.js";
+import { isFavourite, toggleFavourite } from "./favourites.js";
+import { loadWeather } from "./weather.js";
 import { formatHeight, heightUnit, heightValue } from "./settings.js";
 
 const SERVICE_LABELS = {
@@ -46,6 +48,7 @@ function filterHuts() {
     (!state.hb || h.half_board) &&
     (!state.kitchen || h.self_catering) &&
     (!state.bookable || h.bookable) &&
+    (!state.fav || isFavourite(h.id)) &&
     (!state.minBeds || (h.beds || 0) >= state.minBeds) &&
     (h.altitude || 0) >= state.altMin &&
     (state.altMax >= ALT_MAX || (h.altitude || 0) <= state.altMax) &&
@@ -92,7 +95,7 @@ export function syncControls() {
   $("#bedsLabel").textContent = state.minBeds ? `${state.minBeds}+` : "Any";
   $("#legend").hidden = !state.month;
 
-  const active = ["month", "hb", "kitchen", "bookable", "minBeds", "q"].filter((k) => state[k] !== DEFAULTS[k]).length +
+  const active = ["month", "hb", "kitchen", "bookable", "fav", "minBeds", "q"].filter((k) => state[k] !== DEFAULTS[k]).length +
     (state.altMin !== DEFAULTS.altMin || state.altMax !== DEFAULTS.altMax ? 1 : 0) +
     (state.operator !== "all" ? 1 : 0) + (state.month && state.openAs !== "any" ? 1 : 0);
   $("#activeCount").hidden = !active;
@@ -122,7 +125,7 @@ export function bindHutEvents() {
   $("#minBeds").addEventListener("input", (e) => { setState({ minBeds: Number(e.target.value) }); update(); });
   $("#reset").addEventListener("click", (e) => {
     e.preventDefault();
-    setState({ month: 0, openAs: "any", hb: false, kitchen: false, bookable: false, altMin: 0, altMax: ALT_MAX,
+    setState({ month: 0, openAs: "any", hb: false, kitchen: false, bookable: false, fav: false, altMin: 0, altMax: ALT_MAX,
       minBeds: 0, operator: "all", q: "" });
     update();
   });
@@ -155,7 +158,8 @@ export function update() {
 
 function renderList() {
   if (!visible.length) {
-    $("#list").innerHTML = `<li class="empty">No huts match these filters.</li>`;
+    $("#list").innerHTML = `<li class="empty">${state.fav && !huts.some((h) => isFavourite(h.id))
+      ? "No favourite huts yet: open a hut and tap ☆ Favourite." : "No huts match these filters."}</li>`;
     return;
   }
   $("#list").innerHTML = visible.map((h) => {
@@ -165,7 +169,7 @@ function renderList() {
       ? `<img src="${esc(h.photo)}" alt="" loading="lazy" decoding="async" width="64" height="44">`
       : `<span class="noimg">▲</span>`;
     const meta = [h.altitude && formatHeight(h.altitude), h.beds && `${h.beds} beds`].filter(Boolean).join(" · ");
-    return `<li class="hut" data-id="${h.id}">${img}<div><div class="hut-name">${esc(h.name)}</div>` +
+    return `<li class="hut" data-id="${h.id}">${img}<div><div class="hut-name">${isFavourite(h.id) ? `<span class="fav" title="Favourite">★</span> ` : ""}${esc(h.name)}</div>` +
       `<div class="hut-meta">${meta}</div></div>${badge}</li>`;
   }).join("");
 }
@@ -387,6 +391,7 @@ function renderDetail(d) {
         ${d.email ? `<a class="btn" href="mailto:${esc(d.email)}">Email</a>` : ""}
         ${d.phone ? `<a class="btn" href="${esc(telHref(d.phone))}">${esc(d.phone)}</a>` : ""}
         <a class="btn" href="${geoAdmin}" target="_blank" rel="noopener">swisstopo map</a>
+        <button class="btn" id="favourite" aria-pressed="${isFavourite(d.id)}">${isFavourite(d.id) ? "★" : "☆"} Favourite</button>
         <button class="btn" data-plan-tour="${d.id}">Plan a tour from here</button>
       </div>
       <div class="section">
@@ -401,6 +406,7 @@ function renderDetail(d) {
         </div>
       </div>
       ${websiteSection(d.web)}
+      <div class="section"><h3>Weather</h3><div id="weather"><p class="hint">Loading the forecast…</p></div></div>
       ${d.booking_url ? `<div class="section"><h3>Free beds</h3><div id="bedCal"><p class="hint">Checking free beds…</p></div></div>` : ""}
       ${connectionsSection(d)}
       ${d.description ? `<div class="section"><h3>About</h3><p class="desc ${long ? "clamped" : ""}" id="desc">${esc(d.description)}</p>
@@ -413,6 +419,13 @@ function renderDetail(d) {
     </div>`;
   $("#back").addEventListener("click", closeDetail);
   if (d.booking_url) loadBeds(d.id);
+  loadWeather(d.id, $("#weather"));
+  $("#favourite").addEventListener("click", (ev) => {
+    const fav = toggleFavourite(d.id);
+    ev.currentTarget.setAttribute("aria-pressed", fav);
+    ev.currentTarget.textContent = `${fav ? "★" : "☆"} Favourite`;
+    update();
+  });
   $("#more")?.addEventListener("click", (ev) => {
     $("#desc").classList.remove("clamped");
     ev.target.remove();
