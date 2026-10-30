@@ -99,6 +99,12 @@ already logged in to ghcr.io for the website's image, which also covers HutHop's
 To invite someone, add their email address to the Allow policy. They open the link, enter that address and the code
 they get by email; no account needed. Never add a route for HutHop without the Access application in front.
 
+## Feedback
+
+The 💬 button in the app's header sends a message, saved in the `feedback` table with the page it was sent from and
+the sender's login email (Cloudflare Access passes it on). To read it, open https://huthop.larshauptmann.com/api/feedback
+and log in with the admin password (any username). Newest first.
+
 ## Data workflow
 
 The server's database is the only live copy. Everything that changes it runs on the server:

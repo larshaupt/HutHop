@@ -7,6 +7,7 @@ import { addHutLayers, bindHutEvents, bindHutMap, closeDetail, loadHuts, renderC
 import { addEdgeLayers, bindConnectionEvents, redrawConnections } from "./connections.js";
 import { bindEditorEvents } from "./editor.js";
 import { bindAbout } from "./info.js";
+import { bindFeedback } from "./feedback.js";
 import { addTourLayers, bindTourForm, clearTour, closeTour, hasResults, openTourById, redrawTour, rerenderTours, runTourSearch,
   syncTourForm } from "./tours.js";
 import { addEditorLayers, bindEditorEvents as bindTourEditorEvents, editorHutClick, isEditing, reloadEditor }
@@ -166,6 +167,7 @@ async function main() {
   bindTourForm();
   bindEditorEvents();
   bindAbout();
+  bindFeedback();
   bindSettings();
   onSettingsChange(applySettings);
   bindGlobalEvents();

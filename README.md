@@ -59,7 +59,7 @@ app/
   backup.py  database backup; config.py: huthop.toml
   api/       routes: huts (list, detail, /availability calendar, /weather), edges (connections, exclude), manual
              (overrides, added huts), tours (/suggest, /{id}, /{id}/gpx, /{id}/warnings, /{id}/options for the editor, /huts/{id}/tour, /stops),
-             info (About dialog)
+             info (About dialog), feedback (sent from the app; reading it needs the admin password)
   db/        schema.sql (tables, views, change-counter triggers) and connect() (migrations, WAL)
   ingest/    offline jobs: refresh, sync_sac, load_stops, load_timetable, build_edges, footprints
   planner/   graph (model, loading, cache), tours (beam search, scoring, rebuilding, diversity),
@@ -74,7 +74,7 @@ web/         static frontend (MapLibre + swisstopo tiles, no build step), ES mod
              connections, tours (form, results, sorting, opening a tour), tour-detail (timeline, profiles),
              tour-editor (editing a tour), your-tours and favourites (kept in the browser), settings (general
              settings and units, kept in the browser), editor (hut data),
-             info (About dialog), util
+             info (About dialog), feedback (dialog), util
 server/      compose.yaml, update.sh (deploy) and refresh.sh (data refresh and graph build) for the server
 docs/        deployment plan, route graph figure
 spikes/      Phase 0 experiments and findings (historical)

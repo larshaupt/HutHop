@@ -65,3 +65,15 @@ def test_password_required_once_set(client):
     assert c.get(f"/api/huts/{hut_id}").status_code == 200
     body = {"start_date": "2027-07-10", "nights": 1, "check_availability": False}
     assert c.post("/api/tours/suggest", json=body).status_code == 200
+
+
+def test_feedback_anyone_sends_admin_reads(client):
+    c, _, _ = client
+    admin.PASSWORD_FILE.write_text(admin.hash_password("correct horse battery"))
+    sent = c.post("/api/feedback", json={"message": " Missing hut ", "page": "http://x/#hut=1"},
+                  headers={"Cf-Access-Authenticated-User-Email": "anna@example.com"})
+    assert sent.status_code == 200
+    assert c.post("/api/feedback", json={"message": ""}).status_code == 422
+    assert c.get("/api/feedback").status_code == 401
+    [f] = c.get("/api/feedback", headers=auth("correct horse battery")).json()
+    assert (f["message"], f["page"], f["email"]) == ("Missing hut", "http://x/#hut=1", "anna@example.com")

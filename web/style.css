@@ -563,3 +563,7 @@ code { font-size: 12px; background: var(--bg-soft); padding: 0 4px; border-radiu
 .forecast small { color: var(--text-soft); font-size: 11px; }
 .wx-icon { font-size: 20px; line-height: 1.3; }
 .hut-name .fav { color: #e0a800; }
+
+/* Feedback dialog */
+.feedback { width: min(480px, calc(100vw - 32px)); }
+.feedback textarea { width: 100%; height: auto; padding: 8px 10px; resize: vertical; font: inherit; }

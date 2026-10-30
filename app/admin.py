@@ -1,4 +1,4 @@
-"""Admin password for data-changing endpoints (edge exclusions, hut corrections, added huts).
+"""Admin password for data-changing endpoints (edge exclusions, hut corrections, added huts) and reading feedback.
 
 Viewing and tour planning stay open to everyone who can reach the app (on the server: invited users, via the Cloudflare Access login). Changes need
 HTTP Basic auth with the admin password, whose salted hash lives in data/admin_password (not in git):

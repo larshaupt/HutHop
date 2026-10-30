@@ -256,3 +256,12 @@ CREATE TRIGGER IF NOT EXISTS stop_del AFTER DELETE ON stop BEGIN UPDATE data_ver
 CREATE TRIGGER IF NOT EXISTS edge_ins AFTER INSERT ON edge BEGIN UPDATE data_version SET version = version + 1; END;
 CREATE TRIGGER IF NOT EXISTS edge_upd AFTER UPDATE ON edge BEGIN UPDATE data_version SET version = version + 1; END;
 CREATE TRIGGER IF NOT EXISTS edge_del AFTER DELETE ON edge BEGIN UPDATE data_version SET version = version + 1; END;
+
+-- Feedback sent from the app (app/api/feedback.py)
+CREATE TABLE IF NOT EXISTS feedback (
+  id          INTEGER PRIMARY KEY,
+  created_at  TEXT NOT NULL,
+  message     TEXT NOT NULL,
+  page        TEXT,                   -- the app's URL (view, hut, tour) when it was sent
+  email       TEXT                    -- the sender's login email, from Cloudflare Access
+);
