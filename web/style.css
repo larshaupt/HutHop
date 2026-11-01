@@ -373,6 +373,10 @@ label.field-label { display: flex; }
 .tour-top { padding: 16px 20px 0; }
 .tour-top h2 { margin: 10px 0 0; font-size: 20px; line-height: 1.25; letter-spacing: -0.01em; }
 .back.flat { position: static; box-shadow: none; background: var(--bg-soft); }
+.tour-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.tour-step { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--text-soft); font-variant-numeric: tabular-nums; }
+.tour-step .btn { width: 34px; padding: 0; font-size: 18px; }
+.tour-step .btn:disabled { cursor: default; opacity: .35; }
 .timeline { list-style: none; margin: 0; padding: 0; }
 .timeline > li { display: grid; grid-template-columns: 26px 1fr; gap: 10px; position: relative; padding-bottom: 14px; }
 .timeline > li::before { content: ""; position: absolute; left: 12px; top: 18px; bottom: -2px; width: 2px; background: var(--line); }

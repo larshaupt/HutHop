@@ -65,7 +65,7 @@ function connectionLine(s, role) {
 
 export { AVAIL_LABEL, connectionLine, formatDay, stopLabel, NIGHT_LABEL };
 
-export function renderTourDetail(t, { kept = false, booking = false, people = 2 } = {}) {
+export function renderTourDetail(t, { kept = false, booking = false, people = 2, nav = null } = {}) {
   const start = t.days[0].from, end = t.days[t.days.length - 1].to;
   const profiles = t.days.map(dayProfile);
   const heights = profiles.filter(Boolean).flatMap((p) => p.map(([, z]) => z));
@@ -98,7 +98,14 @@ export function renderTourDetail(t, { kept = false, booking = false, people = 2 
   }).join("");
   $("#tourDetail").innerHTML = `
     <div class="tour-top">
-      <button class="back flat" id="tourBack"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>${state.view === "mine" ? "My tours" : "Tours"}</button>
+      <div class="tour-nav">
+        <button class="back flat" id="tourBack"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>${state.view === "mine" ? "My tours" : "Tours"}</button>
+        ${nav ? `<div class="tour-step">
+          <button class="btn" data-step-tour="-1" aria-label="Previous tour"${nav.n > 1 ? "" : " disabled"}>‹</button>
+          <span>${nav.n} / ${nav.total}</span>
+          <button class="btn" data-step-tour="1" aria-label="Next tour"${nav.n < nav.total ? "" : " disabled"}>›</button>
+        </div>` : ""}
+      </div>
       <h2>${esc(start.name)} → ${esc(end.name)}</h2>
       <div class="subtitle">${t.nights} night${t.nights > 1 ? "s" : ""}, ${t.days.length} days ·
         ${formatDay(t.days[0].date)} – ${formatDay(t.days[t.days.length - 1].date)}</div>

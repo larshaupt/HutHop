@@ -29,3 +29,6 @@ data/gtfs/
 data/refresh_log.json
 data/admin_password
 data/backups/
+
+# Playwright failure screenshots
+test-results/
