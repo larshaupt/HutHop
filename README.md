@@ -23,6 +23,7 @@ uv sync                                   # create .venv and install dependencie
 uv run python -m app.ingest.refresh       # huts, stops, timetable, trails (if new) and route graph (if needed)
 uv run uvicorn app.main:app --reload      # http://localhost:8000
 uv run pytest                             # tests (use a throwaway database, see tests/conftest.py)
+uv run playwright install chromium        # once: the browser for the mobile tests (tests/test_mobile.py)
 ```
 
 `refresh` runs the individual jobs (`sync_sac`, `load_stops`, `load_timetable`, `build_edges`), downloads a new swissTLM3D edition
@@ -57,7 +58,8 @@ locally no admin password is required. Only `python -m app.ingest.scrape_huts` (
 the hut websites) needs Gemini on Vertex AI via your own `gcloud` login and project (`GEMINI_PROJECT`).
 
 Work on a branch and open a pull request against `main`. CI runs `uv run ruff check .` and `uv run pytest -q` on
-every pull request; run both before pushing. A merge into `main` builds the Docker image and deploys it to the live
+every pull request (including the mobile browser tests, with screenshots of failures as a build artifact);
+run both before pushing. A merge into `main` builds the Docker image and deploys it to the live
 server, so `main` only changes through reviewed pull requests.
 
 ## Layout

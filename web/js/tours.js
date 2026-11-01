@@ -121,6 +121,8 @@ export function bindTourForm() {
   $("#tourDetail").addEventListener("click", (e) => {
     if (isEditing()) return;  // the editor handles its own clicks
     if (e.target.closest("#tourBack")) { closeTour(); return; }
+    const step = e.target.closest("[data-step-tour]");
+    if (step) { stepTour(Number(step.dataset.stepTour)); return; }
     if (e.target.closest("#tourEdit")) { openEditor(current); return; }
     if (e.target.closest("#tourBook")) {
       booking = !booking;
@@ -140,6 +142,7 @@ export function bindTourForm() {
     const day = e.target.closest("[data-day]");
     if (day && !e.target.closest("a")) focusDay(Number(day.dataset.day));
   });
+  bindTourSwipe();
   $("#tourDetail").addEventListener("change", (e) => {
     const box = e.target.closest("[data-booked]");
     if (!box) return;
@@ -358,7 +361,8 @@ function renderYourTours() {
 }
 
 // ---------- Tour detail ----------
-const detailOptions = () => ({ kept: !!(current && findEntry(current.id)), booking, people: bedsPeople() });
+const detailOptions = () => ({ kept: !!(current && findEntry(current.id)), booking, people: bedsPeople(),
+  nav: state.tour && results ? { n: state.tour, total: order.length } : null });
 /** The group size free beds are checked for: the search's, else the form's. */
 const bedsPeople = () => (state.tour && results ? results.query.people : state.tPeople);
 
@@ -368,6 +372,28 @@ function selectTour(n) {
   current = t;
   setState({ tour: n, tid: "", tEdit: false });
   showTour(t);
+}
+
+/** The next (+1) or previous (-1) search result, from an open one. */
+function stepTour(dir) {
+  const n = state.tour + dir;
+  if (!state.tour || isEditing() || !order[n - 1]) return;
+  if (n > shown) { shown = Math.ceil(n / PAGE) * PAGE; renderResults(); }  // its card is there when you go back
+  selectTour(n);
+}
+
+/** Phones: swipe left or right across an open search result for the next or previous one. */
+function bindTourSwipe() {
+  let start = null;
+  $("#tourDetail").addEventListener("touchstart", (e) => {
+    start = e.touches.length === 1 ? { x: e.touches[0].clientX, y: e.touches[0].clientY } : null;
+  }, { passive: true });
+  $("#tourDetail").addEventListener("touchend", (e) => {
+    if (!start) return;
+    const dx = e.changedTouches[0].clientX - start.x, dy = e.changedTouches[0].clientY - start.y;
+    start = null;
+    if (Math.abs(dx) > 60 && Math.abs(dx) > 2 * Math.abs(dy)) stepTour(dx < 0 ? 1 : -1);  // mostly sideways
+  });
 }
 
 /** A tour by id (my tours, a shared link, the editor's result), or null if it no longer exists. */
