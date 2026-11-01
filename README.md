@@ -50,6 +50,16 @@ footprint (grid cells and shape samples for the tour search) get one with `pytho
 
 Other commands: `python -m app.backup` (dated copy in `data/backups/`, keeps 14), `python -m app.admin set-password`.
 
+## Contributing
+
+No secrets or accounts are needed to run HutHop locally: `refresh` fetches all data from public sources, and
+locally no admin password is required. Only `python -m app.ingest.scrape_huts` (prices and season dates from
+the hut websites) needs Gemini on Vertex AI via your own `gcloud` login and project (`GEMINI_PROJECT`).
+
+Work on a branch and open a pull request against `main`. CI runs `uv run ruff check .` and `uv run pytest -q` on
+every pull request; run both before pushing. A merge into `main` builds the Docker image and deploys it to the live
+server, so `main` only changes through reviewed pull requests.
+
 ## Layout
 
 ```

@@ -3,18 +3,18 @@ name: Test, build & publish image
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 
 permissions:
   contents: read
-  packages: write
 
 concurrency:
-  group: publish
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -26,6 +26,16 @@ jobs:
 
       - name: Run tests
         run: uv run pytest -q
+
+  publish:
+    needs: test
+    if: github.event_name != 'pull_request'  # PRs are tested, never published
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
 
       - uses: docker/setup-qemu-action@v3  # emulates ARM for the arm64 image (Oracle VM)
 
