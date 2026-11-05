@@ -1,6 +1,6 @@
 // Tour planner: form, search, result cards (sorted here, without a new search), "My tours", opening a tour (a
 // search result, or by id: my tours, shared links, the editor), map drawing.
-import { $, CATEGORY, EMPTY, categoryColor, costTitle, decodePolyline, esc, formatCost, formatMinutes, localIso,
+import { $, CATEGORY, EMPTY, categoryColor, categoryName, costTitle, decodePolyline, esc, formatCost, formatMinutes, localIso,
   modeLabel, revealPanel } from "./util.js";
 import { setState, state } from "./state.js";
 import { distanceValue, distanceUnit, formatHeight, settings, settingsParams, settingsQuery } from "./settings.js";
@@ -274,13 +274,13 @@ function renderResults() {
 function tourCard(t, i) {
   const chain = [t.days[0].from, ...t.days.slice(0, -1).map((d) => d.to), t.days[t.days.length - 1].to];
   const longest = Math.max(...t.days.map((d) => d.time_min));
-  const bars = t.days.map((d) => `<div class="daybar" title="Day ${d.day}: ${formatMinutes(d.time_min)} · ${CATEGORY[d.max_category].name}">
+  const bars = t.days.map((d) => `<div class="daybar" title="Day ${d.day}: ${formatMinutes(d.time_min)} · ${categoryName(d.max_category, d.osm_grade)}">
       <i style="height:${Math.max(18, (d.time_min / longest) * 100)}%;background:${CATEGORY[d.max_category].color}"></i>
       <span>${(d.time_min / 60).toFixed(1).replace(".0", "")}h</span></div>`).join("");
   return `<article class="tour-card" data-n="${i + 1}" tabindex="0">
     <div class="tour-head">
       <div><b>${t.nights} night${t.nights > 1 ? "s" : ""}</b> · ${distanceValue(t.distance_m, 0)} ${distanceUnit()} · ↑ ${formatHeight(t.ascent_m)}</div>
-      <div class="tour-flags">${transitBadge(t)}${availBadge(t)}${costBadge(t)}${scoreBadge(t)}</div>
+      <div class="tour-flags">${unofficialBadge(t)}${transitBadge(t)}${availBadge(t)}${costBadge(t)}${scoreBadge(t)}</div>
     </div>
     <div class="tour-body">
       <ol class="chain">${chainItems(chain)}</ol>
@@ -294,6 +294,15 @@ function scoreBadge(t) {
   if (!t.metrics) return "";
   const parts = Object.entries(metricLabels).map(([k, label]) => `${label}: ${Math.round(t.metrics[k] * 100)}%`).join("\n");
   return `<span class="score" title="Best score\n${parts}">${Math.round(t.score * 100)}%</span>`;
+}
+
+/** Card badge: a day on an unofficial OSM path, with its hardest grade. */
+function unofficialBadge(t) {
+  const days = t.days.filter((d) => d.max_category === 4);
+  if (!days.length) return "";
+  const grade = days.map((d) => d.osm_grade).filter(Boolean).sort().pop();
+  return `<span class="flag" title="Not signposted: a path from OpenStreetMap, often glacier or alpine terrain">` +
+    `Unofficial path${grade ? ` ${grade}` : ""}</span>`;
 }
 
 /** Card badge when the first connection reaches the first hut late, or the last one leaves early. */

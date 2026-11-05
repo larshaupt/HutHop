@@ -44,6 +44,22 @@ export function initMap(onStyleLoad) {
   map.addControl(new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: false } }), "top-right");
   map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-right");
   map.on("style.load", onStyleLoad);
+  bindOsmPaths();
+}
+
+/** Hover on an unofficial path: what it is and its grade (handlers survive style reloads). */
+function bindOsmPaths() {
+  const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false });
+  map.on("mousemove", "osm-paths", (e) => {
+    const grade = e.features[0].properties.grade;
+    map.getCanvas().style.cursor = "help";
+    popup.setLngLat(e.lngLat).setHTML(`Unofficial path${grade ? ` · ${grade}` : ""}<small>OpenStreetMap, not signposted</small>`)
+      .addTo(map);
+  });
+  map.on("mouseleave", "osm-paths", () => {
+    map.getCanvas().style.cursor = "";
+    popup.remove();
+  });
 }
 
 export function setBaseStyle(name) {

@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field, model_validator
 from app import config
 from app.api.deps import get_db
 from app.clients import geoadmin, hut_reservation
+from app.ingest import osm_access
 from app.planner import costs, editing, gpx, planning, polyline, ranking, transit
 from app.planner.graph import Graph, cached_graph
 from app.planner.tours import Catering, Night, Tour, TourRequest, build_tour, is_lift, parse_tour_id
@@ -139,7 +140,7 @@ def tour_from_hut(hut_id: int, start_date: date, min_hours: float = Query(3, ge=
                   max_hours: float = Query(6, gt=0, le=12), rules: editing.Rules = Depends(settings),
                   conn: sqlite3.Connection = Depends(get_db)) -> dict:
     """A one-night tour at a hut, to start the tour editor with: the closest stops that run on those days."""
-    graph = cached_graph(conn, 3)
+    graph = cached_graph(conn, 4)  # all trail categories; the settings limit which ones are offered
     if hut_id not in graph.huts:
         raise HTTPException(404, "hut not found")
     hours = (round(min_hours / rules.pace, 2), round(max_hours / rules.pace, 2))  # standard time, like the routes
@@ -202,6 +203,7 @@ def tour_json(conn: sqlite3.Connection, graph: Graph, tours: list[Tour],
     prices = costs.load_prices(conn, {n.hut for t in tours for n in t.nights})
     contacts = hut_contacts(conn, {n.hut for t in tours for n in t.nights})
     estimates = [costs.tour_cost(t.nights, prices) for t in tours]
+    grades = osm_access.grades()
     return [{
         "id": t.id,
         "score": round(t.score, 3),
@@ -230,6 +232,7 @@ def tour_json(conn: sqlite3.Connection, graph: Graph, tours: list[Tour],
             "edge_id": leg.edge_id,
             **{k: getattr(leg, k) for k in ("distance_m", "ascent_m", "descent_m", "max_category", "sac_time_min",
                                             "max_altitude_m")},
+            "osm_grade": osm_access.edge_grade(grades, leg.max_category, leg.frm, leg.to),
             "time_min": round(leg.time_min * pace),
             "geometry": lines[leg.edge_id]["geometry"] if leg.edge_id in lines else None,
             "elevation": lines[leg.edge_id]["elevation"] if leg.edge_id in lines else None,  # heights per point

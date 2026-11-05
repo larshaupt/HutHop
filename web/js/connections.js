@@ -1,5 +1,5 @@
 // Connections of the selected hut (edges of the place graph): list in the detail view, lines on the map, review.
-import { $, CATEGORY, EMPTY, categoryColor, decodePolyline, esc, formatMinutes, modeLabel } from "./util.js";
+import { $, CATEGORY, EMPTY, categoryColor, categoryName, decodePolyline, esc, formatMinutes, modeLabel } from "./util.js";
 import { state } from "./state.js";
 import { formatDistance, formatHeight, settingsQuery } from "./settings.js";
 import { map, mapPadding } from "./map.js";
@@ -21,7 +21,11 @@ const allEdges = (data) => [...data.huts, ...data.stops.flatMap((s) => [s.to_hut
 
 /** The "Connections" section of the hut detail view; filled by showConnections(). */
 export function connectionsSection(d) {
-  const warning = d.snap_m > 500
+  const warning = d.snap_m > 500 && d.osm_access
+    ? `<p class="warn">This hut is ${formatDistance(d.snap_m)} from the nearest signposted hiking trail. It is reached by an
+       unofficial path from OpenStreetMap${d.osm_grade ? ` (${d.osm_grade})` : ""}, often across glaciers or alpine terrain;
+       its connections are offered when the hardest trail (⚙) is "Unofficial".</p>`
+    : d.snap_m > 500
     ? `<p class="warn">This hut is ${formatDistance(d.snap_m)} from the nearest signposted hiking trail. It is reached
        by alpine routes or across glaciers, so no walking connections are computed.</p>`
     : d.snap_m > 200
@@ -66,10 +70,11 @@ export async function showConnections(hutId) {
 function edgeRow(e, label, kind, extra = "") {
   const cat = CATEGORY[e.max_category];
   const meta = [formatDistance(e.distance_m), `↑ ${formatHeight(e.ascent_m)}`, `↓ ${formatHeight(e.descent_m)}`];
+  if (e.max_category === 4) meta.push(`<span style="color:${cat.color}">Unofficial path${e.osm_grade ? ` ${e.osm_grade}` : ""}</span>`);
   const sac = e.sac_time_min ? `<span class="sac" title="Time given by the SAC for this route">SAC ${formatMinutes(e.sac_time_min)}` +
     `${e.sac_grade ? ` · ${esc(e.sac_grade)}` : ""}</span>` : "";
   return `<li class="conn${e.excluded ? " excluded" : ""}" data-edge="${e.id}" data-place="${e.place.id}" data-kind="${kind}">
-    <i class="cat-bar" style="background:${cat.color}" title="${cat.name}"></i>
+    <i class="cat-bar" style="background:${cat.color}" title="${categoryName(e.max_category, e.osm_grade)}"></i>
     <div class="conn-main"><div class="conn-name">${label}</div>
       <div class="conn-meta">${meta.join(" · ")} ${sac}</div>${extra}</div>
     <div class="conn-time">${formatMinutes(e.time_min)}</div>

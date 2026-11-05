@@ -45,6 +45,8 @@ def hut_edges(hut_id: int, limit: int = Query(3, ge=1, le=4, description="max tr
         {"hut": hut_id, "limit": limit, "max_altitude": max_altitude},
     ).fetchall()
 
+    grades = osm_access.grades()
+
     def item(r: sqlite3.Row) -> dict:
         return {
             "id": r["id"],
@@ -54,6 +56,7 @@ def hut_edges(hut_id: int, limit: int = Query(3, ge=1, le=4, description="max tr
             **{k: r[k] for k in ("distance_m", "ascent_m", "descent_m", "max_category", "category_limit",
                                  "max_altitude_m", "sac_route_id", "sac_time_min", "sac_grade", "geometry", "note",
                                  "source")},
+            "osm_grade": osm_access.edge_grade(grades, r["max_category"], r["from_place"], r["to_place"]),
             "time_min": round(r["time_min"] * pace),
             "excluded": bool(r["excluded"]),
         }
