@@ -42,6 +42,7 @@ function applySettings(patch) {
   clearTimeout(settingsTimer);
   // Units and member prices only change how things are shown: no new search for them.
   settingsSearch ||= Object.keys(patch).some((k) => k !== "units" && k !== "member");
+  setTrailsVisible(state.trails);
   settingsTimer = setTimeout(() => {
     update();
     syncControls();

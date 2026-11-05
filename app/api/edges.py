@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from app.admin import require_admin
 from app.api.deps import get_db
+from app.ingest import osm_access
 from app.planner.tours import is_lift
 
 router = APIRouter(prefix="/api", tags=["edges"])
@@ -98,3 +99,15 @@ def review_edge(edge_id: int, review: EdgeReview, conn: sqlite3.Connection = Dep
         raise HTTPException(404, "edge not found")
     row = conn.execute("SELECT id, excluded, note FROM edge WHERE id = ?", (edge_id,)).fetchone()
     return {"id": row["id"], "excluded": bool(row["excluded"]), "note": row["note"]}
+
+
+@router.get("/osm-paths")
+def osm_paths() -> dict:
+    """The unofficial access paths (OpenStreetMap, see osm_access) as GeoJSON lines, for the map's trail overlay."""
+    features = []
+    for hut, path in osm_access.load().items():
+        lon, lat = osm_access.LV95_TO_WGS84.transform(path["coords"][:, 0], path["coords"][:, 1])
+        features.append({"type": "Feature", "properties": {"hut": hut, "grade": path["grade"]},
+                         "geometry": {"type": "LineString", "coordinates": [[round(x, 5), round(y, 5)]
+                                                                            for x, y in zip(lon, lat)]}})
+    return {"type": "FeatureCollection", "features": features}

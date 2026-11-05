@@ -6,7 +6,7 @@ import { $, esc } from "./util.js";
 
 const KEY = "huthop.settings";
 export const SETTING_DEFAULTS = {
-  limit: 3, maxAltitude: null, avoidLifts: false, pace: 1, member: true, checkBeds: true, units: "metric",
+  limit: 4, maxAltitude: null, avoidLifts: false, pace: 1, member: true, checkBeds: true, units: "metric", v: 2,
 };
 const ALTITUDES = [2000, 2250, 2500, 2750, 3000, 3250];
 const PACES = [0.7, 0.8, 0.9, 1, 1.1, 1.2, 1.3, 1.5];
@@ -15,7 +15,10 @@ let current = load();
 
 function load() {
   try {
-    return { ...SETTING_DEFAULTS, ...JSON.parse(localStorage.getItem(KEY) || "{}") };
+    const saved = JSON.parse(localStorage.getItem(KEY) || "{}");
+    // Saves before v2 hold the whole object, so limit 3 there was the old default, not a choice: use the new one
+    if (!saved.v && saved.limit === 3) delete saved.limit;
+    return { ...SETTING_DEFAULTS, ...saved };
   } catch {
     return { ...SETTING_DEFAULTS };
   }

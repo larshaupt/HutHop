@@ -218,3 +218,17 @@ def test_booking_helper_fresh_beds_and_contact(client, monkeypatch):
     assert calls == [7, 7]
     c.get(f"/api/tours/{tour_id}", params=params | {"fresh": True})  # just fetched: not again
     assert calls == [7, 7]
+
+
+def test_osm_paths_as_geojson(client, tmp_path, monkeypatch):
+    from app.ingest import osm_access
+
+    client, _ = client
+    monkeypatch.setattr(osm_access, "FILE", tmp_path / "access.json")
+    assert client.get("/api/osm-paths").json() == {"type": "FeatureCollection", "features": []}  # none fetched yet
+    osm_access.FILE.write_text(json.dumps({"huts": [5], "paths": {"5": {
+        "grade": "T5", "coords": [[2600000, 1200000, 3000], [2600100, 1200000, 2950]]}}}))
+    (feature,) = client.get("/api/osm-paths").json()["features"]
+    assert feature["properties"] == {"hut": 5, "grade": "T5"}
+    (lon, lat), _ = feature["geometry"]["coordinates"]
+    assert lon == pytest.approx(7.4386, abs=1e-3) and lat == pytest.approx(46.9511, abs=1e-3)  # LV95 origin, Bern
