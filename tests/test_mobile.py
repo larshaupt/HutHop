@@ -4,6 +4,7 @@
 
 Needs a browser: `uv run playwright install chromium`. Map tiles and MapLibre come from the internet."""
 
+import re
 import socket
 import threading
 import time
@@ -148,3 +149,14 @@ def test_mostly_vertical_swipe_keeps_the_tour(phone: Page, server):
         el.dispatchEvent(new TouchEvent('touchend', { touches: [], changedTouches: [t(120, 200)] }));
     }""")
     expect(phone.locator(".tour-step span")).to_contain_text("1 /")
+
+
+def test_search_everywhere_unless_limited_to_the_map(phone: Page, server):
+    phone.goto(server + "#v=tours")
+    phone.locator("#sheetHandle").click()
+    phone.locator("#tFind").click()
+    expect(phone.locator(".tour-card").first).to_be_visible()
+    assert "tb=" not in phone.url  # all huts, whatever the map shows
+    phone.get_by_label("Only in the area visible on the map").check()
+    phone.locator("#tFind").click()
+    expect(phone).to_have_url(re.compile(r"tb=[-\d.]+%2C"))

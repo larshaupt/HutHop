@@ -9,7 +9,7 @@ export const DEFAULTS = {
   hut: 0, base: "light", trails: false,
   // tour planner
   view: "huts", tDate: "", tNights: 2, tMin: 3, tMax: 6, tCat: "any", tStart: 0, tStartName: "", tLoop: false,
-  tUnknown: true, tBox: "", tour: 0, tPeople: 2, tSort: "best",
+  tUnknown: true, tArea: false, tBox: "", tour: 0, tPeople: 2, tSort: "best",
   tid: "", tEdit: false, // a tour opened by id (my tours, a shared link, the editor), and whether it is being edited
 };
 
@@ -17,7 +17,7 @@ const HASH_KEYS = {
   month: "m", openAs: "open", hb: "hb", kitchen: "kitchen", bookable: "book", fav: "fav", altMin: "amin", altMax: "amax",
   minBeds: "beds", operator: "type", q: "q", sort: "sort", hut: "hut", base: "map", trails: "trails",
   view: "v", tDate: "td", tNights: "tn", tMin: "tmin", tMax: "tmax", tCat: "tc", tStart: "ts", tStartName: "tsn",
-  tLoop: "loop", tUnknown: "unk", tBox: "tb", tour: "tour", tPeople: "ppl", tSort: "tsort", tid: "tid", tEdit: "edit",
+  tLoop: "loop", tUnknown: "unk", tArea: "area", tBox: "tb", tour: "tour", tPeople: "ppl", tSort: "tsort", tid: "tid", tEdit: "edit",
 };
 
 /** The one state object. Modules read it directly and change it only through setState(). */

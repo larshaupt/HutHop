@@ -1,5 +1,6 @@
 """Tests for the connections API: best edge per category limit, stop grouping and review."""
 
+import json
 from datetime import UTC, datetime, timedelta
 
 import pytest
@@ -84,6 +85,9 @@ def test_suggest_one_night_tour(client):
     assert days[0]["geometry"] and tours[0]["time_min"] == 150
     assert c.post("/api/tours/suggest", json=body | {"min_hours": 3, "max_hours": 2}).status_code == 422
     assert c.post("/api/tours/suggest", json=body | {"start_date": "2020-07-10"}).status_code == 422
+    conn = app.dependency_overrides[get_db]()
+    [log] = conn.execute("SELECT query, results, best_tour FROM search_log").fetchall()  # invalid ones aren't logged
+    assert json.loads(log["query"])["nights"] == 1 and log["results"] == 1 and log["best_tour"] == tours[0]["id"]
 
 
 def test_stop_search(client):

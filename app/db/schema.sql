@@ -265,3 +265,13 @@ CREATE TABLE IF NOT EXISTS feedback (
   page        TEXT,                   -- the app's URL (view, hut, tour) when it was sent
   email       TEXT                    -- the sender's login email, from Cloudflare Access
 );
+
+-- Every tour search (app/api/tours.py), to analyse what people look for and improve the results
+CREATE TABLE IF NOT EXISTS search_log (
+  id          INTEGER PRIMARY KEY,
+  created_at  TEXT NOT NULL,
+  query       TEXT NOT NULL,          -- the request as JSON (TourQuery)
+  results     INTEGER NOT NULL,       -- tours returned
+  best_tour   TEXT,                   -- id of the first ("best") tour
+  duration_ms INTEGER NOT NULL
+);
