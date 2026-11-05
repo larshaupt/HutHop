@@ -26,8 +26,8 @@ SELECT * FROM (
 
 
 @router.get("/huts/{hut_id}/edges")
-def hut_edges(hut_id: int, limit: int = Query(3, ge=1, le=3, description="max trail category: 1 yellow, "
-              "2 red-white, 3 blue-white"),
+def hut_edges(hut_id: int, limit: int = Query(3, ge=1, le=4, description="max trail category: 1 yellow, "
+              "2 red-white, 3 blue-white, 4 also unofficial OSM paths"),
               max_altitude: int | None = Query(None, ge=500, le=5000, description="highest point of a route (m)"),
               avoid_lifts: bool = Query(False, description="no stops served only by mountain lifts"),
               pace: float = Query(1.0, ge=0.5, le=2.0, description="walking time / Swiss standard time"),

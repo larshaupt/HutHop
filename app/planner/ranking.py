@@ -68,7 +68,7 @@ def metrics(legs, nights, altitudes: list[int | None], min_minutes: float, max_m
         even=clip(1 - 2 * spread),
         beds=sum(BED_VALUE.get(n.availability.state, 0.5) if n.availability else 0.5 for n in nights) / len(nights),
         certainty=sum(1.0 for n in nights if n.status != "unknown" and not n.partial) / len(nights),
-        ease=1 - sum(leg.max_category - 1 for leg in legs) / (2 * len(legs)),
+        ease=1 - sum(min(leg.max_category, 3) - 1 for leg in legs) / (2 * len(legs)),  # unofficial counts as alpine
         altitude=clip((mean_alt - 1500) / 1500),
         approach=clip(1 - (legs[0].time_min + legs[-1].time_min) / (2 * max_minutes)),
         mean_altitude=mean_alt,

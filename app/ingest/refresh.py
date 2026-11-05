@@ -2,11 +2,12 @@
 
     uv run python -m app.ingest.refresh               # huts, stops, timetable; trails only if swisstopo has a new one
     uv run python -m app.ingest.refresh --rebuild     # also rebuild the edges even if nothing moved
-    uv run python -m app.ingest.refresh --skip-stops --skip-timetable --skip-trails
+    uv run python -m app.ingest.refresh --skip-stops --skip-timetable --skip-trails --skip-osm
 
 Suggested rhythm: weekly (SAC opening data changes during the season); swisstopo publishes the trail network
 about once a year, the timetable weekly (downloaded only when a new edition is out). Each run is appended to
-data/refresh_log.json. Manual exclusions and overrides survive.
+data/refresh_log.json. Manual exclusions and overrides survive. OSM access paths (osm_access) are fetched for the
+huts the last build found far from the signposted trails, so a new such hut gets one at the following run.
 """
 
 import argparse
@@ -21,7 +22,7 @@ from datetime import UTC, datetime
 import httpx
 
 from app.db import ROOT, connect
-from app.ingest import build_edges, footprints, load_stops, load_timetable, sync_sac
+from app.ingest import build_edges, footprints, load_stops, load_timetable, osm_access, sync_sac
 
 TLM_STAC_ITEMS = "https://data.geo.admin.ch/api/stac/v1/collections/ch.swisstopo.swisstlm3d-wanderwege/items"
 TLM_DIR = ROOT / "data/tlm"
@@ -58,7 +59,7 @@ def refresh_trails(force: bool = False) -> bool:
 
 
 def run(skip_huts: bool = False, skip_stops: bool = False, skip_timetable: bool = False, skip_trails: bool = False,
-        rebuild: bool = False) -> dict:
+        rebuild: bool = False, skip_osm: bool = False) -> dict:
     started = time.time()
     conn = connect()
     report: dict = {"started_at": datetime.now(UTC).isoformat(timespec="seconds")}
@@ -74,12 +75,15 @@ def run(skip_huts: bool = False, skip_stops: bool = False, skip_timetable: bool 
         report["stop_lines"] = load_timetable.load(conn, load_timetable.read_all())
     if not skip_trails:
         report["trails_updated"] = refresh_trails()
+    if not skip_osm:
+        report["osm_access"] = osm_access.refresh(conn)
 
     # Compared with the last successful build, not the start of this run: a run that failed after a change (e.g. a
     # download error, or the build killed) leaves it for the next run to rebuild.
     state = {"huts": positions_fingerprint(conn, "hut"), "stops": positions_fingerprint(conn, "stop"),
              "lines": load_timetable.lines_fingerprint(conn),
-             "trails": TLM_EDITION.read_text() if TLM_EDITION.exists() else None}
+             "trails": TLM_EDITION.read_text() if TLM_EDITION.exists() else None,
+             "osm": hashlib.sha256(osm_access.FILE.read_bytes()).hexdigest() if osm_access.FILE.exists() else None}
     built = json.loads(BUILT.read_text()) if BUILT.exists() else {}
     report["changed"] = [k for k in state if state[k] != built.get(k)]
     if rebuild or report["changed"]:
@@ -101,9 +105,10 @@ def main() -> None:
     parser.add_argument("--skip-stops", action="store_true")
     parser.add_argument("--skip-timetable", action="store_true")
     parser.add_argument("--skip-trails", action="store_true")
+    parser.add_argument("--skip-osm", action="store_true", help="don't fetch OSM access paths for far huts")
     parser.add_argument("--rebuild", action="store_true", help="rebuild the edges even if no position changed")
     args = parser.parse_args()
-    report = run(args.skip_huts, args.skip_stops, args.skip_timetable, args.skip_trails, args.rebuild)
+    report = run(args.skip_huts, args.skip_stops, args.skip_timetable, args.skip_trails, args.rebuild, args.skip_osm)
     print(json.dumps(report, indent=1))
 
 

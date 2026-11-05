@@ -32,3 +32,4 @@ data/backups/
 
 # Playwright failure screenshots
 test-results/
+data/osm/

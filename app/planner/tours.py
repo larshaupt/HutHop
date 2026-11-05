@@ -40,7 +40,7 @@ class TourRequest:
     nights: int
     min_hours: float
     max_hours: float
-    limit: int = 2  # hardest trail: 1 yellow, 2 red-white, 3 blue-white
+    limit: int = 2  # hardest trail: 1 yellow, 2 red-white, 3 blue-white, 4 unofficial (OSM)
     catering: Catering = "any"
     bbox: tuple[float, float, float, float] | None = None  # west, south, east, north (WGS84) for huts
     start_near: tuple[float, float] | None = None  # LV95 point; tours start within START_RADIUS_M of it
@@ -102,7 +102,7 @@ def parse_tour_id(tour_id: str) -> TourKey:
     if len(parts) not in (3, 4):
         raise ValueError("malformed tour id")
     place_ids, limit_ids = [int(p) for p in parts[1].split("-")], [int(x) for x in parts[2].split("-")]
-    if len(place_ids) < 3 or len(limit_ids) != len(place_ids) - 1 or not set(limit_ids) <= {1, 2, 3}:
+    if len(place_ids) < 3 or len(limit_ids) != len(place_ids) - 1 or not set(limit_ids) <= {1, 2, 3, 4}:
         raise ValueError("malformed tour id")
     hours = DEFAULT_HOURS
     if len(parts) == 4:
@@ -205,7 +205,7 @@ def suggest(graph: Graph, req: TourRequest, availability: AvailabilityLookup | N
         w_fit = 1  # "best" is then the day-length fit alone
 
     def day_cost(leg: Leg, first_or_last: bool = False) -> float:
-        c = (w_fit * ((leg.time_min - target) / target) ** 2 + w_ease * (leg.max_category - 1) / 2) / n_legs
+        c = (w_fit * ((leg.time_min - target) / target) ** 2 + w_ease * (min(leg.max_category, 3) - 1) / 2) / n_legs
         return c + w_approach * leg.time_min / (2 * hi) if first_or_last else c
 
     def even_cost(legs: tuple[Leg, ...], leg: Leg) -> float:

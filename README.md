@@ -26,7 +26,7 @@ uv run pytest                             # tests (use a throwaway database, see
 uv run playwright install chromium        # once: the browser for the mobile tests (tests/test_mobile.py)
 ```
 
-`refresh` runs the individual jobs (`sync_sac`, `load_stops`, `load_timetable`, `build_edges`), downloads a new swissTLM3D edition
+`refresh` runs the individual jobs (`sync_sac`, `load_stops`, `load_timetable`, `osm_access`, `build_edges`), downloads a new swissTLM3D edition
 only when swisstopo publishes one, and rebuilds the route graph only when hut/stop positions or trails changed
 (`--rebuild` forces it). Each run is logged to `data/refresh_log.json`. Run it weekly during the season.
 `sync_sac --from-file data/raw/sac/huts.json` re-imports the last saved API response without fetching.
@@ -45,6 +45,12 @@ and the official timetables (GTFS, opentransportdata.swiss, about 90 MB each: th
 year's) into `data/gtfs/` when a new edition is out. They give the lines and summer departures of each stop (a hut
 only gets a connection to the closest stop of each line) and on which days and from when to when each stop is
 served: tours start and end at the closest stop that runs on that day.
+Huts more than 500 m from a signposted trail (glacier and high-alpine huts, bivouacs) get the shortest
+OpenStreetMap path to one, fetched with the Overpass API by `osm_access` into `data/osm/access.json`, with heights from
+the Open-Meteo elevation API (Copernicus DEM, ~90 m; the free tier's rate limit makes a fetch take several minutes).
+The build adds these as trail category 4, "unofficial path", which the planner only uses with "Hardest trail:
+Unofficial" in the settings. They are fetched again only when the set of far huts changes (`--force` to refetch); a
+hut that only became far in this run gets its path at the next one.
 On the server, `server/refresh.sh` does the same in a one-off container (see the deployment doc). Edges without a stored
 footprint (grid cells and shape samples for the tour search) get one with `python -m app.ingest.footprints`, which
 `refresh` also runs.
@@ -76,7 +82,7 @@ app/
              (overrides, added huts), tours (/suggest, /{id}, /{id}/gpx, /{id}/warnings, /{id}/options for the editor, /huts/{id}/tour, /stops),
              info (About dialog), feedback (sent from the app; reading it needs the admin password)
   db/        schema.sql (tables, views, change-counter triggers) and connect() (migrations, WAL)
-  ingest/    offline jobs: refresh, sync_sac, load_stops, load_timetable, build_edges, footprints
+  ingest/    offline jobs: refresh, sync_sac, load_stops, load_timetable, osm_access, build_edges, footprints
   planner/   graph (model, loading, cache), tours (beam search, scoring, rebuilding, diversity),
              planning (search with free-bed rounds, rebuild by id: what the API calls), ranking (sub-scores,
              "best"), geometry (retracing, shape), availability (cache, classification, calendar), opening,
@@ -98,4 +104,4 @@ tests/
 
 ## Usage and data
 
-Private, non-commercial use only. Hut data comes from the SAC (© sac-cas.ch) and must not be redistributed. Maps and trail data © swisstopo. Suggested tours are planning aids: always check difficulty, conditions, weather and official sources before you go.
+Private, non-commercial use only. Hut data comes from the SAC (© sac-cas.ch) and must not be redistributed. Maps and trail data © swisstopo. Unofficial paths © OpenStreetMap contributors (ODbL). Suggested tours are planning aids: always check difficulty, conditions, weather and official sources before you go.

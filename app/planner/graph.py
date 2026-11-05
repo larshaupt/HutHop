@@ -134,9 +134,9 @@ def warm_up(conn: sqlite3.Connection) -> bool:
     Returns True if it loaded anything."""
     db = conn.execute("PRAGMA database_list").fetchone()["file"]
     version = conn.execute("SELECT version FROM data_version").fetchone()[0]
-    if db in _cache and _cache[db][0] == version and len(_cache[db][2]) == 3:
+    if db in _cache and _cache[db][0] == version and len(_cache[db][2]) == 4:
         return False
-    for limit in (3, 2, 1):
+    for limit in (4, 3, 2, 1):
         cached_graph(conn, limit)
     _cache[db][1].unpack_all()
     return True
