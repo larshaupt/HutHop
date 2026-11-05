@@ -54,6 +54,9 @@ async function openAbout() {
         <li>Huts, opening months and access routes: <a href="https://www.sac-cas.ch" target="_blank" rel="noopener">SAC-CAS</a>
           (for private use only).</li>
         <li>Maps, hiking trails (swissTLM3D) and heights: <a href="https://www.swisstopo.admin.ch" target="_blank" rel="noopener">swisstopo</a>.</li>
+        <li>Unofficial paths to huts away from the signposted trails: © <a href="https://www.openstreetmap.org/copyright"
+          target="_blank" rel="noopener">OpenStreetMap</a> contributors (ODbL); their heights: Copernicus DEM via
+          <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a>.</li>
         <li>Public transport stops: Federal Office of Transport (BAV), via data.geo.admin.ch.</li>
         <li>Free beds: <a href="https://www.hut-reservation.org" target="_blank" rel="noopener">hut-reservation.org</a>.
           HutHop only reads availability; book there or with the hut.</li>

@@ -161,8 +161,8 @@ CREATE TABLE IF NOT EXISTS edge (
   ascent_m       INTEGER,
   descent_m      INTEGER,
   time_min       INTEGER,             -- hiking time in this direction (Swiss formula)
-  max_category   INTEGER NOT NULL,    -- 1 yellow, 2 red-white, 3 blue-white (hardest along path)
-  category_limit INTEGER NOT NULL,    -- search limit this edge was found with (1..3)
+  max_category   INTEGER NOT NULL,    -- 1 yellow, 2 red-white, 3 blue-white, 4 unofficial OSM path (hardest)
+  category_limit INTEGER NOT NULL,    -- search limit this edge was found with (1..4)
   source         TEXT NOT NULL,       -- 'tlm_routed' | 'manual'
   sac_route_id   INTEGER,             -- matching SAC route, shown for reference
   sac_time_min   INTEGER,

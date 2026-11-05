@@ -80,7 +80,9 @@ function render() {
         suggestions, the tour editor or a hut's connections.</p>
       <div class="field"><div class="field-label">Hardest trail</div>
         ${seg("limit", [[1, '<i class="trail-swatch c1"></i>Yellow'], [2, '<i class="trail-swatch c2"></i>Red-white'],
-          [3, '<i class="trail-swatch c3"></i>Blue-white']], s.limit)}</div>
+          [3, '<i class="trail-swatch c3"></i>Blue-white'], [4, '<i class="trail-swatch c4"></i>Unofficial']], s.limit)}
+        <p class="hint">Unofficial: also OpenStreetMap paths to huts away from the signposted trails, often alpine or
+          glacier routes (T4–T6). Not checked by anyone: judge them yourself.</p></div>
       <div class="field"><label class="field-label" for="setAltitude">Highest point of a route</label>
         <select class="input" id="setAltitude" data-setting="maxAltitude">
           <option value=""${s.maxAltitude ? "" : " selected"}>No limit</option>

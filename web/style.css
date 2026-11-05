@@ -447,6 +447,7 @@ code { font-size: 12px; background: var(--bg-soft); padding: 0 4px; border-radiu
 .trail-swatch.c1 { background: #e0a800; }
 .trail-swatch.c2 { background: linear-gradient(to right, #fff 0 25%, #d52b1e 25% 75%, #fff 75%); box-shadow: 0 0 0 1px #d52b1e inset; }
 .trail-swatch.c3 { background: linear-gradient(to right, #fff 0 25%, #1f5fbf 25% 75%, #fff 75%); box-shadow: 0 0 0 1px #1f5fbf inset; }
+.trail-swatch.c4 { background: #7a3e9d; }
 .hint { color: var(--text-faint); font-size: 12px; margin: 8px 0 4px; }
 .warn { background: #fff6e0; color: #7a5200; border-radius: 8px; padding: 8px 10px; font-size: 12.5px; margin: 10px 0 4px; }
 #connList h4 { display: flex; align-items: center; gap: 6px; font-size: 13px; margin: 16px 0 6px; }

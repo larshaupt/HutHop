@@ -22,7 +22,8 @@ router = APIRouter(prefix="/api", tags=["tours"])
 AVAILABILITY_STATES = ("available", "not_released", "no_booking", "not_checked", "error")
 
 
-def settings(limit: int = Query(3, ge=1, le=3, description="hardest trail: 1 yellow, 2 red-white, 3 blue-white"),
+def settings(limit: int = Query(3, ge=1, le=4, description="hardest trail: 1 yellow, 2 red-white, 3 blue-white, "
+                                                   "4 also unofficial OSM paths"),
              max_altitude: int | None = Query(None, ge=500, le=5000, description="highest point of a route (m)"),
              avoid_lifts: bool = Query(False, description="no start or end stop served only by mountain lifts"),
              pace: float = Query(1.0, ge=0.5, le=2.0, description="walking time / Swiss standard time")) -> editing.Rules:
@@ -35,7 +36,8 @@ class TourQuery(BaseModel):
     nights: int = Field(2, ge=1, le=10)
     min_hours: float = Field(3, ge=0, le=12)
     max_hours: float = Field(6, gt=0, le=12)
-    limit: int = Field(3, ge=1, le=3, description="hardest trail: 1 yellow, 2 red-white, 3 blue-white")
+    limit: int = Field(3, ge=1, le=4, description="hardest trail: 1 yellow, 2 red-white, 3 blue-white, "
+                                                         "4 also unofficial OSM paths")
     catering: Catering = "any"
     bbox: tuple[float, float, float, float] | None = Field(None, description="west, south, east, north (WGS84)")
     start_stop: int | None = None

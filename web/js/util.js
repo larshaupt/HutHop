@@ -7,6 +7,7 @@ export const CATEGORY = {
   1: { label: "Yellow", name: "Hiking trail", color: "#e0a800" },
   2: { label: "Red-white", name: "Mountain trail", color: "#d52b1e" },
   3: { label: "Blue-white", name: "Alpine trail", color: "#1f5fbf" },
+  4: { label: "Unofficial", name: "Unofficial path (OpenStreetMap)", color: "#7a3e9d" },
 };
 export const MODE_LABELS = { cableway: "Cable car", chairlift: "Chairlift", funicular: "Funicular",
   rack_railway: "Rack railway", train: "Train", boat: "Boat", tram: "Tram", metro: "Metro", elevator: "Lift", bus: "Bus" };
@@ -94,7 +95,8 @@ export function mainMode(mode) {
 export const modeLabel = (mode) => MODE_LABELS[mainMode(mode)];
 
 export function categoryColor() {
-  return ["match", ["get", "category"], 1, CATEGORY[1].color, 2, CATEGORY[2].color, CATEGORY[3].color];
+  return ["match", ["get", "category"], 1, CATEGORY[1].color, 2, CATEGORY[2].color, 4, CATEGORY[4].color,
+    CATEGORY[3].color];
 }
 
 /** A tour's estimated hut costs (cost.totals: per currency, member and regular price per person) as text, e.g.

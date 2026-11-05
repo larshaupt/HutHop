@@ -12,7 +12,8 @@ from xml.sax.saxutils import escape
 
 from app.planner import polyline
 
-CATEGORY_NAME = {1: "hiking trail (yellow)", 2: "mountain trail (red-white)", 3: "alpine trail (blue-white)"}
+CATEGORY_NAME = {1: "hiking trail (yellow)", 2: "mountain trail (red-white)", 3: "alpine trail (blue-white)",
+                 4: "unofficial path (OpenStreetMap, may be an alpine or glacier route)"}
 
 
 def _minutes(m: int) -> str:

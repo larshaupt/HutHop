@@ -7,12 +7,15 @@ Steps (see hut-tour-planner.md, "Routing approach"):
 1. Trail graph from the 3D trail lines, one directed edge per line and direction, weighted by Swiss hiking time.
 2. Snap huts and stops to the nearest trail node (snap distance stored on `place`).
 3. From every hut, Dijkstra up to the cutoff, forward (hut → hut/stop) and on the reversed graph (stop → hut),
-   once per trail category limit (yellow only, up to red-white, up to blue-white).
+   once per trail category limit (yellow only, up to red-white, up to blue-white, up to unofficial paths).
 4. Store edges with a simplified route line: all huts reached, and per hut and direction only the closest stop of
    each line in the summer timetable (`stop_line`, from load_timetable), so a bus line along the valley gives one
    stop, not all of them. Without a loaded timetable: the STOPS_PER_HUT fastest stops. Higher category limits only
    store edges that differ from the easier one.
 5. Keep manual `excluded` flags and notes across rebuilds, and attach matching SAC hut-to-hut routes.
+
+Huts too far from a signposted trail reach it over an OpenStreetMap path when osm_access found one: an extra
+trail line of category 4 ("unofficial path") from the hut to the nearest trail node.
 """
 
 import argparse
@@ -33,11 +36,13 @@ from scipy.sparse.csgraph import dijkstra
 from scipy.spatial import cKDTree
 
 from app.db import ROOT, connect
+from app.ingest import osm_access
 from app.planner import geometry, hiking_time, polyline
 
 GPKG = ROOT / "data/tlm/SWISSTLM3D_WANDERWEGE.gpkg"
 CATEGORY = {"Wanderweg": 1, "Bergwanderweg": 2, "Alpinwanderweg": 3}  # yellow, red-white, blue-white
-LIMITS = (1, 2, 3)
+OSM_CATEGORY = 4  # unofficial path from OpenStreetMap (osm_access), only to huts off the signposted network
+LIMITS = (1, 2, 3, 4)
 NODE_PRECISION_M = 1.0
 CUTOFF_MIN = 600.0
 STOP_MAX_SNAP_M = 300.0
@@ -126,18 +131,29 @@ def network_from_lines(lines: list[np.ndarray], categories: list[int]) -> TrailN
     return TrailNetwork(np.array(node_xy), np.array(node_z), lines, edges)
 
 
-def load_network(gpkg=GPKG) -> TrailNetwork:
+def load_network(gpkg=GPKG, access: list[np.ndarray] = ()) -> TrailNetwork:
+    """The trail graph, plus access paths (3D lines from a hut towards the trails) as category-4 lines."""
     _, _, geoms, (categories,) = pyogrio.raw.read(gpkg, layer="tlm_strassen_strasse", columns=["wanderwege"])
     shapes = shapely.from_wkb(geoms)
     lines = [shapely.get_coordinates(g, include_z=True) for g in shapes]
-    return network_from_lines(lines, [CATEGORY.get(c, 1) for c in categories])
+    return network_from_lines(*with_access(lines, [CATEGORY.get(c, 1) for c in categories], access))
 
 
-def snap(network: TrailNetwork, xy: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """Nearest trail node and distance (m) for each point."""
-    tree = shapely.STRtree(shapely.points(network.node_xy))
+def with_access(lines: list[np.ndarray], categories: list[int], access) -> tuple[list[np.ndarray], list[int]]:
+    """Trail lines plus each access path, extended to the nearest trail line end so that it joins the graph there."""
+    if not len(access):
+        return lines, categories
+    ends = np.concatenate([[c[0], c[-1]] for c in lines if len(c) >= 2])
+    _, nearest = cKDTree(ends[:, :2]).query([a[-1, :2] for a in access])
+    return lines + [np.vstack([a, ends[i]]) for a, i in zip(access, nearest)], categories + [OSM_CATEGORY] * len(access)
+
+
+def snap(network: TrailNetwork, xy: np.ndarray, allowed: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray]:
+    """Nearest trail node (of the `allowed` ones, a boolean mask; default all) and distance (m) for each point."""
+    candidates = np.flatnonzero(allowed) if allowed is not None else np.arange(len(network.node_xy))
+    tree = shapely.STRtree(shapely.points(network.node_xy[candidates]))
     (_, nodes), dist = tree.query_nearest(shapely.points(xy), return_distance=True, all_matches=False)
-    return nodes, dist
+    return candidates[nodes], dist
 
 
 def tree_aggregates(pred: np.ndarray, source: int, edge_vals: dict[str, np.ndarray],
@@ -337,7 +353,7 @@ def store(conn: sqlite3.Connection, places: list[dict], edges: list[dict], netwo
     by_pair = {(f, t): flags for (f, t, _), flags in sorted(kept.items(), key=lambda kv: kv[1][0])}
     with conn:
         conn.executemany("UPDATE place SET snap_m = :snap_m WHERE id = :id",
-                         [{"id": p["id"], "snap_m": round(p["snap_m"], 1)} for p in places])
+                         [{"id": p["id"], "snap_m": round(p.get("trail_snap_m", p["snap_m"]), 1)} for p in places])
         conn.executemany("UPDATE place SET altitude_m = :z WHERE id = :id AND altitude_m IS NULL",
                          [{"id": p["id"], "z": round(float(network.node_z[p["node"]]))}
                           for p in places if p["kind"] == "stop" and p["snap_m"] <= STOP_MAX_SNAP_M])
@@ -358,18 +374,33 @@ def store(conn: sqlite3.Connection, places: list[dict], edges: list[dict], netwo
     print(f"stored {len(edges)} edges ({len(kept)} manual flags kept, {matched} matched to SAC routes)")
 
 
+def attach_access(network: TrailNetwork, places: list[dict], access: dict[int, dict]) -> None:
+    """Snap places to the signposted trails; a far hut with an access path starts at that path's first node
+    (the hut itself) instead. `trail_snap_m` keeps the distance to the signposted trails (stored on `place`)."""
+    starts = np.array([], dtype=int)
+    if access:
+        starts, _ = snap(network, np.array([a["coords"][0, :2] for a in access.values()]))
+    trails = np.ones(len(network.node_xy), bool)
+    trails[starts] = False
+    nodes, dists = snap(network, np.array([(p["e_lv95"], p["n_lv95"]) for p in places]), trails)
+    start_of = dict(zip(access, starts.tolist()))
+    for p, node, d in zip(places, nodes, dists):
+        p["node"], p["snap_m"] = int(node), float(d)
+        if p["kind"] == "hut" and d > HUT_MAX_SNAP_M and p["id"] in start_of:
+            p["trail_snap_m"], p["node"], p["snap_m"] = p["snap_m"], start_of[p["id"]], 0.0
+
+
 def build(conn: sqlite3.Connection, cutoff: float = CUTOFF_MIN) -> int:
     """Rebuild all computed edges. Returns the number of edges stored."""
     started = time.time()
-    network = load_network()
-    print(f"trail graph: {len(network.node_xy):,} nodes, {len(network.edges[3].src):,} directed edges "
-          f"({time.time() - started:.0f} s)")
+    access = osm_access.load()
+    network = load_network(access=[a["coords"] for a in access.values()])
+    print(f"trail graph: {len(network.node_xy):,} nodes, {len(network.edges[OSM_CATEGORY].src):,} directed edges, "
+          f"{len(access)} OSM access paths ({time.time() - started:.0f} s)")
     places = [dict(r) for r in conn.execute(
         "SELECT p.id, p.kind, p.name, p.e_lv95, p.n_lv95 FROM place p "
         "LEFT JOIN hut h ON h.place_id = p.id LEFT JOIN stop s ON s.place_id = p.id")]
-    nodes, dists = snap(network, np.array([(p["e_lv95"], p["n_lv95"]) for p in places]))
-    for p, node, d in zip(places, nodes, dists):
-        p["node"], p["snap_m"] = int(node), float(d)
+    attach_access(network, places, access)
     lines: dict[int, set[str]] = {}
     for r in conn.execute("SELECT stop_place, line FROM stop_line WHERE departures > 0"):
         lines.setdefault(r["stop_place"], set()).add(r["line"])
@@ -381,8 +412,9 @@ def build(conn: sqlite3.Connection, cutoff: float = CUTOFF_MIN) -> int:
           "timetable: not loaded, keeping the fastest stops (run app.ingest.load_timetable)")
     review = sum(1 for p in places if p["kind"] == "hut" and HUT_REVIEW_SNAP_M < p["snap_m"] <= HUT_MAX_SNAP_M)
     off = sum(1 for p in places if p["kind"] == "hut" and p["snap_m"] > HUT_MAX_SNAP_M)
+    via_osm = sum(1 for p in places if "trail_snap_m" in p)
     print(f"snapped {len(places):,} places; huts: {review} to review (>{HUT_REVIEW_SNAP_M:.0f} m from a trail), "
-          f"{off} off the network (>{HUT_MAX_SNAP_M:.0f} m, no edges)")
+          f"{via_osm} over an OSM path, {off} off the network (>{HUT_MAX_SNAP_M:.0f} m, no edges)")
     edges = search(network, places, cutoff)
     store(conn, places, edges, network)
     print(f"done in {time.time() - started:.0f} s")

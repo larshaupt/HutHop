@@ -35,7 +35,7 @@ class Edit:
 class Rules:
     """The general settings every offered route must keep to."""
 
-    cap: int = 3  # hardest trail: 1 yellow, 2 red-white, 3 blue-white
+    cap: int = 3  # hardest trail: 1 yellow, 2 red-white, 3 blue-white, 4 unofficial (OSM)
     max_altitude: int | None = None  # highest point of a route (m)
     avoid_lifts: bool = False  # no start or end stop served only by mountain lifts
     pace: float = 1.0  # for the connection times at the start and end stop
@@ -50,7 +50,7 @@ class Rules:
 def leg_limit(graph: Graph, frm: int, to: int, rules: Rules = Rules()) -> int | None:
     """The trail limit to name a day frm → to with: the hardest variant of that edge the rules allow (build_tour
     takes exactly it). None if no allowed edge connects the places."""
-    limits = [lim for lim in (1, 2, 3) if (frm, to, lim) in graph.legs and rules.allows(graph.legs[(frm, to, lim)])]
+    limits = [lim for lim in (1, 2, 3, 4) if (frm, to, lim) in graph.legs and rules.allows(graph.legs[(frm, to, lim)])]
     return max(limits) if limits else None
 
 
@@ -198,7 +198,7 @@ def edits(graph: Graph, key: TourKey, rules: Rules = Rules(), today: date | None
     for d in range(n + 1):
         frm, to = places[d], places[d + 1]
         used = next((lim for lim in range(limits[d], 0, -1) if (frm, to, lim) in graph.legs), None)
-        for lim in (1, 2, 3):
+        for lim in (1, 2, 3, 4):
             if lim != used and (frm, to, lim) in graph.legs and rules.allows(graph.legs[(frm, to, lim)]):
                 new_limits = list(limits)
                 new_limits[d] = lim

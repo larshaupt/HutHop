@@ -31,6 +31,8 @@ def fake(tmp_path, monkeypatch, lines):
     monkeypatch.setattr(refresh.load_timetable, "read_all", lambda: [
         Feed(2027, "v1", date(2026, 12, 13), date(2027, 12, 11), lines=list(lines))])
     monkeypatch.setattr(refresh, "refresh_trails", lambda: False)
+    monkeypatch.setattr(refresh.osm_access, "FILE", tmp_path / "access.json")
+    monkeypatch.setattr(refresh.osm_access, "refresh", lambda conn: "unchanged")
     monkeypatch.setattr(refresh.build_edges, "build", lambda conn: calls.append("build") or 42)
     return calls
 
