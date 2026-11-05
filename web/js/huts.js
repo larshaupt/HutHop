@@ -82,7 +82,8 @@ export function syncControls() {
   document.querySelectorAll("#base button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.v === state.base));
   document.querySelectorAll("[data-toggle]").forEach((b) => b.setAttribute("aria-pressed", state[b.dataset.toggle]));
   $("#trails").setAttribute("aria-pressed", state.trails);
-  $("#openAs").style.opacity = state.month ? 1 : 0.5;
+  // Only meaningful for a chosen month
+  document.querySelectorAll("#openAs button").forEach((b) => { b.disabled = !state.month; });
   $("#q").value = state.q;
   $("#sort").value = state.sort;
   $("#altMin").value = state.altMin;
@@ -213,7 +214,7 @@ export function addHutLayers() {
       "text-size": ["interpolate", ["linear"], ["zoom"], 10, 11, 14, 13],
       // Try several positions around the dot before hiding a name; larger huts win when space is tight.
       "text-variable-anchor": ["top", "bottom", "right", "left"], "text-radial-offset": 0.75, "text-justify": "auto",
-      "text-max-width": 9, "text-optional": true, "symbol-sort-key": ["-", 0, ["get", "beds"]],
+      "text-max-width": 9, "text-optional": true, "symbol-sort-key": ["-", 0, ["coalesce", ["get", "beds"], 0]],
     },
     paint: { "text-color": "#1d2521", "text-halo-color": "#ffffff", "text-halo-width": 1.6 },
   });

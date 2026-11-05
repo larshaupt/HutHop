@@ -5,10 +5,11 @@
   --line: #e1e4dd;
   --text: #1d2521;
   --text-soft: #5d6862;
-  --text-faint: #8b948f;
+  --text-faint: #646d68;  /* ≥ 4.5:1 on --bg and --bg-soft */
   --accent: #c8102e;
   --accent-soft: #fbe9ec;
   --catered: #2e8b57;
+  --catered-text: #25724a;  /* --catered is too light for text */
   --self-service: #2f6fb3;
   --closed: #9aa3a0;
   --unknown: #ffffff;
@@ -126,7 +127,7 @@ button { cursor: pointer; }
 }
 .filters[open] summary::after { transform: rotate(-135deg); }
 .active-count { background: var(--accent); color: #fff; border-radius: 99px; font-size: 11px; padding: 0 7px; line-height: 18px; }
-.link { background: none; border: 0; padding: 0; color: var(--accent); font-weight: 500; font-size: 13px; order: 2; margin-left: auto; }
+.link { background: none; border: 0; padding: 0; min-height: 24px; color: var(--accent); font-weight: 500; font-size: 13px; order: 2; margin-left: auto; }
 .link + * { margin-left: 0; }
 
 .field { margin-bottom: 14px; }
@@ -149,6 +150,7 @@ button { cursor: pointer; }
   font-size: 13px; font-weight: 500; color: var(--text-soft); white-space: nowrap; padding: 0 8px;
 }
 .seg button:hover { color: var(--text); }
+.seg button:disabled { color: var(--text-faint); cursor: not-allowed; }
 .seg button[aria-pressed="true"] { background: var(--bg); color: var(--text); box-shadow: 0 1px 3px rgb(0 0 0 / 0.12); }
 .seg.small button { font-size: 12.5px; padding: 0 4px; }
 
@@ -161,8 +163,8 @@ button { cursor: pointer; }
 .chip:hover { background: var(--bg-hover); }
 .chip[aria-pressed="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
 
-input[type="range"] { width: 100%; accent-color: var(--text); margin: 4px 0; }
-.range2 { position: relative; height: 22px; }
+input[type="range"] { width: 100%; min-height: 24px; accent-color: var(--text); margin: 4px 0; }
+.range2 { position: relative; height: 26px; }
 .range2 input {
   position: absolute; inset: 0; margin: 0; width: 100%; pointer-events: none;
   appearance: none; -webkit-appearance: none; background: none; z-index: 2;
@@ -182,7 +184,7 @@ input[type="range"] { width: 100%; accent-color: var(--text); margin: 4px 0; }
 .results-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 20px 6px; color: var(--text-soft); font-size: 13px; }
 .results-head strong { color: var(--text); font-size: 15px; }
 .sort { display: flex; align-items: center; gap: 6px; }
-.sort select { border: 0; background: transparent; font-weight: 500; color: var(--text); cursor: pointer; padding: 2px; }
+.sort select { border: 0; background: transparent; font-weight: 500; color: var(--text); cursor: pointer; padding: 2px; min-height: 24px; }
 
 /* The whole Huts tab scrolls (filters included), so the list never shrinks to a sliver on short screens. */
 .list { list-style: none; margin: 0; padding: 0 8px 12px; flex: none; }
@@ -397,11 +399,11 @@ label.field-label { display: flex; }
 .tl-night a, .tl-day a { color: var(--text); text-decoration: none; border-bottom: 1px solid var(--line); }
 .tl-night a:hover, .tl-day a:hover { border-bottom-color: var(--text); }
 .night { font-weight: 600; }
-.night.catered { color: var(--catered); }
+.night.catered { color: var(--catered-text); }
 .night.self_service { color: var(--self-service); }
 .night.unknown { color: #a36a00; }
 .avail { font-weight: 500; }
-.avail.available { color: var(--catered); }
+.avail.available { color: var(--catered-text); }
 .avail.not_released, .avail.no_booking, .avail.not_checked, .avail.error { color: #a36a00; }
 /* Booking helper: a checklist of the tour's nights above the timeline */
 .booking { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px 4px; margin-bottom: 18px; }
@@ -410,7 +412,7 @@ label.field-label { display: flex; }
 .booking-head span { color: var(--text-soft); font-size: 12.5px; }
 .booking .actions { margin: 10px 0 12px; align-items: center; }
 .booking .btn[disabled] { opacity: .6; }
-.booked-all { color: var(--catered); font-weight: 600; font-size: 13.5px; }
+.booked-all { color: var(--catered-text); font-weight: 600; font-size: 13.5px; }
 .book-list { list-style: none; margin: 0; padding: 0; }
 .book-list li { padding: 8px 0; border-top: 1px solid var(--line); font-size: 13.5px; }
 .book-list label { display: flex; gap: 8px; align-items: flex-start; cursor: pointer; }
@@ -433,7 +435,7 @@ label.field-label { display: flex; }
 .code { height: 26px; padding: 0; border: 1px solid var(--line); border-radius: 5px; background: var(--bg); font-weight: 700; color: var(--text-soft); }
 .code.c0 { background: var(--catered); border-color: var(--catered); color: #fff; }
 .season-edit-row:nth-child(3) .code.c0 { background: var(--self-service); border-color: var(--self-service); }
-.code.c1 { background: #e6f2ea; border-color: var(--catered); color: var(--catered); }
+.code.c1 { background: #e6f2ea; border-color: var(--catered); color: var(--catered-text); }
 .season-edit-row:nth-child(3) .code.c1 { background: #e5edf7; border-color: var(--self-service); color: var(--self-service); }
 .code.edited { box-shadow: 0 0 0 2px var(--accent); }
 .btn.danger { color: var(--accent); border-color: var(--accent); background: var(--bg); }

@@ -84,7 +84,7 @@ app/
              hiking_time, polyline
   clients/   external APIs (SAC, hut-reservation.org, weather via Open-Meteo, geo.admin closures and
              shooting notices)
-web/         static frontend (MapLibre + swisstopo tiles, no build step), ES modules in web/js/:
+web/         static frontend (MapLibre, vendored in web/vendor/, + swisstopo tiles, no build step), ES modules in web/js/:
              main (wiring), state (URL hash), map, huts (list, detail), beds (free-beds calendar), weather,
              connections, tours (form, results, sorting, opening a tour), tour-detail (timeline, profiles),
              tour-editor (editing a tour), your-tours and favourites (kept in the browser), settings (general

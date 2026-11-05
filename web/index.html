@@ -8,10 +8,11 @@
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cpath d='M16 4 3 27h26z' fill='%23c8102e'/%3E%3Cpath d='M16 13l-5 9h10z' fill='%23fff'/%3E%3C/svg%3E">
   <link rel="preconnect" href="https://vectortiles.geo.admin.ch" crossorigin>
   <link rel="preconnect" href="https://static.www.suissealpine.sac-cas.ch">
-  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css">
+  <link rel="stylesheet" href="vendor/maplibre-gl/maplibre-gl.css">
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
+  <main>
   <div id="map" aria-label="Map of Swiss mountain huts"></div>
 
   <aside id="panel" class="panel" data-sheet="peek">
@@ -201,12 +202,13 @@
     <span><i class="dot closed"></i>Closed</span>
     <span><i class="dot unknown"></i>No data</span>
   </div>
+  </main>
 
   <dialog id="about" class="about" aria-label="About HutHop"></dialog>
   <dialog id="settings" class="about settings" aria-label="Settings"></dialog>
   <dialog id="feedback" class="about feedback" aria-label="Feedback"></dialog>
 
-  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+  <script src="vendor/maplibre-gl/maplibre-gl.js"></script>
   <script type="module" src="js/main.js"></script>
 </body>
 </html>

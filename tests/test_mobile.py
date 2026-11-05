@@ -2,7 +2,7 @@
 
     stop Valley ── A ── B ── C ── D ── stop Pass   (plus A–C, B–D, B–Valley, C–Pass: several tours)
 
-Needs a browser: `uv run playwright install chromium`. Map tiles and MapLibre come from the internet."""
+Needs a browser: `uv run playwright install chromium`. Map tiles come from the internet."""
 
 import re
 import socket
