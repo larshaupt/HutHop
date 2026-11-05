@@ -3,8 +3,9 @@ stop search used to pick a start point."""
 
 import json
 import sqlite3
+import time
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
@@ -68,7 +69,12 @@ def suggest_tours(q: TourQuery, conn: sqlite3.Connection = Depends(get_db)) -> d
             raise HTTPException(404, "start stop not found")
         params["start_near"] = (row["e_lv95"], row["n_lv95"])
     req = TourRequest(**params, weights=config.ranking_weights())
+    started = time.monotonic()
     graph, tours, fetched = planning.search_tours(conn, req, q.people, q.check_availability)
+    with conn:
+        conn.execute("INSERT INTO search_log (created_at, query, results, best_tour, duration_ms) VALUES (?, ?, ?, ?, ?)",
+                     (datetime.now(UTC).isoformat(timespec="seconds"), q.model_dump_json(), len(tours),
+                      tours[0].id if tours else None, round((time.monotonic() - started) * 1000)))
     rules = editing.Rules(q.limit, q.max_altitude, q.avoid_lifts, q.pace)
     return {"query": q.model_dump(mode="json"), "tours": tour_json(conn, graph, tours, rules),
             "calendars_fetched": fetched}

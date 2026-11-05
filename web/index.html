@@ -158,10 +158,10 @@
             <label class="field-label" for="tStartInput">Start</label>
             <div class="stop-picker">
               <div class="chip-picked" id="tStartPicked" hidden><span id="tStartName"></span><button type="button" id="tStartClear" aria-label="Clear start">×</button></div>
-              <input class="input" id="tStartInput" placeholder="Anywhere on the map – or type a station" aria-autocomplete="list" aria-controls="tStartList">
+              <input class="input" id="tStartInput" placeholder="Anywhere – or type a station" aria-autocomplete="list" aria-controls="tStartList">
               <ul class="suggest" id="tStartList" role="listbox" hidden></ul>
             </div>
-            <p class="hint" id="tAreaHint">Without a start, tours are searched in the area visible on the map.</p>
+            <label class="check" id="tAreaField"><input type="checkbox" id="tArea"> Only in the area visible on the map</label>
           </div>
 
           <div class="field" id="tLoopField" hidden>

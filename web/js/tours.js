@@ -76,7 +76,8 @@ export function syncTourForm() {
   $("#tStartPicked").hidden = !state.tStart;
   $("#tStartInput").hidden = !!state.tStart;
   $("#tStartName").textContent = state.tStartName;
-  $("#tAreaHint").hidden = !!state.tStart;
+  $("#tAreaField").hidden = !!state.tStart;
+  $("#tArea").checked = state.tArea;
 }
 
 export function bindTourForm() {
@@ -99,13 +100,15 @@ export function bindTourForm() {
     });
   }
   $("#tUnknown").addEventListener("change", (e) => setState({ tUnknown: e.target.checked }));
+  $("#tArea").addEventListener("change", (e) => setState({ tArea: e.target.checked }));
   bindStopPicker();
   bindYourTours();
 
   $("#tourForm").addEventListener("submit", (e) => {
     e.preventDefault();
-    // Without a start point, search the area visible on the map; with one, search around it.
-    setState({ tBox: state.tStart ? "" : visibleBox().map((v) => v.toFixed(3)).join(","), tour: 0 });
+    // All of Switzerland, unless limited to the map area (only without a start point: with one, around it).
+    const area = state.tArea && !state.tStart;
+    setState({ tBox: area ? visibleBox().map((v) => v.toFixed(3)).join(",") : "", tour: 0 });
     runTourSearch();
   });
 
