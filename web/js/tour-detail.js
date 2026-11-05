@@ -1,5 +1,5 @@
 // Tour detail view: day-by-day timeline with nights, free beds and a height profile per day.
-import { $, CATEGORY, costTitle, decodePolyline, decodeValues, distanceM, esc, formatCost, formatMinutes, modeLabel }
+import { $, CATEGORY, categoryName, costTitle, decodePolyline, decodeValues, distanceM, esc, formatCost, formatMinutes, modeLabel }
   from "./util.js";
 import { state } from "./state.js";
 import { bookingPanel, isBooked } from "./booking.js";
@@ -89,7 +89,7 @@ export function renderTourDetail(t, { kept = false, booking = false, people = 2,
         <div><div class="tl-title">Day ${d.day} · ${formatDay(d.date)}</div>
           <div>${from} → ${to}</div>
           <div class="tl-meta"><b>${formatMinutes(d.time_min)}</b> · ${formatDistance(d.distance_m)} ·
-            ↑ ${formatHeight(d.ascent_m)} · ↓ ${formatHeight(d.descent_m)} · <span style="color:${cat.color}">${cat.name}</span>${sac}</div>
+            ↑ ${formatHeight(d.ascent_m)} · ↓ ${formatHeight(d.descent_m)} · <span style="color:${cat.color}">${categoryName(d.max_category, d.osm_grade)}</span>${sac}</div>
           ${i === 0 ? connectionLine(t.access, "access") : ""}
           ${i === t.days.length - 1 ? connectionLine(t.exit, "exit") : ""}
           <div data-day-notes="${d.day}"></div>
@@ -115,6 +115,7 @@ export function renderTourDetail(t, { kept = false, booking = false, people = 2,
         <div class="fact"><b>${heightValue(t.ascent_m)}</b><span>${heightUnit()} ascent</span></div>
       </div>
       ${outsideSettings(t)}
+      ${unofficialWarning(t)}
       ${tourCost(t)}
       <div class="actions">
         <button class="btn primary" id="tourEdit">Edit tour</button>
@@ -189,6 +190,15 @@ export function outsideSettings(t) {
     lift: "a mountain lift at the start or end" };
   const list = (t.outside_settings || []).map((r) => reasons[r]).filter(Boolean);
   return list.length ? `<p class="warn">Outside your settings (⚙): this tour uses ${list.join(" and ")}.</p>` : "";
+}
+
+/** Days on unofficial OSM paths: not signposted or maintained, often glacier or alpine terrain. */
+function unofficialWarning(t) {
+  const days = t.days.filter((d) => d.max_category === 4);
+  if (!days.length) return "";
+  const which = days.map((d) => `day ${d.day}${d.osm_grade ? ` (${d.osm_grade})` : ""}`).join(", ");
+  return `<p class="warn">Unofficial path on ${which}: from OpenStreetMap, not signposted or maintained, often across
+    glaciers or alpine terrain. Check the route, conditions and the hut's access description before you go.</p>`;
 }
 
 function nightAvailability(d) {

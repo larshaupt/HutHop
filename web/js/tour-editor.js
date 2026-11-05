@@ -5,7 +5,7 @@
 // a hut on the map offers the edits it fits. Undo and redo; the result is kept in "My tours" as a new entry (the
 // tour it started from stays as it was). A tour you design needn't follow the search settings (hours, trail
 // level), so nothing is refused or flagged for them.
-import { $, CATEGORY, EMPTY, esc, formatMinutes, localIso, revealPanel } from "./util.js";
+import { $, CATEGORY, EMPTY, categoryName, esc, formatMinutes, localIso, revealPanel } from "./util.js";
 import { setState, state } from "./state.js";
 import { fitCoords, map } from "./map.js";
 import { closeDetail } from "./huts.js";
@@ -165,7 +165,7 @@ function render({ loading = false } = {}) {
     rows.push(`<li class="tl-day" data-day="${d.day}"><div class="tl-dot" style="--c:${cat.color}"></div>
         <div><div class="tl-title">Day ${d.day} · ${formatDay(d.date)}</div>
           <div class="tl-meta"><b>${formatMinutes(d.time_min)}</b> · ${formatDistance(d.distance_m)} · ↑ ${formatHeight(d.ascent_m)} ·
-            ↓ ${formatHeight(d.descent_m)} · <span style="color:${cat.color}">${cat.name}</span></div>
+            ↓ ${formatHeight(d.descent_m)} · <span style="color:${cat.color}">${categoryName(d.max_category, d.osm_grade)}</span></div>
           ${limitChips(i)}</div></li>`);
     if (!d.night) return;
     const remove = options("remove", i)[0];

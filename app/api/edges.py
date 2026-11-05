@@ -7,6 +7,7 @@ from pydantic import BaseModel
 
 from app.admin import require_admin
 from app.api.deps import get_db
+from app.ingest import osm_access
 from app.planner.tours import is_lift
 
 router = APIRouter(prefix="/api", tags=["edges"])
@@ -44,6 +45,8 @@ def hut_edges(hut_id: int, limit: int = Query(3, ge=1, le=4, description="max tr
         {"hut": hut_id, "limit": limit, "max_altitude": max_altitude},
     ).fetchall()
 
+    grades = osm_access.grades()
+
     def item(r: sqlite3.Row) -> dict:
         return {
             "id": r["id"],
@@ -53,6 +56,7 @@ def hut_edges(hut_id: int, limit: int = Query(3, ge=1, le=4, description="max tr
             **{k: r[k] for k in ("distance_m", "ascent_m", "descent_m", "max_category", "category_limit",
                                  "max_altitude_m", "sac_route_id", "sac_time_min", "sac_grade", "geometry", "note",
                                  "source")},
+            "osm_grade": osm_access.edge_grade(grades, r["max_category"], r["from_place"], r["to_place"]),
             "time_min": round(r["time_min"] * pace),
             "excluded": bool(r["excluded"]),
         }
@@ -98,3 +102,15 @@ def review_edge(edge_id: int, review: EdgeReview, conn: sqlite3.Connection = Dep
         raise HTTPException(404, "edge not found")
     row = conn.execute("SELECT id, excluded, note FROM edge WHERE id = ?", (edge_id,)).fetchone()
     return {"id": row["id"], "excluded": bool(row["excluded"]), "note": row["note"]}
+
+
+@router.get("/osm-paths")
+def osm_paths() -> dict:
+    """The unofficial access paths (OpenStreetMap, see osm_access) as GeoJSON lines, for the map's trail overlay."""
+    features = []
+    for hut, path in osm_access.load().items():
+        lon, lat = osm_access.LV95_TO_WGS84.transform(path["coords"][:, 0], path["coords"][:, 1])
+        features.append({"type": "Feature", "properties": {"hut": hut, "grade": path["grade"]},
+                         "geometry": {"type": "LineString", "coordinates": [[round(x, 5), round(y, 5)]
+                                                                            for x, y in zip(lon, lat)]}})
+    return {"type": "FeatureCollection", "features": features}

@@ -9,6 +9,9 @@ export const CATEGORY = {
   3: { label: "Blue-white", name: "Alpine trail", color: "#1f5fbf" },
   4: { label: "Unofficial", name: "Unofficial path (OpenStreetMap)", color: "#7a3e9d" },
 };
+/** A trail category's name, with the OSM grade (T1–T6) of an unofficial path when known. */
+export const categoryName = (category, grade) => CATEGORY[category].name + (grade ? `, ${grade}` : "");
+
 export const MODE_LABELS = { cableway: "Cable car", chairlift: "Chairlift", funicular: "Funicular",
   rack_railway: "Rack railway", train: "Train", boat: "Boat", tram: "Tram", metro: "Metro", elevator: "Lift", bus: "Bus" };
 export const BOOKING_LABEL = { hut_reservation_org: "hut-reservation.org", online_other: "online", email: "by email",

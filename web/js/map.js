@@ -1,6 +1,7 @@
 // The MapLibre map: base styles, the trail overlay and shared map helpers.
-import { $, isMobile } from "./util.js";
+import { $, CATEGORY, isMobile } from "./util.js";
 import { state } from "./state.js";
+import { settings } from "./settings.js";
 
 const CH_BOUNDS = [[5.9, 45.8], [10.5, 47.85]];
 const ATTRIBUTION = '<a href="https://www.swisstopo.admin.ch" target="_blank" rel="noopener">© swisstopo</a> · ' +
@@ -43,6 +44,22 @@ export function initMap(onStyleLoad) {
   map.addControl(new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: false } }), "top-right");
   map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-right");
   map.on("style.load", onStyleLoad);
+  bindOsmPaths();
+}
+
+/** Hover on an unofficial path: what it is and its grade (handlers survive style reloads). */
+function bindOsmPaths() {
+  const popup = new maplibregl.Popup({ closeButton: false, closeOnClick: false });
+  map.on("mousemove", "osm-paths", (e) => {
+    const grade = e.features[0].properties.grade;
+    map.getCanvas().style.cursor = "help";
+    popup.setLngLat(e.lngLat).setHTML(`Unofficial path${grade ? ` · ${grade}` : ""}<small>OpenStreetMap, not signposted</small>`)
+      .addTo(map);
+  });
+  map.on("mouseleave", "osm-paths", () => {
+    map.getCanvas().style.cursor = "";
+    popup.remove();
+  });
 }
 
 export function setBaseStyle(name) {
@@ -56,10 +73,22 @@ export function addTrailLayer() {
     paint: { "raster-opacity": ["interpolate", ["linear"], ["zoom"], 7, 0.45, 10, 0.9] },
     layout: { visibility: state.trails ? "visible" : "none" },
   });
+  // Unofficial OSM paths to huts off the signposted network, with the trails when the settings allow them
+  map.addSource("osm-paths", { type: "geojson", data: "/api/osm-paths" });
+  map.addLayer({
+    id: "osm-paths", type: "line", source: "osm-paths",
+    paint: { "line-color": CATEGORY[4].color, "line-width": ["interpolate", ["linear"], ["zoom"], 8, 1.5, 13, 3],
+      "line-dasharray": [2, 1.5] },
+    layout: { visibility: osmVisible(state.trails) ? "visible" : "none", "line-cap": "butt" },
+  });
 }
 
+const osmVisible = (trails) => trails && settings().limit >= 4;
+
+/** The trail overlay on or off; also call it when the settings change (unofficial paths follow the trail limit). */
 export function setTrailsVisible(visible) {
   if (map.getLayer("trails")) map.setLayoutProperty("trails", "visibility", visible ? "visible" : "none");
+  if (map.getLayer("osm-paths")) map.setLayoutProperty("osm-paths", "visibility", osmVisible(visible) ? "visible" : "none");
 }
 
 /** Space the panel covers, so fitted content stays visible. */

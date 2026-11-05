@@ -172,6 +172,20 @@ def load() -> dict[int, dict]:
             for k, p in json.loads(FILE.read_text())["paths"].items()}
 
 
+def grades() -> dict[int, str | None]:
+    """T-grade of each hut's access path, by hut id (None: no way along it has a sac_scale)."""
+    if not FILE.exists():
+        return {}
+    return {int(k): p["grade"] for k, p in json.loads(FILE.read_text())["paths"].items()}
+
+
+def edge_grade(grades: dict[int, str | None], max_category: int, a: int, b: int) -> str | None:
+    """Hardest grade on an unofficial connection: an access path is a dead end at its hut, so it is the end huts'."""
+    if max_category < 4:
+        return None
+    return max((g for g in (grades.get(a), grades.get(b)) if g), default=None)  # "T1" < … < "T6"
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--force", action="store_true", help="fetch even if the set of far huts is unchanged")

@@ -42,7 +42,7 @@ def rebuild_tour(conn: sqlite3.Connection, tour_id: str, people: int, check_avai
     """Raises ValueError for a malformed id, LookupError if a connection of the tour no longer exists. `fresh`:
     free beds from calendars at most a minute old (right before booking), not the usual 10 minutes."""
     key = parse_tour_id(tour_id)
-    graph = cached_graph(conn, 3)  # all trail categories; a tour id names its edges explicitly
+    graph = cached_graph(conn, 4)  # all trail categories; a tour id names its edges explicitly
     lookup = None
     if check_availability:
         availability.refresh(conn, set(key.places[1:-1]),

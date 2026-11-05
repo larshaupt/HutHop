@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.api.deps import get_db
 from app.clients import hut_reservation, sac, weather
+from app.ingest import osm_access
 from app.planner import availability, opening
 
 router = APIRouter(prefix="/api/huts", tags=["huts"])
@@ -73,6 +74,7 @@ def hut_detail(hut_id: int, conn: sqlite3.Connection = Depends(get_db)) -> dict:
     codes = opening.load_codes(conn, hut_id).get(hut_id, (opening.NO_DATA, opening.NO_DATA))
     routes = [r for r in json.loads(row["routes"] or "[]") if r["discipline"] == "mountain_hiking"]
     routes.sort(key=lambda r: (not r["normal_route"], r["ascent_time_max"] or 9999))
+    grades = osm_access.grades()
     return summary(row, codes) | {
         "owner": row["owner"],
         "description": row["description"],
@@ -87,6 +89,8 @@ def hut_detail(hut_id: int, conn: sqlite3.Connection = Depends(get_db)) -> dict:
         "routes": routes,
         "lv95": [row["e_lv95"], row["n_lv95"]],
         "snap_m": row["snap_m"],
+        "osm_access": hut_id in grades,  # an unofficial path to the signposted trails (trail limit 4)
+        "osm_grade": grades.get(hut_id),
         "source": row["source"],
         "synced_at": row["synced_at"],
     }
