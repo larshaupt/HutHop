@@ -25,11 +25,11 @@ from pyproj import Transformer
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import dijkstra
 
+from app.clients import USER_AGENT
 from app.db import ROOT, connect
 
 OVERPASS = "https://overpass-api.de/api/interpreter"
 ELEVATION = "https://api.open-meteo.com/v1/elevation"
-USER_AGENT = "HutHop/0.1 (private hut planner)"
 FILE = ROOT / "data/osm/access.json"
 SEARCH_RADIUS_M = 7000  # OSM paths fetched around each hut
 HUT_SNAP_M = 150.0  # hut to the nearest OSM path node

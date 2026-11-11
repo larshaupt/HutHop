@@ -5,7 +5,7 @@ import time
 
 import httpx
 
-from app.clients.hut_reservation import USER_AGENT
+from app.clients import USER_AGENT
 
 URL = "https://api.open-meteo.com/v1/forecast"
 DAILY = ("weather_code", "temperature_2m_max", "temperature_2m_min", "precipitation_sum", "wind_speed_10m_max")
