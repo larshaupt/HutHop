@@ -7,6 +7,7 @@
 // level), so nothing is refused or flagged for them.
 import { $, CATEGORY, EMPTY, categoryName, esc, formatMinutes, localIso, revealPanel } from "./util.js";
 import { setState, state } from "./state.js";
+import { t as tr } from "./i18n.js";  // t is a tour here
 import { fitCoords, map } from "./map.js";
 import { closeDetail } from "./huts.js";
 import { AVAIL_LABEL, NIGHT_LABEL, connectionLine, formatDay, outsideSettings, stopLabel } from "./tour-detail.js";
@@ -64,7 +65,7 @@ async function load(tourId, known = null) {
   const res = await fetch(`/api/tours/${encodeURIComponent(tourId)}/options?${settingsQuery()}`);
   if (ed?.token !== token) return false;
   if (!res.ok) {
-    $("#edStatus")?.replaceChildren(document.createTextNode("Could not load the edits for this tour."));
+    $("#edStatus")?.replaceChildren(document.createTextNode(tr("Could not load the edits for this tour.")));
     return false;
   }
   const data = await res.json();
@@ -111,27 +112,28 @@ function step(delta) {
 const options = (kind, slot = null) => ed.options.filter((o) => o.kind === kind && (slot === null || o.slot === slot));
 
 function candidateList(list) {
-  if (!list.length) return `<p class="hint">Nothing connects here.</p>`;
+  if (!list.length) return `<p class="hint">${tr("Nothing connects here.")}</p>`;
   const shown = ed.showAll ? list : list.slice(0, SHOWN);
   const items = shown.map((o) => {
-    const name = o.place ? (o.place.kind === "stop" ? stopLabel(o.place) : esc(o.place.name)) : "Without this night";
+    const name = o.place ? (o.place.kind === "stop" ? stopLabel(o.place) : esc(o.place.name)) : tr("Without this night");
     const extra = o.service ? serviceSummary(o) : o.night ? `<span class="night ${o.night.status}">${NIGHT_LABEL[o.night.status]}</span>` : "";
     return `<li><button class="cand" data-apply="${esc(o.tour_id)}"${o.place ? ` data-place="${o.place.id}"` : ""}>
         <span class="cand-name">${name}</span>
-        <span class="cand-meta">${o.distance_m !== undefined ? `<b>${formatDistance(o.distance_m)} · ${formatMinutes(o.walk_min)}</b> away · ` : ""}tour
+        <span class="cand-meta">${o.distance_m !== undefined ? `<b>${formatDistance(o.distance_m)} · ${formatMinutes(o.walk_min)}</b> ${tr("away")} · ` : ""}${tr("tour")}
           ${formatMinutes(o.time_min)} (${o.days.map((m) => (m / 60).toFixed(1).replace(".0", "")).join(" / ")} h) ·
           ↑ ${formatHeight(o.ascent_m)}${extra ? ` · ${extra}` : ""}</span>
       </button></li>`;
   }).join("");
-  const more = !ed.showAll && list.length > SHOWN ? `<button class="link inline" id="edAll">Show all ${list.length}</button>` : "";
+  const more = !ed.showAll && list.length > SHOWN ? `<button class="link inline" id="edAll">${tr("Show all {n}", { n: list.length })}</button>` : "";
   return `<ul class="cands">${items}</ul>${more}`;
 }
 
 function serviceSummary(o) {
   const s = o.service;
-  if (!s.known) return "no timetable yet";
-  if (!s.calls) return `<span class="warn-text">no service that day</span>`;
-  return o.kind === "start" ? `first ${s.first}${s.late ? " (late)" : ""}` : `last ${s.last}${s.early ? " (early)" : ""}`;
+  if (!s.known) return tr("no timetable yet");
+  if (!s.calls) return `<span class="warn-text">${tr("no service that day")}</span>`;
+  return o.kind === "start" ? `${tr("first {time}", { time: s.first })}${s.late ? ` (${tr("late")})` : ""}`
+    : `${tr("last {time}", { time: s.last })}${s.early ? ` (${tr("early")})` : ""}`;
 }
 
 /** A slot: its button and, while it is open, its candidates. */
@@ -157,13 +159,13 @@ function render({ loading = false } = {}) {
   const n = t.nights;
   const start = t.days[0].from, end = t.days[n].to;
   const rows = [];
-  rows.push(`<li class="tl-stop"><div class="tl-dot"></div><div><b>Start</b> ${stopLabel(start)}
-      ${connectionLine(t.access, "access")}${slot("start", "Other start stop", options("start"))}</div></li>`);
+  rows.push(`<li class="tl-stop"><div class="tl-dot"></div><div><b>${tr("Start")}</b> ${stopLabel(start)}
+      ${connectionLine(t.access, "access")}${slot("start", tr("Other start stop"), options("start"))}</div></li>`);
   rows.push(insertRow(0));
   t.days.forEach((d, i) => {
     const cat = CATEGORY[d.max_category];
     rows.push(`<li class="tl-day" data-day="${d.day}"><div class="tl-dot" style="--c:${cat.color}"></div>
-        <div><div class="tl-title">Day ${d.day} · ${formatDay(d.date)}</div>
+        <div><div class="tl-title">${tr("Day {day}", { day: d.day })} · ${formatDay(d.date)}</div>
           <div class="tl-meta"><b>${formatMinutes(d.time_min)}</b> · ${formatDistance(d.distance_m)} · ↑ ${formatHeight(d.ascent_m)} ·
             ↓ ${formatHeight(d.descent_m)} · <span style="color:${cat.color}">${categoryName(d.max_category, d.osm_grade)}</span></div>
           ${limitChips(i)}</div></li>`);
@@ -172,35 +174,35 @@ function render({ loading = false } = {}) {
     const a = d.night.availability;
     rows.push(`<li class="tl-night"><div class="tl-dot hut"><span>${d.day}</span></div>
         <div><b>${esc(d.to.name)}</b>
-          <div class="tl-meta">Night of ${formatDay(d.date)} · <span class="night ${d.night.status}">${NIGHT_LABEL[d.night.status]}</span>${
+          <div class="tl-meta">${tr("Night of {date}", { date: formatDay(d.date) })} · <span class="night ${d.night.status}">${NIGHT_LABEL[d.night.status]}</span>${
             a && a.state !== "not_checked" ? ` · ${AVAIL_LABEL[a.state](a)}` : ""}</div>
-          <div class="slot-row">${slot(`swap:${i}`, "Other hut", options("swap", i))}
-            ${remove ? `<button class="link inline danger" data-apply="${esc(remove.tour_id)}">Remove this night</button>` : ""}</div>
+          <div class="slot-row">${slot(`swap:${i}`, tr("Other hut"), options("swap", i))}
+            ${remove ? `<button class="link inline danger" data-apply="${esc(remove.tour_id)}">${tr("Remove this night")}</button>` : ""}</div>
         </div></li>`);
     rows.push(insertRow(i + 1));
   });
-  rows.push(`<li class="tl-stop"><div class="tl-dot"></div><div><b>End</b> ${stopLabel(end)}
-      ${connectionLine(t.exit, "exit")}${slot("end", "Other end stop", options("end"))}</div></li>`);
+  rows.push(`<li class="tl-stop"><div class="tl-dot"></div><div><b>${tr("End")}</b> ${stopLabel(end)}
+      ${connectionLine(t.exit, "exit")}${slot("end", tr("Other end stop"), options("end"))}</div></li>`);
 
   $("#tourDetail").innerHTML = `
     <div class="tour-top editor-top">
       <div class="editor-bar">
-        <button class="btn primary" id="edDone">Done</button>
-        <button class="btn" id="edUndo" ${ed.pos === 0 ? "disabled" : ""} title="Undo">↶ Undo</button>
-        <button class="btn" id="edRedo" ${ed.pos >= ed.history.length - 1 ? "disabled" : ""} title="Redo">↷ Redo</button>
-        <span class="editing-label">Editing</span>
+        <button class="btn primary" id="edDone">${tr("Done")}</button>
+        <button class="btn" id="edUndo" ${ed.pos === 0 ? "disabled" : ""} title="${tr("Undo")}">↶ ${tr("Undo")}</button>
+        <button class="btn" id="edRedo" ${ed.pos >= ed.history.length - 1 ? "disabled" : ""} title="${tr("Redo")}">↷ ${tr("Redo")}</button>
+        <span class="editing-label">${tr("Editing")}</span>
       </div>
       <h2>${esc(start.name)} → ${esc(end.name)}</h2>
-      <div class="subtitle">${n} night${n > 1 ? "s" : ""} · ${formatDay(t.days[0].date)} – ${formatDay(t.days[n].date)}</div>
-      <div class="field editor-date"><label class="field-label" for="edDate">Start date</label>
+      <div class="subtitle">${tr("{n} nights", { n })} · ${formatDay(t.days[0].date)} – ${formatDay(t.days[n].date)}</div>
+      <div class="field editor-date"><label class="field-label" for="edDate">${tr("Start date")}</label>
         <input class="input" type="date" id="edDate" value="${t.days[0].date}" min="${localIso()}"></div>
       <div class="facts">
-        <div class="fact"><b>${formatMinutes(t.time_min).replace(" h", "")}</b><span>hours walking</span></div>
+        <div class="fact"><b>${formatMinutes(t.time_min).replace(" h", "")}</b><span>${tr("hours walking")}</span></div>
         <div class="fact"><b>${distanceValue(t.distance_m)}</b><span>${distanceUnit()}</span></div>
-        <div class="fact"><b>${heightValue(t.ascent_m)}</b><span>${heightUnit()} ascent</span></div>
+        <div class="fact"><b>${heightValue(t.ascent_m)}</b><span>${heightUnit()} ${tr("ascent")}</span></div>
       </div>
       ${outsideSettings(t)}
-      <p class="hint" id="edStatus">${loading ? "Updating…" : "Choose a part of the tour to change it, or click a hut on the map."}</p>
+      <p class="hint" id="edStatus">${loading ? tr("Updating…") : tr("Choose a part of the tour to change it, or click a hut on the map.")}</p>
       ${ed.pick ? pickMenu() : ""}
     </div>
     <div class="detail-body"><ol class="timeline editor">${rows.join("")}</ol></div>`;
@@ -208,7 +210,7 @@ function render({ loading = false } = {}) {
 
 function insertRow(k) {
   const n = ed.tour.nights;
-  const label = k === 0 ? "Add a night before" : k === n ? "Add a night after" : "Add a night here";
+  const label = k === 0 ? tr("Add a night before") : k === n ? tr("Add a night after") : tr("Add a night here");
   const html = slot(`insert:${k}`, `+ ${label}`, options("insert", k));
   return html ? `<li class="tl-insert"><div class="tl-dot add"></div><div>${html}</div></li>` : "";
 }
@@ -217,14 +219,13 @@ function insertRow(k) {
 function pickMenu() {
   const { name, list } = ed.pick;
   if (!list.length) {
-    return `<div class="pick"><b>${esc(name)}</b><p class="hint">This hut doesn't connect to the tour where a night could
-      change or be added.</p><button class="link inline" id="edPickClose">Close</button></div>`;
+    return `<div class="pick"><b>${esc(name)}</b><p class="hint">${tr("This hut doesn't connect to the tour where a night could change or be added.")}</p><button class="link inline" id="edPickClose">${tr("Close")}</button></div>`;
   }
-  const what = (o) => o.kind === "swap" ? `Instead of night ${o.slot + 1}` :
-    o.slot === 0 ? "As a night before the first" : o.slot === ed.tour.nights ? "As a night after the last" : `As a night between nights ${o.slot} and ${o.slot + 1}`;
+  const what = (o) => o.kind === "swap" ? tr("Instead of night {n}", { n: o.slot + 1 }) :
+    o.slot === 0 ? tr("As a night before the first") : o.slot === ed.tour.nights ? tr("As a night after the last") : tr("As a night between nights {a} and {b}", { a: o.slot, b: o.slot + 1 });
   return `<div class="pick"><b>${esc(name)}</b><ul class="cands">${list.map((o) => `<li><button class="cand" data-apply="${esc(o.tour_id)}">
-      <span class="cand-name">${what(o)}</span><span class="cand-meta">${formatMinutes(o.time_min)} walking</span></button></li>`).join("")}</ul>
-    <button class="link inline" id="edPickClose">Close</button></div>`;
+      <span class="cand-name">${what(o)}</span><span class="cand-meta">${formatMinutes(o.time_min)} ${tr("walking")}</span></button></li>`).join("")}</ul>
+    <button class="link inline" id="edPickClose">${tr("Close")}</button></div>`;
 }
 
 // ---------- Map ----------
@@ -326,7 +327,7 @@ async function planFromHut(hutId, button) {
   const res = await fetch(`/api/huts/${hutId}/tour?${params}`);
   button.disabled = false;
   if (!res.ok) {
-    button.insertAdjacentHTML("afterend", `<p class="warn">${res.status === 404 ? "No public transport within walking distance of this hut." : "Could not plan a tour."}</p>`);
+    button.insertAdjacentHTML("afterend", `<p class="warn">${res.status === 404 ? tr("No public transport within walking distance of this hut.") : tr("Could not plan a tour.")}</p>`);
     return;
   }
   const { tour_id: tourId } = await res.json();

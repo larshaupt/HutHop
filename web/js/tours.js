@@ -3,6 +3,7 @@
 import { $, CATEGORY, EMPTY, categoryColor, categoryName, costTitle, decodePolyline, esc, formatCost, formatMinutes, localIso,
   modeLabel, revealPanel } from "./util.js";
 import { setState, state } from "./state.js";
+import { t as tr } from "./i18n.js";  // t is a tour here
 import { distanceValue, distanceUnit, formatHeight, settings, settingsParams, settingsQuery } from "./settings.js";
 import { fitCoords, map, visibleBox } from "./map.js";
 import { selectHut } from "./huts.js";
@@ -13,8 +14,8 @@ import { setBooked } from "./booking.js";
 import { findEntry, keepTour, onYourToursChange, removeEntry, yourTours } from "./your-tours.js";
 import { closeEditor, isEditing, openEditor, refreshEditor } from "./tour-editor.js";
 
-const SORTS = { best: "Best", time: "Shortest", ascent: "Least ascent", altitude: "Highest huts",
-  beds: "Most free beds", cost: "Cheapest" };
+const SORTS = { best: tr("Best"), time: tr("Shortest"), ascent: tr("Least ascent"), altitude: tr("Highest huts"),
+  beds: tr("Most free beds"), cost: tr("Cheapest") };
 // The search returns a pool of varied tours ordered by "best"; other orders are applied here, without a new search.
 const SORT_KEYS = {
   best: (t) => [-t.score], time: (t) => [t.time_min, -t.score],
@@ -167,7 +168,7 @@ function bindStopPicker() {
       const stops = res.ok ? await res.json() : [];
       if (seq !== stopSearch.seq) return;
       list.innerHTML = stops.map((s) => `<li role="option" data-id="${s.id}" data-name="${esc(s.name)}">` +
-        `<span class="mode">${modeLabel(s.mode)}</span> ${esc(s.name)}</li>`).join("") || `<li class="none">No stop found</li>`;
+        `<span class="mode">${modeLabel(s.mode)}</span> ${esc(s.name)}</li>`).join("") || `<li class="none">${tr("No stop found")}</li>`;
       list.hidden = false;
     }, 180);
   });
@@ -200,7 +201,7 @@ export async function runTourSearch() {
   const seq = ++searchSeq;
   const button = $("#tFind");
   button.disabled = true;
-  button.textContent = settings().checkBeds ? "Searching and checking free beds…" : "Searching…";
+  button.textContent = settings().checkBeds ? tr("Searching and checking free beds…") : tr("Searching…");
   $("#tourResults").innerHTML = "";
   try {
     const res = await fetch("/api/tours/suggest", {
@@ -210,7 +211,7 @@ export async function runTourSearch() {
     if (res.status === 422) {
       const detail = (await res.json()).detail;
       if (seq !== searchSeq) return;
-      $("#tourResults").innerHTML = `<p class="empty">${esc(detail?.[0]?.msg?.replace("Value error, ", "") || "Invalid search.")}</p>`;
+      $("#tourResults").innerHTML = `<p class="empty">${esc(detail?.[0]?.msg?.replace("Value error, ", "") || tr("Invalid search."))}</p>`;
       return;
     }
     if (!res.ok) throw new Error(`${res.status}`);
@@ -222,12 +223,12 @@ export async function runTourSearch() {
     metricLabels = labels;
   } catch (err) {
     console.error(err);
-    if (seq === searchSeq) $("#tourResults").innerHTML = `<p class="empty">Search failed. Is the server running?</p>`;
+    if (seq === searchSeq) $("#tourResults").innerHTML = `<p class="empty">${tr("Search failed. Is the server running?")}</p>`;
     return;
   } finally {
     if (seq === searchSeq) {
       button.disabled = false;
-      button.textContent = "Find tours";
+      button.textContent = tr("Find tours");
     }
   }
   sortResults();
@@ -250,15 +251,16 @@ export function rerenderTours() {
 function renderResults() {
   const tours = order;
   if (!tours.length) {
-    $("#tourResults").innerHTML = `<div class="empty"><b>No tours found.</b><br>Try a wider range of hours, a harder trail,
-      fewer nights, ${state.tStart ? "another start, " : "a larger map area, "}or including huts without opening data.</div>`;
+    $("#tourResults").innerHTML = `<div class="empty"><b>${tr("No tours found.")}</b><br>${state.tStart
+      ? tr("Try a wider range of hours, a harder trail, fewer nights, another start, or including huts without opening data.")
+      : tr("Try a wider range of hours, a harder trail, fewer nights, a larger map area, or including huts without opening data.")}</div>`;
     return;
   }
-  $("#tourResults").innerHTML = `<div class="results-head"><span><strong>${tours.length}</strong> tours</span>
-    <label class="sort">Sort <select id="tSort">${Object.entries(SORTS).map(([v, label]) =>
+  $("#tourResults").innerHTML = `<div class="results-head"><span>${tr("{count} tours", { n: tours.length, count: `<strong>${tours.length}</strong>` })}</span>
+    <label class="sort">${tr("Sort")} <select id="tSort">${Object.entries(SORTS).map(([v, label]) =>
       `<option value="${v}"${v === state.tSort ? " selected" : ""}>${label}</option>`).join("")}</select></label></div>` +
     tours.slice(0, shown).map(tourCard).join("") +
-    (tours.length > shown ? `<button class="btn wide" id="tMore">Show ${Math.min(PAGE, tours.length - shown)} more</button>` : "");
+    (tours.length > shown ? `<button class="btn wide" id="tMore">${tr("Show {n} more", { n: Math.min(PAGE, tours.length - shown) })}</button>` : "");
   $("#tSort").addEventListener("change", (e) => {
     setState({ tSort: e.target.value, tour: 0 });
     sortResults();
@@ -274,12 +276,12 @@ function renderResults() {
 function tourCard(t, i) {
   const chain = [t.days[0].from, ...t.days.slice(0, -1).map((d) => d.to), t.days[t.days.length - 1].to];
   const longest = Math.max(...t.days.map((d) => d.time_min));
-  const bars = t.days.map((d) => `<div class="daybar" title="Day ${d.day}: ${formatMinutes(d.time_min)} · ${categoryName(d.max_category, d.osm_grade)}">
+  const bars = t.days.map((d) => `<div class="daybar" title="${tr("Day {day}", { day: d.day })}: ${formatMinutes(d.time_min)} · ${categoryName(d.max_category, d.osm_grade)}">
       <i style="height:${Math.max(18, (d.time_min / longest) * 100)}%;background:${CATEGORY[d.max_category].color}"></i>
       <span>${(d.time_min / 60).toFixed(1).replace(".0", "")}h</span></div>`).join("");
   return `<article class="tour-card" data-n="${i + 1}" tabindex="0">
     <div class="tour-head">
-      <div><b>${t.nights} night${t.nights > 1 ? "s" : ""}</b> · ${distanceValue(t.distance_m, 0)} ${distanceUnit()} · ↑ ${formatHeight(t.ascent_m)}</div>
+      <div><b>${tr("{n} nights", { n: t.nights })}</b> · ${distanceValue(t.distance_m, 0)} ${distanceUnit()} · ↑ ${formatHeight(t.ascent_m)}</div>
       <div class="tour-flags">${unofficialBadge(t)}${transitBadge(t)}${availBadge(t)}${costBadge(t)}${scoreBadge(t)}</div>
     </div>
     <div class="tour-body">
@@ -292,8 +294,8 @@ function tourCard(t, i) {
 /** "Best" score as a percentage; the tooltip lists the sub-scores (weights come from huthop.toml). */
 function scoreBadge(t) {
   if (!t.metrics) return "";
-  const parts = Object.entries(metricLabels).map(([k, label]) => `${label}: ${Math.round(t.metrics[k] * 100)}%`).join("\n");
-  return `<span class="score" title="Best score\n${parts}">${Math.round(t.score * 100)}%</span>`;
+  const parts = Object.entries(metricLabels).map(([k, label]) => `${tr(label)}: ${Math.round(t.metrics[k] * 100)}%`).join("\n");
+  return `<span class="score" title="${tr("Best score")}\n${parts}">${Math.round(t.score * 100)}%</span>`;
 }
 
 /** Card badge: a day on an unofficial OSM path, with its hardest grade. */
@@ -301,40 +303,40 @@ function unofficialBadge(t) {
   const days = t.days.filter((d) => d.max_category === 4);
   if (!days.length) return "";
   const grade = days.map((d) => d.osm_grade).filter(Boolean).sort().pop();
-  return `<span class="flag" title="Not signposted: a path from OpenStreetMap, often glacier or alpine terrain">` +
-    `Unofficial path${grade ? ` ${grade}` : ""}</span>`;
+  return `<span class="flag" title="${tr("Not signposted: a path from OpenStreetMap, often glacier or alpine terrain")}">` +
+    `${tr("Unofficial path")}${grade ? ` ${grade}` : ""}</span>`;
 }
 
 /** Card badge when the first connection reaches the first hut late, or the last one leaves early. */
 function transitBadge(t) {
   const late = t.access?.late, early = t.exit?.early;
   if (!late && !early) return "";
-  const why = [late && `first connection: at the hut from ${t.access.hut_from}`, early && `last connection: leave the last hut by ${t.exit.leave_by}`];
-  return `<span class="flag" title="${why.filter(Boolean).join("; ")}">Tight connection</span>`;
+  const why = [late && tr("first connection: at the hut from {time}", { time: t.access.hut_from }), early && tr("last connection: leave the last hut by {time}", { time: t.exit.leave_by })];
+  return `<span class="flag" title="${why.filter(Boolean).join("; ")}">${tr("Tight connection")}</span>`;
 }
 
 /** Card badge: estimated hut costs per person ("from" when some nights have no prices). */
 function costBadge(t) {
   if (!t.cost?.priced) return "";
-  const from = t.cost.priced < t.nights ? "from " : "";
+  const from = t.cost.priced < t.nights ? `${tr("from (price)")} ` : "";
   return `<span class="flag pending" title="${esc(costTitle(t, settings().member, state.tPeople))}">` +
-    `${from}${formatCost(t.cost.totals, settings().member)} p.p.</span>`;
+    `${from}${formatCost(t.cost.totals, settings().member)} ${tr("p.p.")}</span>`;
 }
 
 /** Card badge: free beds on every night, or how many nights are not confirmed. */
 function availBadge(t) {
   const a = t.availability || {};
   const checked = results?.query?.check_availability;
-  if (checked && a.available === t.nights) return `<span class="flag ok" title="Free beds on every night">Beds free</span>`;
+  if (checked && a.available === t.nights) return `<span class="flag ok" title="${tr("Free beds on every night")}">${tr("Beds free")}</span>`;
   // Beyond the first candidates of a search, free beds are only checked when the tour is opened.
   if (checked && a.not_checked) {
-    return `<span class="flag pending" title="Free beds not checked yet for ${a.not_checked} night${a.not_checked > 1 ? "s" : ""}. Open the tour to check them.">Beds: open to check</span>`;
+    return `<span class="flag pending" title="${tr("Free beds not checked yet for {n} nights. Open the tour to check them.", { n: a.not_checked })}">${tr("Beds: open to check")}</span>`;
   }
   const unsure = checked ? t.nights - (a.available || 0) : t.uncertain_nights;
   if (!unsure) return "";
-  const title = checked ? "Nights without confirmed free beds (not bookable yet or no online booking)"
-    : "Opening data missing or only part of the month";
-  return `<span class="flag" title="${title}">${unsure} night${unsure > 1 ? "s" : ""} unconfirmed</span>`;
+  const title = checked ? tr("Nights without confirmed free beds (not bookable yet or no online booking)")
+    : tr("Opening data missing or only part of the month");
+  return `<span class="flag" title="${title}">${tr("{n} nights unconfirmed", { n: unsure })}</span>`;
 }
 
 /** Start, huts and end of a tour card; long tours show the first two huts, "+ N more huts" and the last hut. */
@@ -342,7 +344,7 @@ function chainItems(chain) {
   const item = (p, end) => `<li class="${p.kind}">${end ? `<span class="mode">${modeLabel(p.mode)}</span> ` : ""}${esc(p.name)}</li>`;
   const huts = chain.slice(1, -1);
   const shown = huts.length > 4
-    ? [...huts.slice(0, 2).map((p) => item(p)), `<li class="more">+ ${huts.length - 3} more huts</li>`, item(huts[huts.length - 1])]
+    ? [...huts.slice(0, 2).map((p) => item(p)), `<li class="more">${tr("+ {n} more huts", { n: huts.length - 3 })}</li>`, item(huts[huts.length - 1])]
     : huts.map((p) => item(p));
   return [item(chain[0], true), ...shown, item(chain[chain.length - 1], true)].join("");
 }
@@ -365,11 +367,10 @@ function renderYourTours() {
   $("#yoursList").innerHTML = list.length ? list.map((e) => `<li>
       <button class="your-tour" data-open="${esc(e.id)}">
         <b>${esc(e.title)}</b>
-        <span>${esc(e.date)} · ${e.nights} night${e.nights > 1 ? "s" : ""} · ${esc(e.huts.join(", "))}</span>
+        <span>${esc(e.date)} · ${tr("{n} nights", { n: e.nights })} · ${esc(e.huts.join(", "))}</span>
       </button>
-      <button class="conn-x" data-remove="${esc(e.key)}" title="Remove from my tours" aria-label="Remove">×</button>
-    </li>`).join("") : `<li class="hint">No tours yet. Open a tour and choose “Add to my tours”, edit one, or plan one
-      from a hut's details.</li>`;
+      <button class="conn-x" data-remove="${esc(e.key)}" title="${tr("Remove from my tours")}" aria-label="${tr("Remove")}">×</button>
+    </li>`).join("") : `<li class="hint">${tr("No tours yet. Open a tour and choose “Add to my tours”, edit one, or plan one from a hut's details.")}</li>`;
 }
 
 // ---------- Tour detail ----------
@@ -415,7 +416,7 @@ export async function openTourById(id, { edit = false } = {}) {
   if (!res.ok) {
     // in the tab you are looking at, replacing an earlier warning
     $(state.view === "mine" ? "#mineTab" : "#tourResults").insertAdjacentHTML("afterbegin", `<p class="warn" id="tourGone">
-      This tour is no longer available (a connection was removed or excluded).</p>`);
+      ${tr("This tour is no longer available (a connection was removed or excluded).")}</p>`);
     return null;
   }
   current = await res.json();
@@ -464,9 +465,9 @@ export async function checkTourBeds(t, { fresh = false } = {}) {
 /** Right before booking: free beds of every night, from calendars at most a minute old. */
 async function recheckBeds() {
   const button = $("#bookRecheck");
-  if (button) { button.disabled = true; button.textContent = "Checking free beds…"; }
+  if (button) { button.disabled = true; button.textContent = tr("Checking free beds…"); }
   await checkTourBeds(current, { fresh: true });
-  if (button?.isConnected) { button.disabled = false; button.textContent = "Check free beds again"; }
+  if (button?.isConnected) { button.disabled = false; button.textContent = tr("Check free beds again"); }
 }
 
 export function closeTour() {

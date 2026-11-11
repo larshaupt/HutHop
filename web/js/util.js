@@ -1,21 +1,22 @@
 // Shared constants and small helpers (no state, no DOM side effects).
+import { LOCALE, t } from "./i18n.js";
 
-export const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+export const MONTHS = [...Array(12)].map((_, i) => new Date(2000, i, 1).toLocaleDateString(LOCALE, { month: "short" }));
 export const COLORS = { catered: "#2e8b57", self_service: "#2f6fb3", closed: "#9aa3a0", unknown: "#ffffff", any: "#c8102e" };
-export const STATUS_LABEL = { catered: "Catered", self_service: "Self-service", closed: "Closed", unknown: "No data" };
+export const STATUS_LABEL = { catered: t("Catered"), self_service: t("Self-service"), closed: t("Closed"), unknown: t("No data") };
 export const CATEGORY = {
-  1: { label: "Yellow", name: "Hiking trail", color: "#e0a800" },
-  2: { label: "Red-white", name: "Mountain trail", color: "#d52b1e" },
-  3: { label: "Blue-white", name: "Alpine trail", color: "#1f5fbf" },
-  4: { label: "Unofficial", name: "Unofficial path (OpenStreetMap)", color: "#7a3e9d" },
+  1: { label: t("Yellow"), name: t("Hiking trail"), color: "#e0a800" },
+  2: { label: t("Red-white"), name: t("Mountain trail"), color: "#d52b1e" },
+  3: { label: t("Blue-white"), name: t("Alpine trail"), color: "#1f5fbf" },
+  4: { label: t("Unofficial"), name: t("Unofficial path (OpenStreetMap)"), color: "#7a3e9d" },
 };
 /** A trail category's name, with the OSM grade (T1–T6) of an unofficial path when known. */
 export const categoryName = (category, grade) => CATEGORY[category].name + (grade ? `, ${grade}` : "");
 
-export const MODE_LABELS = { cableway: "Cable car", chairlift: "Chairlift", funicular: "Funicular",
-  rack_railway: "Rack railway", train: "Train", boat: "Boat", tram: "Tram", metro: "Metro", elevator: "Lift", bus: "Bus" };
-export const BOOKING_LABEL = { hut_reservation_org: "hut-reservation.org", online_other: "online", email: "by email",
-  phone: "by phone", not_needed: "not needed" };
+export const MODE_LABELS = { cableway: t("Cable car"), chairlift: t("Chairlift"), funicular: t("Funicular"),
+  rack_railway: t("Rack railway"), train: t("Train"), boat: t("Boat"), tram: t("Tram"), metro: t("Metro"), elevator: t("Lift"), bus: t("Bus") };
+export const BOOKING_LABEL = { hut_reservation_org: "hut-reservation.org", online_other: t("online"), email: t("by email"),
+  phone: t("by phone"), not_needed: t("not needed") };
 export const EMPTY = { type: "FeatureCollection", features: [] };
 
 export const $ = (sel) => document.querySelector(sel);
@@ -110,10 +111,10 @@ export function formatCost(totals, member, factor = 1) {
 }
 
 /** Hover text explaining a tour's cost estimate. */
-export function costTitle(t, member, people) {
-  const c = t.cost;
-  return [`Estimated hut costs per person${member ? " (member prices)" : ""}: cheapest bed, half board when catered,`,
-    "kitchen fee when self-service, tourist tax. Drinks and lunches not included.",
-    `${c.priced} of ${t.nights} nights with prices from the hut websites${c.years.length ? ` (${c.years.join(", ")})` : ""}.`,
-    people > 1 ? `For ${people} people: ${formatCost(c.totals, member, people)}.` : ""].filter(Boolean).join("\n");
+export function costTitle(tour, member, people) {
+  const c = tour.cost;
+  return [`${t(member ? "Estimated hut costs per person (member prices)" : "Estimated hut costs per person")}: ${t("cheapest bed, half board when catered,")}`,
+    t("kitchen fee when self-service, tourist tax. Drinks and lunches not included."),
+    `${t("{priced} of {n} nights with prices from the hut websites", { priced: c.priced, n: tour.nights })}${c.years.length ? ` (${c.years.join(", ")})` : ""}.`,
+    people > 1 ? t("For {n} people: {cost}.", { n: people, cost: formatCost(c.totals, member, people) }) : ""].filter(Boolean).join("\n");
 }

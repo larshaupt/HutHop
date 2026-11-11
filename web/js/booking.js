@@ -3,6 +3,7 @@
 // Ticks are kept in this browser (local storage, per device) per hut and night, so they stay with a tour you edit.
 import { BOOKING_LABEL, esc, telHref } from "./util.js";
 import { AVAIL_LABEL, checkedAgo, formatDay } from "./tour-detail.js";
+import { t as tr } from "./i18n.js";  // t is a tour here
 
 const KEY = "huthop.booked";
 
@@ -36,15 +37,14 @@ export function bookingPanel(t, people) {
   const next = open.find((d) => d.night.booking_url);
   const done = nights.length - open.length;
   const nextAction = next
-    ? `<a class="btn primary" href="${esc(next.night.booking_url)}" target="_blank" rel="noopener">Open next:
+    ? `<a class="btn primary" href="${esc(next.night.booking_url)}" target="_blank" rel="noopener">${tr("Open next:")}
         ${esc(next.to.name)} ↗</a>`
-    : open.length ? `<span class="hint">Book the remaining nights with the huts directly.</span>`
-      : `<span class="booked-all">✓ All nights booked</span>`;
+    : open.length ? `<span class="hint">${tr("Book the remaining nights with the huts directly.")}</span>`
+      : `<span class="booked-all">✓ ${tr("All nights booked")}</span>`;
   return `<section class="booking">
-      <div class="booking-head"><h3>Book this tour</h3><span>${done} of ${nights.length} night${nights.length > 1 ? "s" : ""} booked</span></div>
-      <p class="hint">HutHop doesn't book for you. Open each hut's booking page, choose the night shown here for
-        ${people} ${people > 1 ? "people" : "person"}, then tick it off. Ticks stay in this browser.</p>
-      <div class="actions">${nextAction}<button class="btn" id="bookRecheck">Check free beds again</button></div>
+      <div class="booking-head"><h3>${tr("Book this tour")}</h3><span>${tr("{done} of {n} nights booked", { done, n: nights.length })}</span></div>
+      <p class="hint">${tr("HutHop doesn't book for you. Open each hut's booking page, choose the night shown here for {n} people, then tick it off. Ticks stay in this browser.", { n: people })}</p>
+      <div class="actions">${nextAction}<button class="btn" id="bookRecheck">${tr("Check free beds again")}</button></div>
       <ol class="book-list">${nights.map(bookingRow).join("")}</ol>
     </section>`;
 }
@@ -53,10 +53,10 @@ function bookingRow(d) {
   const n = d.night, a = n.availability, booked = isBooked(d);
   const state = a && a.state !== "no_booking" ? `<div class="tl-meta avail ${a.state}">${AVAIL_LABEL[a.state](a)}${checkedAgo(a)}</div>` : "";
   const gone = !booked && a && (a.state === "full" || a.state === "closed")
-    ? `<div class="tl-meta warn-text">Pick another hut for this night in the editor.</div>` : "";
+    ? `<div class="tl-meta warn-text">${tr("Pick another hut for this night in the editor.")}</div>` : "";
   return `<li class="${booked ? "booked" : ""}">
       <label><input type="checkbox" data-booked="${markKey(d)}"${booked ? " checked" : ""}>
-        <span><b>Night ${d.day} · ${formatDay(d.date)}</b> · <a href="#" data-hut="${d.to.id}">${esc(d.to.name)}</a></span></label>
+        <span><b>${tr("Night {day}", { day: d.day })} · ${formatDay(d.date)}</b> · <a href="#" data-hut="${d.to.id}">${esc(d.to.name)}</a></span></label>
       ${booked ? "" : state + gone}
       ${booked ? "" : `<div class="book-links">${bookingLinks(n)}</div>`}
     </li>`;
@@ -66,15 +66,15 @@ function bookingRow(d) {
 function bookingLinks(n) {
   const link = (href, text, external = true) =>
     `<a href="${esc(href)}"${external ? ` target="_blank" rel="noopener"` : ""}>${text}</a>`;
-  if (n.booking_url) return link(n.booking_url, "Booking page ↗");
+  if (n.booking_url) return link(n.booking_url, `${tr("Booking page")} ↗`);
   const c = n.contact || {};
   const methods = c.booking_methods?.filter((m) => m !== "hut_reservation_org").map((m) => BOOKING_LABEL[m]).filter(Boolean) || [];
   const links = [
-    /^https?:\/\//i.test(c.booking_url) && link(c.booking_url, "Booking page ↗"),
-    c.website && link(c.website, "Website ↗"),
-    c.email && link(`mailto:${c.email}`, "Email", false),
+    /^https?:\/\//i.test(c.booking_url) && link(c.booking_url, `${tr("Booking page")} ↗`),
+    c.website && link(c.website, `${tr("Website")} ↗`),
+    c.email && link(`mailto:${c.email}`, tr("Email"), false),
     c.phone && link(telHref(c.phone), esc(c.phone), false),
   ].filter(Boolean);
-  return `<span>Not on hut-reservation.org${methods.length ? ` · books ${methods.join(", ")}` : ""}</span>` +
-    (links.length ? ` · ${links.join(" · ")}` : " · no contact known");
+  return `<span>${tr("Not on hut-reservation.org")}${methods.length ? ` · ${tr("books {how}", { how: methods.join(", ") })}` : ""}</span>` +
+    (links.length ? ` · ${links.join(" · ")}` : ` · ${tr("no contact known")}`);
 }

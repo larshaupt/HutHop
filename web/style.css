@@ -60,6 +60,7 @@ button { cursor: pointer; }
 .logo .logo-door { fill: #fff; }
 .about-btn { margin-left: auto; width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 50%; background: var(--bg); display: grid; place-items: center; }
 .about-btn:hover { background: var(--bg-soft); border-color: var(--text-faint); }
+.lang { appearance: none; padding: 0; font-size: 12px; font-weight: 600; text-align: center; text-align-last: center; cursor: pointer; }
 .about-btn svg { width: 20px; height: 20px; fill: none; stroke: var(--text); stroke-width: 2; stroke-linecap: round; }
 
 /* ---------- About dialog ---------- */

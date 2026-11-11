@@ -8,13 +8,14 @@ import { loadBeds } from "./beds.js";
 import { isFavourite, toggleFavourite } from "./favourites.js";
 import { loadWeather } from "./weather.js";
 import { formatHeight, heightUnit, heightValue } from "./settings.js";
+import { LANG, LOCALE, t } from "./i18n.js";
 
 const SERVICE_LABELS = {
-  half_board: "Half board", plain_meals: "Simple meals", drinks: "Drinks",
-  cooking_non_catered: "Guest kitchen (unstaffed)", cooking_catered: "Guest kitchen (staffed)",
-  family_rooms: "Family rooms", separable_group_rooms: "Separate group rooms",
-  payment_creditcard: "Card payment", payment_mobile: "Mobile payment",
-  dogs_on_request: "Dogs on request", internet: "Internet",
+  half_board: t("Half board"), plain_meals: t("Simple meals"), drinks: t("Drinks"),
+  cooking_non_catered: t("Guest kitchen (unstaffed)"), cooking_catered: t("Guest kitchen (staffed)"),
+  family_rooms: t("Family rooms"), separable_group_rooms: t("Separate group rooms"),
+  payment_creditcard: t("Card payment"), payment_mobile: t("Mobile payment"),
+  dogs_on_request: t("Dogs on request"), internet: t("Internet"),
 };
 
 let huts = [];
@@ -70,7 +71,7 @@ function sortHuts(list) {
 
 // ---------- Filters ----------
 export function renderControls() {
-  $("#months").innerHTML = `<button data-m="0">Any</button>` +
+  $("#months").innerHTML = `<button data-m="0">${t("Any")}</button>` +
     MONTHS.map((m, i) => `<button data-m="${i + 1}">${m}</button>`).join("");
   syncControls();
 }
@@ -89,11 +90,11 @@ export function syncControls() {
   $("#altMin").value = state.altMin;
   $("#altMax").value = state.altMax;
   $("#minBeds").value = state.minBeds;
-  const hi = state.altMax >= ALT_MAX ? "max" : formatHeight(state.altMax);
-  $("#altLabel").textContent = state.altMin || state.altMax < ALT_MAX ? `${heightValue(state.altMin)} – ${hi}` : "Any";
+  const hi = state.altMax >= ALT_MAX ? t("max") : formatHeight(state.altMax);
+  $("#altLabel").textContent = state.altMin || state.altMax < ALT_MAX ? `${heightValue(state.altMin)} – ${hi}` : t("Any");
   $("#altFill").style.left = `${(state.altMin / ALT_MAX) * 100}%`;
   $("#altFill").style.right = `${100 - (state.altMax / ALT_MAX) * 100}%`;
-  $("#bedsLabel").textContent = state.minBeds ? `${state.minBeds}+` : "Any";
+  $("#bedsLabel").textContent = state.minBeds ? `${state.minBeds}+` : t("Any");
   $("#legend").hidden = !state.month;
 
   const active = ["month", "hb", "kitchen", "bookable", "fav", "minBeds", "q"].filter((k) => state[k] !== DEFAULTS[k]).length +
@@ -152,7 +153,7 @@ export function update() {
   syncControls();
   visible = sortHuts(filterHuts());
   $("#count").textContent = visible.length;
-  $("#countLabel").textContent = visible.length === 1 ? "hut" : "huts";
+  $("#countLabel").textContent = t("huts", { n: visible.length });
   renderList();
   map?.getSource("huts")?.setData(hutsGeoJSON());
 }
@@ -160,7 +161,7 @@ export function update() {
 function renderList() {
   if (!visible.length) {
     $("#list").innerHTML = `<li class="empty">${state.fav && !huts.some((h) => isFavourite(h.id))
-      ? "No favourite huts yet: open a hut and tap ☆ Favourite." : "No huts match these filters."}</li>`;
+      ? t("No favourite huts yet: open a hut and tap ☆ Favourite.") : t("No huts match these filters.")}</li>`;
     return;
   }
   $("#list").innerHTML = visible.map((h) => {
@@ -169,8 +170,8 @@ function renderList() {
     const img = h.photo
       ? `<img src="${esc(h.photo)}" alt="" loading="lazy" decoding="async" width="64" height="44">`
       : `<span class="noimg">▲</span>`;
-    const meta = [h.altitude && formatHeight(h.altitude), h.beds && `${h.beds} beds`].filter(Boolean).join(" · ");
-    return `<li class="hut" data-id="${h.id}">${img}<div><div class="hut-name">${isFavourite(h.id) ? `<span class="fav" title="Favourite">★</span> ` : ""}${esc(h.name)}</div>` +
+    const meta = [h.altitude && formatHeight(h.altitude), h.beds && t("{n} beds", { n: h.beds })].filter(Boolean).join(" · ");
+    return `<li class="hut" data-id="${h.id}">${img}<div><div class="hut-name">${isFavourite(h.id) ? `<span class="fav" title="${t("Favourite")}">★</span> ` : ""}${esc(h.name)}</div>` +
       `<div class="hut-meta">${meta}</div></div>${badge}</li>`;
   }).join("");
 }
@@ -308,20 +309,20 @@ export function closeDetail() {
   if (!(state.view === "tours" && state.tour && returnToTour())) $("#browse").hidden = false;
 }
 
-const PRICE_LABEL = { overnight: "Night", half_board: "Half board", breakfast: "Breakfast", dinner: "Dinner",
-  tax: "Tourist tax", winter_room: "Winter room", self_catering_fee: "Kitchen use" };
-const UNVERIFIED = `<span class="unverified" title="Not found word for word on the website: check there">?</span>`;
+const PRICE_LABEL = { overnight: t("Night"), half_board: t("Half board"), breakfast: t("Breakfast"), dinner: t("Dinner"),
+  tax: t("Tourist tax"), winter_room: t("Winter room"), self_catering_fee: t("Kitchen use") };
+const UNVERIFIED = `<span class="unverified" title="${t("Not found word for word on the website: check there")}">?</span>`;
 
 function formatMonthDay(md) {
   const [m, d] = md.split("-").map(Number);
-  return `${d} ${MONTHS[m - 1]}`;
+  return new Date(2000, m - 1, d).toLocaleDateString(LOCALE, { day: "numeric", month: "short" });
 }
 
 function formatPrice(p) {
   const amount = (v) => (v == null ? "" : Number.isInteger(v) ? String(v) : v.toFixed(2));
   const main = p.member != null && p.non_member != null && p.member !== p.non_member
-    ? `${amount(p.member)} members · ${amount(p.non_member)}` : amount(p.non_member ?? p.member);
-  const reduced = [p.youth != null && `youth ${amount(p.youth)}`, p.child != null && `children ${amount(p.child)}`]
+    ? t("{member} members · {regular}", { member: amount(p.member), regular: amount(p.non_member) }) : amount(p.non_member ?? p.member);
+  const reduced = [p.youth != null && t("youth {price}", { price: amount(p.youth) }), p.child != null && t("children {price}", { price: amount(p.child) })]
     .filter(Boolean).join(" · ");
   return `${p.currency} ${main}${reduced ? `<span class="route-meta"> · ${reduced}</span>` : ""}`;
 }
@@ -330,11 +331,11 @@ function formatPrice(p) {
 function websiteSection(w) {
   if (!w || w.status !== "ok") return "";
   const seasons = w.seasons.map((s) => {
-    const range = `${s.approximate ? "about " : ""}${formatMonthDay(s.start_md)} – ${formatMonthDay(s.end_md)}${s.year ? ` ${s.year}` : ""}`;
+    const range = `${s.approximate ? `${t("about")} ` : ""}${formatMonthDay(s.start_md)} – ${formatMonthDay(s.end_md)}${s.year ? ` ${s.year}` : ""}`;
     return `<li><b>${STATUS_LABEL[s.kind]}</b> ${range}${s.verified === 0 ? UNVERIFIED : ""}${s.note ? `<span class="route-meta"> · ${esc(s.note)}</span>` : ""}</li>`;
   });
   const prices = w.prices.map((p) => {
-    const what = p.item === "half_board" && !p.includes_overnight ? "Half board (plus night)" : PRICE_LABEL[p.item];
+    const what = p.item === "half_board" && !p.includes_overnight ? t("Half board (plus night)") : PRICE_LABEL[p.item];
     return `<tr><td>${what}<span class="route-meta"> ${esc(p.label || "")}</span></td>` +
       `<td>${formatPrice(p)}${p.verified === 0 ? UNVERIFIED : ""}</td></tr>`;
   });
@@ -343,80 +344,81 @@ function websiteSection(w) {
   let host = w.url;
   try { host = new URL(w.url).hostname.replace(/^www\./, ""); } catch { /* keep the URL */ }
   if (!seasons.length && !prices.length && !booking && !w.notes) return "";
-  return `<div class="section website-info"><h3>From the hut website</h3>
-    ${booking ? `<p>Booking: ${booking}${/^https?:\/\//i.test(w.booking_url) ? ` · <a href="${esc(w.booking_url)}" target="_blank" rel="noopener">booking page</a>` : ""}</p>` : ""}
+  return `<div class="section website-info"><h3>${t("From the hut website")}</h3>
+    ${booking ? `<p>${t("Booking:")} ${booking}${/^https?:\/\//i.test(w.booking_url) ? ` · <a href="${esc(w.booking_url)}" target="_blank" rel="noopener">${t("booking page")}</a>` : ""}</p>` : ""}
     ${w.notes ? `<p>${esc(w.notes)}</p>` : ""}
     ${seasons.length ? `<ul class="web-seasons">${seasons.join("")}</ul>` : ""}
-    ${prices.length ? `<table class="prices"><caption>Prices per person and night${priceYear ? ` (${priceYear})` : ""}</caption>${prices.join("")}</table>` : ""}
-    <p class="hint">Read from <a href="${esc(w.url)}" target="_blank" rel="noopener">${esc(host)}</a> by AI on
-      ${new Date(w.checked_at).toLocaleDateString("de-CH")}; may be outdated or wrong. Check there before you go.</p>
+    ${prices.length ? `<table class="prices"><caption>${t("Prices per person and night")}${priceYear ? ` (${priceYear})` : ""}</caption>${prices.join("")}</table>` : ""}
+    <p class="hint">${t("Read from {site} by AI on {date}; may be outdated or wrong. Check there before you go.", {
+      site: `<a href="${esc(w.url)}" target="_blank" rel="noopener">${esc(host)}</a>`,
+      date: new Date(w.checked_at).toLocaleDateString("de-CH") })}</p>
   </div>`;
 }
 
 function renderDetail(d) {
   const photo = d.photos[0];
   const currentMonth = new Date().getMonth();
-  const subtitle = [d.operator === "sac" ? "SAC hut" : "Hut", d.owner && `owned by ${esc(d.owner)}`].filter(Boolean).join(" · ");
+  const subtitle = [d.operator === "sac" ? t("SAC hut") : t("Hut"), d.owner && t("owned by {owner}", { owner: esc(d.owner) })].filter(Boolean).join(" · ");
   const services = Object.entries(SERVICE_LABELS).filter(([k]) => d.services[k]).map(([, label]) => `<span>${label}</span>`);
   const routes = d.routes.map((r) => {
     const grade = (r.main_difficulty || "").trim();
     const time = formatDuration(r.ascent_time_min, r.ascent_time_max);
     const meta = [time, r.ascent_altitude && `↑ ${formatHeight(r.ascent_altitude)}`, r.descent_altitude && `↓ ${formatHeight(r.descent_altitude)}`,
-      r.normal_route && "normal route"].filter(Boolean).join(" · ");
+      r.normal_route && t("normal route")].filter(Boolean).join(" · ");
     return `<li><span class="grade g${grade.charAt(1) || 0}">${esc(grade || "–")}</span>` +
       `<span class="route-title">${esc(r.title)}</span><span class="route-meta">${meta}</span></li>`;
   });
   const [e, n] = d.lv95.map(Math.round);
-  const geoAdmin = `https://map.geo.admin.ch/#/map?lang=en&center=${e},${n}&z=9&bgLayer=ch.swisstopo.pixelkarte-farbe` +
+  const geoAdmin = `https://map.geo.admin.ch/#/map?lang=${LANG}&center=${e},${n}&z=9&bgLayer=ch.swisstopo.pixelkarte-farbe` +
     "&layers=ch.swisstopo.swisstlm3d-wanderwege&crosshair=marker";
   const long = (d.description || "").length > 320;
 
   $("#detail").innerHTML = `
     <div class="hero">
       ${photo ? `<img src="${esc(photo.large || photo.medium)}" alt="${esc(photo.caption || d.name)}">` : ""}
-      <button class="back" id="back"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>${state.view === "tours" && state.tour ? "Tour" : "All huts"}</button>
+      <button class="back" id="back"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>${state.view === "tours" && state.tour ? t("Tour") : t("All huts")}</button>
       ${photo ? `<span class="credit">© ${esc(photo.copyright)}</span>` : ""}
     </div>
     <div class="detail-body">
       <h2>${esc(d.name)}</h2>
       <div class="subtitle">${subtitle}</div>
       <div class="facts">
-        <div class="fact"><b>${d.altitude ? heightValue(d.altitude) : "–"}</b><span>${heightUnit()} altitude</span></div>
-        <div class="fact"><b>${d.beds ?? "–"}</b><span>beds</span></div>
-        <div class="fact"><b>${d.shelter_beds ?? "–"}</b><span>winter room</span></div>
+        <div class="fact"><b>${d.altitude ? heightValue(d.altitude) : "–"}</b><span>${t("{unit} altitude", { unit: heightUnit() })}</span></div>
+        <div class="fact"><b>${d.beds ?? "–"}</b><span>${t("beds")}</span></div>
+        <div class="fact"><b>${d.shelter_beds ?? "–"}</b><span>${t("winter room")}</span></div>
       </div>
       <div class="actions">
-        ${d.booking_url ? `<a class="btn primary" href="${esc(d.booking_url)}" target="_blank" rel="noopener">Check availability</a>` : ""}
-        ${d.website ? `<a class="btn" href="${esc(d.website)}" target="_blank" rel="noopener">Website</a>` : ""}
-        ${d.sac_url ? `<a class="btn" href="${esc(d.sac_url)}" target="_blank" rel="noopener">SAC page</a>` : ""}
-        ${d.email ? `<a class="btn" href="mailto:${esc(d.email)}">Email</a>` : ""}
+        ${d.booking_url ? `<a class="btn primary" href="${esc(d.booking_url)}" target="_blank" rel="noopener">${t("Check availability")}</a>` : ""}
+        ${d.website ? `<a class="btn" href="${esc(d.website)}" target="_blank" rel="noopener">${t("Website")}</a>` : ""}
+        ${d.sac_url ? `<a class="btn" href="${esc(d.sac_url)}" target="_blank" rel="noopener">${t("SAC page")}</a>` : ""}
+        ${d.email ? `<a class="btn" href="mailto:${esc(d.email)}">${t("Email")}</a>` : ""}
         ${d.phone ? `<a class="btn" href="${esc(telHref(d.phone))}">${esc(d.phone)}</a>` : ""}
-        <a class="btn" href="${geoAdmin}" target="_blank" rel="noopener">swisstopo map</a>
-        <button class="btn" id="favourite" aria-pressed="${isFavourite(d.id)}">${isFavourite(d.id) ? "★" : "☆"} Favourite</button>
-        <button class="btn" data-plan-tour="${d.id}">Plan a tour from here</button>
+        <a class="btn" href="${geoAdmin}" target="_blank" rel="noopener">${t("swisstopo map")}</a>
+        <button class="btn" id="favourite" aria-pressed="${isFavourite(d.id)}">${isFavourite(d.id) ? "★" : "☆"} ${t("Favourite")}</button>
+        <button class="btn" data-plan-tour="${d.id}">${t("Plan a tour from here")}</button>
       </div>
       <div class="section">
-        <h3>Season</h3>
+        <h3>${t("Season")}</h3>
         <div class="season">${d.months.map((s, i) =>
-          `<div class="${i === currentMonth ? "now" : ""}" title="${MONTHS[i]}: ${STATUS_LABEL[s]}${d.partial_months[i] ? " (part of the month)" : ""}">` +
+          `<div class="${i === currentMonth ? "now" : ""}" title="${MONTHS[i]}: ${STATUS_LABEL[s]}${d.partial_months[i] ? ` (${t("part of the month")})` : ""}">` +
           `<i class="${s}${d.partial_months[i] ? " partial" : ""}"></i>${MONTHS[i].charAt(0)}</div>`).join("")}</div>
         <div class="season-legend">
-          <span><i class="dot catered"></i>Catered</span><span><i class="dot self_service"></i>Self-service only</span>
-          <span><i class="dot closed"></i>Closed</span>${d.months[0] === "unknown" ? `<span><i class="dot unknown"></i>No data</span>` : ""}
-          <span>Half-filled: part of the month</span>
+          <span><i class="dot catered"></i>${t("Catered")}</span><span><i class="dot self_service"></i>${t("Self-service only")}</span>
+          <span><i class="dot closed"></i>${t("Closed")}</span>${d.months[0] === "unknown" ? `<span><i class="dot unknown"></i>${t("No data")}</span>` : ""}
+          <span>${t("Half-filled: part of the month")}</span>
         </div>
       </div>
       ${websiteSection(d.web)}
-      <div class="section"><h3>Weather</h3><div id="weather"><p class="hint">Loading the forecast…</p></div></div>
-      ${d.booking_url ? `<div class="section"><h3>Free beds</h3><div id="bedCal"><p class="hint">Checking free beds…</p></div></div>` : ""}
+      <div class="section"><h3>${t("Weather")}</h3><div id="weather"><p class="hint">${t("Loading the forecast…")}</p></div></div>
+      ${d.booking_url ? `<div class="section"><h3>${t("Free beds")}</h3><div id="bedCal"><p class="hint">${t("Checking free beds…")}</p></div></div>` : ""}
       ${connectionsSection(d)}
-      ${d.description ? `<div class="section"><h3>About</h3><p class="desc ${long ? "clamped" : ""}" id="desc">${esc(d.description)}</p>
-        ${long ? `<button class="link" id="more">Show more</button>` : ""}</div>` : ""}
-      ${routes.length ? `<div class="section"><h3>Access routes</h3><ul class="routes">${routes.join("")}</ul></div>` : ""}
-      ${services.length ? `<div class="section"><h3>Services</h3><div class="services">${services.join("")}</div></div>` : ""}
-      <p class="source">${d.source === "manual" ? "Hut added by hand" : `Hut data © <a href="https://www.sac-cas.ch" target="_blank" rel="noopener">SAC-CAS</a>,
-        synced ${d.synced_at ? new Date(d.synced_at).toLocaleDateString("de-CH") : "–"}`}. Check conditions and official sources before you go.
-        <a href="#" data-edit-hut="${d.id}">Edit hut data</a></p>
+      ${d.description ? `<div class="section"><h3>${t("About")}</h3><p class="desc ${long ? "clamped" : ""}" id="desc">${esc(d.description)}</p>
+        ${long ? `<button class="link" id="more">${t("Show more")}</button>` : ""}</div>` : ""}
+      ${routes.length ? `<div class="section"><h3>${t("Access routes")}</h3><ul class="routes">${routes.join("")}</ul></div>` : ""}
+      ${services.length ? `<div class="section"><h3>${t("Services")}</h3><div class="services">${services.join("")}</div></div>` : ""}
+      <p class="source">${d.source === "manual" ? t("Hut added by hand") : `${t("Hut data")} © <a href="https://www.sac-cas.ch" target="_blank" rel="noopener">SAC-CAS</a>,
+        ${t("synced {date}", { date: d.synced_at ? new Date(d.synced_at).toLocaleDateString("de-CH") : "–" })}`}. ${t("Check conditions and official sources before you go.")}
+        <a href="#" data-edit-hut="${d.id}">${t("Edit hut data")}</a></p>
     </div>`;
   $("#back").addEventListener("click", closeDetail);
   if (d.booking_url) loadBeds(d.id);
@@ -424,7 +426,7 @@ function renderDetail(d) {
   $("#favourite").addEventListener("click", (ev) => {
     const fav = toggleFavourite(d.id);
     ev.currentTarget.setAttribute("aria-pressed", fav);
-    ev.currentTarget.textContent = `${fav ? "★" : "☆"} Favourite`;
+    ev.currentTarget.textContent = `${fav ? "★" : "☆"} ${t("Favourite")}`;
     update();
   });
   $("#more")?.addEventListener("click", (ev) => {

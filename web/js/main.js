@@ -12,7 +12,8 @@ import { addTourLayers, bindTourForm, clearTour, closeTour, hasResults, openTour
   syncTourForm } from "./tours.js";
 import { addEditorLayers, bindEditorEvents as bindTourEditorEvents, editorHutClick, isEditing, reloadEditor }
   from "./tour-editor.js";
-import { bindSettings, onSettingsChange } from "./settings.js";
+import { bindSettings, onSettingsChange, setSettings } from "./settings.js";
+import { LANG, LANGUAGES, t, translatePage } from "./i18n.js";
 
 /** Our layers, bottom to top. Runs after every base-style (re)load. */
 function addLayers() {
@@ -83,6 +84,12 @@ function bindGlobalEvents() {
     setSheet({ peek: "half", half: "full", full: "peek" }[$("#panel").dataset.sheet]);
   });
   bindSheetDrag();
+  $("#lang").innerHTML = Object.entries(LANGUAGES).map(([code, label]) =>
+    `<option value="${code}"${code === LANG ? " selected" : ""}>${label}</option>`).join("");
+  $("#lang").addEventListener("change", (e) => {
+    setSettings({ lang: e.target.value });
+    location.reload();  // every text is in the new language, without re-rendering each view
+  });
   $("#q").addEventListener("focus", () => { if (isMobile()) setSheet("full"); });
   document.addEventListener("keydown", (e) => {
     if (e.key === "/" && !e.target.closest("input, textarea")) {
@@ -162,6 +169,7 @@ function bindSheetDrag() {
 }
 
 async function main() {
+  translatePage();
   renderControls();
   bindHutEvents();
   bindConnectionEvents();
@@ -187,5 +195,5 @@ async function main() {
 
 main().catch((err) => {
   console.error(err);
-  $("#list").innerHTML = `<li class="empty">Could not load huts. Is the server running?</li>`;
+  $("#list").innerHTML = `<li class="empty">${t("Could not load huts. Is the server running?")}</li>`;
 });

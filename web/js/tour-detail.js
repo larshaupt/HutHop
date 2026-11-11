@@ -2,21 +2,22 @@
 import { $, CATEGORY, categoryName, costTitle, decodePolyline, decodeValues, distanceM, esc, formatCost, formatMinutes, modeLabel }
   from "./util.js";
 import { state } from "./state.js";
+import { LOCALE, t as tr } from "./i18n.js";  // t is a tour here
 import { bookingPanel, isBooked } from "./booking.js";
 import { hutForecast, weatherLine } from "./weather.js";
 import { distanceUnit, distanceValue, formatDistance, formatHeight, heightUnit, heightValue, settings } from "./settings.js";
 
-const NIGHT_LABEL = { catered: "Catered", self_service: "Self-service", unknown: "No opening data", closed: "Closed" };
+const NIGHT_LABEL = { catered: tr("Catered"), self_service: tr("Self-service"), unknown: tr("No opening data"), closed: tr("Closed") };
 const AVAIL_LABEL = {
-  available: (a) => `${a.free_beds} beds free`,
-  full: (a) => `Full (${a.free_beds ?? 0} beds free)`,
-  closed: () => "Closed",
-  not_released: () => "Not bookable yet",
-  no_booking: () => "No online booking",
-  not_checked: () => "Free beds not checked",
-  error: () => "Could not check free beds",
+  available: (a) => tr("{n} beds free", { n: a.free_beds }),
+  full: (a) => tr("Full ({n} beds free)", { n: a.free_beds ?? 0 }),
+  closed: () => tr("Closed"),
+  not_released: () => tr("Not bookable yet"),
+  no_booking: () => tr("No online booking"),
+  not_checked: () => tr("Free beds not checked"),
+  error: () => tr("Could not check free beds"),
 };
-const DAY_FMT = new Intl.DateTimeFormat("en-GB", { weekday: "short", day: "numeric", month: "short" });
+const DAY_FMT = new Intl.DateTimeFormat(LOCALE, { weekday: "short", day: "numeric", month: "short" });
 
 const formatDay = (iso) => DAY_FMT.format(new Date(`${iso}T12:00:00`));
 
@@ -41,7 +42,7 @@ function profileChart(profile, scale, color) {
   const line = profile.map(([m, z], i) => `${i ? "L" : "M"}${x(m)},${y(z)}`).join("");
   const zs = profile.map(([, z]) => z);
   const hi = Math.max(...zs), lo = Math.min(...zs);
-  return `<div class="profile" title="Height profile: ${heightValue(lo)}–${formatHeight(hi)}">
+  return `<div class="profile" title="${tr("Height profile")}: ${heightValue(lo)}–${formatHeight(hi)}">
       <div class="profile-plot"><svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:${Math.max(30, (length / scale.length) * 100)}%">
         <path d="${line}L${W},${H}L0,${H}Z" fill="${color}" opacity=".14"/>
         <path d="${line}" fill="none" stroke="${color}" stroke-width="1.6" vector-effect="non-scaling-stroke"/>
@@ -53,14 +54,14 @@ function profileChart(profile, scale, color) {
 /** First or last connection of the day at the tour's start or end stop, with a warning when it is tight. */
 function connectionLine(s, role) {
   if (!s) return "";
-  if (!s.known) return `<div class="tl-meta transit warn-text">No timetable for this date yet – check connections</div>`;
-  if (!s.calls) return `<div class="tl-meta transit warn-text">No public transport on this day</div>`;
+  if (!s.known) return `<div class="tl-meta transit warn-text">${tr("No timetable for this date yet – check connections")}</div>`;
+  if (!s.calls) return `<div class="tl-meta transit warn-text">${tr("No public transport on this day")}</div>`;
   if (role === "access") {
-    return `<div class="tl-meta transit${s.late ? " warn-text" : ""}">First connection ${s.first} · at the hut from about
-      ${s.hut_from}${s.late ? " – late for dinner, plan an earlier arrival" : ""}</div>`;
+    return `<div class="tl-meta transit${s.late ? " warn-text" : ""}">${tr("First connection {first} · at the hut from about {time}", { first: s.first, time: s.hut_from })}${
+      s.late ? ` – ${tr("late for dinner, plan an earlier arrival")}` : ""}</div>`;
   }
-  return `<div class="tl-meta transit${s.early ? " warn-text" : ""}">Last connection ${s.last} · leave the hut by
-    ${s.leave_by}${s.early ? " – a very early start" : ""}</div>`;
+  return `<div class="tl-meta transit${s.early ? " warn-text" : ""}">${tr("Last connection {last} · leave the hut by {time}", { last: s.last, time: s.leave_by })}${
+    s.early ? ` – ${tr("a very early start")}` : ""}</div>`;
 }
 
 export { AVAIL_LABEL, connectionLine, formatDay, stopLabel, NIGHT_LABEL };
@@ -79,14 +80,14 @@ export function renderTourDetail(t, { kept = false, booking = false, people = 2,
     const night = d.night ? `<li class="tl-night">
         <div class="tl-dot hut"><span>${d.day}</span></div>
         <div><b><a href="#" data-hut="${d.to.id}">${esc(d.to.name)}</a></b>
-          <div class="tl-meta">Night of ${formatDay(d.date)} ·
-            <span class="night ${d.night.status}">${NIGHT_LABEL[d.night.status]}${d.night.partial ? ", part of the month – check dates" : ""}</span></div>
+          <div class="tl-meta">${tr("Night of {date}", { date: formatDay(d.date) })} ·
+            <span class="night ${d.night.status}">${NIGHT_LABEL[d.night.status]}${d.night.partial ? `, ${tr("part of the month – check dates")}` : ""}</span></div>
           ${nightAvailability(d)}
           ${nightCost(d.night.cost)}
         </div></li>` : "";
     return `<li class="tl-day" data-day="${d.day}">
         <div class="tl-dot" style="--c:${cat.color}"></div>
-        <div><div class="tl-title">Day ${d.day} · ${formatDay(d.date)}</div>
+        <div><div class="tl-title">${tr("Day {day}", { day: d.day })} · ${formatDay(d.date)}</div>
           <div>${from} → ${to}</div>
           <div class="tl-meta"><b>${formatMinutes(d.time_min)}</b> · ${formatDistance(d.distance_m)} ·
             ↑ ${formatHeight(d.ascent_m)} · ↓ ${formatHeight(d.descent_m)} · <span style="color:${cat.color}">${categoryName(d.max_category, d.osm_grade)}</span>${sac}</div>
@@ -99,38 +100,35 @@ export function renderTourDetail(t, { kept = false, booking = false, people = 2,
   $("#tourDetail").innerHTML = `
     <div class="tour-top">
       <div class="tour-nav">
-        <button class="back flat" id="tourBack"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>${state.view === "mine" ? "My tours" : "Tours"}</button>
+        <button class="back flat" id="tourBack"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>${state.view === "mine" ? tr("My tours") : tr("Tours")}</button>
         ${nav ? `<div class="tour-step">
-          <button class="btn" data-step-tour="-1" aria-label="Previous tour"${nav.n > 1 ? "" : " disabled"}>‹</button>
+          <button class="btn" data-step-tour="-1" aria-label="${tr("Previous tour")}"${nav.n > 1 ? "" : " disabled"}>‹</button>
           <span>${nav.n} / ${nav.total}</span>
-          <button class="btn" data-step-tour="1" aria-label="Next tour"${nav.n < nav.total ? "" : " disabled"}>›</button>
+          <button class="btn" data-step-tour="1" aria-label="${tr("Next tour")}"${nav.n < nav.total ? "" : " disabled"}>›</button>
         </div>` : ""}
       </div>
       <h2>${esc(start.name)} → ${esc(end.name)}</h2>
-      <div class="subtitle">${t.nights} night${t.nights > 1 ? "s" : ""}, ${t.days.length} days ·
+      <div class="subtitle">${tr("{n} nights", { n: t.nights })}, ${tr("{n} days", { n: t.days.length })} ·
         ${formatDay(t.days[0].date)} – ${formatDay(t.days[t.days.length - 1].date)}</div>
       <div class="facts">
-        <div class="fact"><b>${formatMinutes(t.time_min).replace(" h", "")}</b><span>hours walking</span></div>
+        <div class="fact"><b>${formatMinutes(t.time_min).replace(" h", "")}</b><span>${tr("hours walking")}</span></div>
         <div class="fact"><b>${distanceValue(t.distance_m)}</b><span>${distanceUnit()}</span></div>
-        <div class="fact"><b>${heightValue(t.ascent_m)}</b><span>${heightUnit()} ascent</span></div>
+        <div class="fact"><b>${heightValue(t.ascent_m)}</b><span>${heightUnit()} ${tr("ascent")}</span></div>
       </div>
       ${outsideSettings(t)}
       ${unofficialWarning(t)}
       ${tourCost(t)}
       <div class="actions">
-        <button class="btn primary" id="tourEdit">Edit tour</button>
-        <button class="btn" id="tourBook" aria-pressed="${booking}">Book this tour</button>
-        <button class="btn" id="tourKeep" aria-pressed="${kept}">${kept ? "★ In my tours" : "☆ Add to my tours"}</button>
-        <a class="btn" href="/api/tours/${encodeURIComponent(t.id)}/gpx" download>Download GPX</a>
+        <button class="btn primary" id="tourEdit">${tr("Edit tour")}</button>
+        <button class="btn" id="tourBook" aria-pressed="${booking}">${tr("Book this tour")}</button>
+        <button class="btn" id="tourKeep" aria-pressed="${kept}">${kept ? `★ ${tr("In my tours")}` : `☆ ${tr("Add to my tours")}`}</button>
+        <a class="btn" href="/api/tours/${encodeURIComponent(t.id)}/gpx" download>${tr("Download GPX")}</a>
       </div>
     </div>
     <div class="detail-body">
       ${booking ? bookingPanel(t, people) : ""}
       <ol class="timeline">${rows}</ol>
-      <p class="source">Walking times use the Swiss hiking-time formula without breaks. Opening data from the SAC;
-        free beds from hut-reservation.org (cached up to 10 minutes; not a reservation). Weather: MeteoSwiss forecast
-        (via Open-Meteo) at the day's hut, for the next 5 days. Trail closures (Swiss Hiking Federation) and military
-        shooting notices from map.geo.admin.ch. Check conditions, weather and official sources before you go.</p>
+      <p class="source">${tr("Walking times use the Swiss hiking-time formula without breaks. Opening data from the SAC; free beds from hut-reservation.org (cached up to 10 minutes; not a reservation). Weather: MeteoSwiss forecast (via Open-Meteo) at the day's hut, for the next 5 days. Trail closures (Swiss Hiking Federation) and military shooting notices from map.geo.admin.ch. Check conditions, weather and official sources before you go.")}</p>
     </div>`;
   dayNotes(t);
 }
@@ -155,54 +153,53 @@ async function dayNotes(t) {
     const w = found.days.find((x) => x.day === d.day) || { closures: [], shooting: [] };
     const link = (url, text) => (/^https?:\/\//i.test(url || "") ? ` · <a href="${esc(url)}" target="_blank" rel="noopener">${text}</a>` : "");
     target.innerHTML = [
-      forecast[i] && `<div class="tl-meta" title="Forecast at ${esc(d.to.kind === "hut" ? d.to.name : d.from.name)}">${weatherLine(forecast[i])}</div>`,
-      ...w.closures.map((c) => `<div class="tl-meta warn-text">⚠ Trail closure: ${esc(c.title)}` +
+      forecast[i] && `<div class="tl-meta" title="${tr("Forecast at {name}", { name: esc(d.to.kind === "hut" ? d.to.name : d.from.name) })}">${weatherLine(forecast[i])}</div>`,
+      ...w.closures.map((c) => `<div class="tl-meta warn-text">⚠ ${tr("Trail closure")}: ${esc(c.title)}` +
         `${c.reason ? ` – ${esc(c.reason)}` : ""}${c.duration ? ` (${esc(c.duration)})` : ""}${c.details ? `. ${esc(c.details)}` : ""}` +
-        `${link(c.url, "details")}</div>`),
+        `${link(c.url, tr("details"))}</div>`),
       ...w.shooting.map((z) => `<div class="tl-meta${z.times.length ? " warn-text" : ""}">` +
-        `${z.times.length ? `⚠ Military shooting on this day, ${esc(z.times.join(", "))}` : "Crosses a military danger zone, no shooting published for this day"}` +
-        `: ${esc(z.name)}${z.places.length ? ` (${esc(z.places.join(", "))})` : ""}${link(z.url, "shooting notice")}</div>`),
+        `${z.times.length ? `⚠ ${tr("Military shooting on this day")}, ${esc(z.times.join(", "))}` : tr("Crosses a military danger zone, no shooting published for this day")}` +
+        `: ${esc(z.name)}${z.places.length ? ` (${esc(z.places.join(", "))})` : ""}${link(z.url, tr("shooting notice"))}</div>`),
     ].filter(Boolean).join("");
   });
-  if (found.error) el(1)?.insertAdjacentHTML("beforeend", `<div class="tl-meta">Could not check trail closures and shooting notices right now.</div>`);
+  if (found.error) el(1)?.insertAdjacentHTML("beforeend", `<div class="tl-meta">${tr("Could not check trail closures and shooting notices right now.")}</div>`);
 }
 
 function nightCost(c) {
-  if (!c) return `<div class="tl-meta">No prices known for this hut</div>`;
+  if (!c) return `<div class="tl-meta">${tr("No prices known for this hut")}</div>`;
   const amount = settings().member ? c.member : c.non_member;
-  return `<div class="tl-meta">≈ ${c.currency} ${Math.round(amount)} per person: ${c.basis}` +
-    `${c.tax ? " + tax" : ""}${c.label ? ` (${esc(c.label)}` + (c.year ? `, ${c.year})` : ")") : ""}</div>`;
+  return `<div class="tl-meta">≈ ${c.currency} ${Math.round(amount)} ${tr("per person")}: ${tr(c.basis)}` +
+    `${c.tax ? ` + ${tr("tax")}` : ""}${c.label ? ` (${esc(c.label)}` + (c.year ? `, ${c.year})` : ")") : ""}</div>`;
 }
 
 /** Estimated hut costs for the tour: per person and for the group, with how many nights have prices. */
 function tourCost(t) {
-  if (!t.cost?.priced) return `<p class="hint">No hut prices known for this tour.</p>`;
+  if (!t.cost?.priced) return `<p class="hint">${tr("No hut prices known for this tour.")}</p>`;
   const people = state.tPeople;
-  const from = t.cost.priced < t.nights ? "from " : "";
-  return `<p class="tour-cost" title="${esc(costTitle(t, settings().member, people))}">Hut costs ≈ <b>${from}` +
-    `${formatCost(t.cost.totals, settings().member)}</b> per person${people > 1 ? `, ${from}${formatCost(t.cost.totals, settings().member, people)} for ${people}` : ""}` +
-    `${t.cost.priced < t.nights ? ` · ${t.nights - t.cost.priced} night${t.nights - t.cost.priced > 1 ? "s" : ""} without prices` : ""}</p>`;
+  const from = t.cost.priced < t.nights ? `${tr("from (price)")} ` : "";
+  return `<p class="tour-cost" title="${esc(costTitle(t, settings().member, people))}">${tr("Hut costs")} ≈ <b>${from}` +
+    `${formatCost(t.cost.totals, settings().member)}</b> ${tr("per person")}${people > 1 ? `, ${from}${formatCost(t.cost.totals, settings().member, people)} ${tr("for {n}", { n: people })}` : ""}` +
+    `${t.cost.priced < t.nights ? ` · ${tr("{n} nights without prices", { n: t.nights - t.cost.priced })}` : ""}</p>`;
 }
 
 /** A tour made earlier or shared by someone else can use what your settings wouldn't offer: say what. */
 export function outsideSettings(t) {
-  const reasons = { trail: "a harder trail", altitude: "a route higher than your altitude limit",
-    lift: "a mountain lift at the start or end" };
+  const reasons = { trail: tr("a harder trail"), altitude: tr("a route higher than your altitude limit"),
+    lift: tr("a mountain lift at the start or end") };
   const list = (t.outside_settings || []).map((r) => reasons[r]).filter(Boolean);
-  return list.length ? `<p class="warn">Outside your settings (⚙): this tour uses ${list.join(" and ")}.</p>` : "";
+  return list.length ? `<p class="warn">${tr("Outside your settings (⚙): this tour uses {what}.", { what: list.join(` ${tr("and")} `) })}</p>` : "";
 }
 
 /** Days on unofficial OSM paths: not signposted or maintained, often glacier or alpine terrain. */
 function unofficialWarning(t) {
   const days = t.days.filter((d) => d.max_category === 4);
   if (!days.length) return "";
-  const which = days.map((d) => `day ${d.day}${d.osm_grade ? ` (${d.osm_grade})` : ""}`).join(", ");
-  return `<p class="warn">Unofficial path on ${which}: from OpenStreetMap, not signposted or maintained, often across
-    glaciers or alpine terrain. Check the route, conditions and the hut's access description before you go.</p>`;
+  const which = days.map((d) => `${tr("day {day}", { day: d.day })}${d.osm_grade ? ` (${d.osm_grade})` : ""}`).join(", ");
+  return `<p class="warn">${tr("Unofficial path on {days}: from OpenStreetMap, not signposted or maintained, often across glaciers or alpine terrain. Check the route, conditions and the hut's access description before you go.", { days: which })}</p>`;
 }
 
 function nightAvailability(d) {
-  if (isBooked(d)) return `<div class="tl-meta avail available">✓ Booked</div>`;
+  if (isBooked(d)) return `<div class="tl-meta avail available">✓ ${tr("Booked")}</div>`;
   const a = d.night.availability;
   if (!a) return "";
   return `<div class="tl-meta avail ${a.state}">${AVAIL_LABEL[a.state](a)}${a.state === "available" ? checkedAgo(a) : ""}</div>`;
@@ -212,5 +209,5 @@ function nightAvailability(d) {
 export function checkedAgo(a) {
   if (!a.checked_at) return "";
   const min = Math.max(0, Math.round((Date.now() - new Date(a.checked_at)) / 60000));
-  return min < 1 ? " · checked just now" : ` · checked ${min} min ago`;
+  return min < 1 ? ` · ${tr("checked just now")}` : ` · ${tr("checked {n} min ago", { n: min })}`;
 }

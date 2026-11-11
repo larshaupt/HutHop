@@ -2,11 +2,12 @@
 import { $, CATEGORY, isMobile } from "./util.js";
 import { state } from "./state.js";
 import { settings } from "./settings.js";
+import { t } from "./i18n.js";
 
 const CH_BOUNDS = [[5.9, 45.8], [10.5, 47.85]];
 const ATTRIBUTION = '<a href="https://www.swisstopo.admin.ch" target="_blank" rel="noopener">© swisstopo</a> · ' +
-  'Hut data <a href="https://www.sac-cas.ch" target="_blank" rel="noopener">© SAC-CAS</a> · ' +
-  'Unofficial paths <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a>';
+  `${t("Hut data")} <a href="https://www.sac-cas.ch" target="_blank" rel="noopener">© SAC-CAS</a> · ` +
+  `${t("Unofficial paths")} <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a>`;
 const TRAILS_TILES = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swisstlm3d-wanderwege/default/current/3857/{z}/{x}/{y}.png";
 const STYLES = {
   light: "https://vectortiles.geo.admin.ch/styles/ch.swisstopo.lightbasemap.vt/style.json",
@@ -53,7 +54,7 @@ function bindOsmPaths() {
   map.on("mousemove", "osm-paths", (e) => {
     const grade = e.features[0].properties.grade;
     map.getCanvas().style.cursor = "help";
-    popup.setLngLat(e.lngLat).setHTML(`Unofficial path${grade ? ` · ${grade}` : ""}<small>OpenStreetMap, not signposted</small>`)
+    popup.setLngLat(e.lngLat).setHTML(`${t("Unofficial path")}${grade ? ` · ${grade}` : ""}<small>${t("OpenStreetMap, not signposted")}</small>`)
       .addTo(map);
   });
   map.on("mouseleave", "osm-paths", () => {
