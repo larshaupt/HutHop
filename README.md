@@ -4,7 +4,7 @@ A private web app to browse Swiss mountain huts (SAC plus huts added by hand) an
 
 **Status (Oct 2026):** deployed at huthop.larshauptmann.com (Oracle VM, Cloudflare Access login). Hut map with filters, free-beds calendar and hand
 corrections; walking connections on swisstopo's trail network; multi-day tour suggestions ranked by a fixed "best"
-score (new trail, shape, free beds, opening data, …), sortable in the browser; height profiles; GPX export; weather forecast, trail closures and
+score (new trail, shape, free beds, opening data, …), sortable in the browser; height profiles; GPX export; a Share button with link previews; weather forecast, trail closures and
 military shooting notices per day; favourite huts; About dialog. Prices are postponed. See [`hut-tour-planner.md`](hut-tour-planner.md) for the project brief (requirements,
 design, APIs, plan) and [`spikes/`](spikes/) for the Phase 0 findings.
 

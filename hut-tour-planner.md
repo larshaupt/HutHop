@@ -303,6 +303,7 @@ Answer the open questions before building:
 ### Later
 
 - ~~GPX export~~ done: `GET /api/tours/{id}/gpx`, one track per day + waypoints. Tour ids are `date_places_limits` (e.g. `2027-07-17_123-45-67-89_2-2-3`), stable across edge rebuilds, so they also serve sharing, saved tours and the editor.
+- ~~Share button and link previews~~ done (Nov 2026): **Share** in the tour view shares `/t/{tour_id}` (the phone's share sheet via the Web Share API, else the link is copied). That page has Open Graph / Twitter meta tags (title like "4-day hut tour: Hut A → Hut D", dates, start and end stop, distance, ascent, hardest trail) and redirects to `/#v=tours&tid={id}`; a tour that no longer exists gets a generic preview and the app's "no longer available" note. Previews only work once the app is public (Cloudflare Access hides the page from messenger crawlers). No preview image yet.
 - Saved tours, non-SAC huts, PWA/offline, better ranking.
 - ~~Elevation in GPX~~ done: `edge.elevation` holds the swissTLM3D height of each route point (from `build_edges`); used for `<ele>` in GPX and a height profile per day in the tour view.
 - ~~Tour links keep the search hours~~ done: tour ids end in the hours per day (`…_2-2-3_3-6.5`), so a shared or reopened tour is scored as in its search; older ids default to 3–6 h.

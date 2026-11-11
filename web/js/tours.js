@@ -134,6 +134,7 @@ export function bindTourForm() {
       return;
     }
     if (e.target.closest("#bookRecheck")) { recheckBeds(); return; }
+    if (e.target.closest("#tourShare")) { shareTour(current, e.target.closest("#tourShare")); return; }
     if (e.target.closest("#tourKeep")) {
       const entry = findEntry(current.id);
       entry ? removeEntry(entry.key) : keepTour(current);
@@ -406,6 +407,23 @@ function bindTourSwipe() {
     start = null;
     if (Math.abs(dx) > 60 && Math.abs(dx) > 2 * Math.abs(dy)) stepTour(dx < 0 ? 1 : -1);  // mostly sideways
   });
+}
+
+/** Share a tour's preview link (/t/{id}, see app/api/tours.py): the phone's share sheet, else copy it. */
+async function shareTour(t, button) {
+  const url = `${location.origin}/t/${encodeURIComponent(t.id)}`;
+  if (navigator.share) {
+    try { await navigator.share({ title: "HutHop tour", url }); } catch { /* cancelled */ }
+    return;
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    button.textContent = "✓ Link copied";
+  } catch {
+    prompt("Copy this link:", url);  // no clipboard access (e.g. not https)
+    return;
+  }
+  setTimeout(() => { button.textContent = "Share"; }, 2000);
 }
 
 /** A tour by id (my tours, a shared link, the editor's result), or null if it no longer exists. */
