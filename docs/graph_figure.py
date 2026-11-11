@@ -4,7 +4,7 @@
 
 One straight line per hut pair that is connected within MAX_MIN in at least one direction (the faster direction
 counts), coloured like the trail markings (yellow, red-white dashed, blue-white dashed) by the hardest trail
-category along the route, using all category limits (up to blue-white).
+category along the route, using all category limits (up to unofficial OpenStreetMap paths, drawn dotted purple).
 Positions are LV95, so distances are true to scale. Huts without any computed edge are drawn hollow.
 """
 
@@ -18,7 +18,7 @@ MAX_MIN = 600  # the edge cutoff of build_edges, i.e. every stored hut pair
 WIDTH = 960
 PAD = 24
 TOP = 64  # room for title and legend
-CATEGORIES = {1: "Hiking (yellow)", 2: "Mountain (red-white)", 3: "Alpine (blue-white)"}
+CATEGORIES = {1: "Hiking (yellow)", 2: "Mountain (red-white)", 3: "Alpine (blue-white)", 4: "Unofficial (OSM)"}
 
 # Per direction the edge of the most permissive category limit (as in app/api/edges.py), then per pair the
 # faster direction.
@@ -40,16 +40,17 @@ FROM best GROUP BY 1, 2 HAVING t <= :max
 
 STYLE = """
 svg { --surface: #fcfcfb; --text: #0b0b0b; --muted: #52514e; --node: #0b0b0b;
-      --c1: #eda100; --c2: #e34948; --c3: #2a78d6; }
+      --c1: #eda100; --c2: #e34948; --c3: #2a78d6; --c4: #7a3e9d; }
 @media (prefers-color-scheme: dark) {
   svg { --surface: #1a1a19; --text: #f0efec; --muted: #c3c2b7; --node: #f0efec;
-        --c1: #c98500; --c2: #e34948; --c3: #3987e5; }
+        --c1: #c98500; --c2: #e34948; --c3: #3987e5; --c4: #b07cd0; }
 }
 text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; fill: var(--text); }
 .sub { fill: var(--muted); font-size: 13px; }
 .e { stroke-width: 1.2; stroke-linecap: round; stroke-opacity: 0.8; fill: none; }
-.e1 { stroke: var(--c1); } .e2 { stroke: var(--c2); } .e3 { stroke: var(--c3); }
+.e1 { stroke: var(--c1); } .e2 { stroke: var(--c2); } .e3 { stroke: var(--c3); } .e4 { stroke: var(--c4); }
 .e2, .e3 { stroke-dasharray: 5 2; stroke-linecap: butt; }  /* the white of the red-white and blue-white markings */
+.e4 { stroke-dasharray: 1.5 2; stroke-linecap: butt; }  /* unofficial: no marking */
 .hut { fill: var(--node); stroke: var(--surface); stroke-width: 1; }
 .lone { fill: var(--surface); stroke: var(--node); stroke-width: 1.2; }
 """
@@ -83,7 +84,7 @@ def main() -> None:
         n = sum(1 for p in pairs if p[2] == cat)
         out.append(f'<line x1="{x}" y1="47" x2="{x + 18}" y2="47" class="e e{cat}" stroke-width="2.5" '
                    f'stroke-opacity="1"/><text x="{x + 24}" y="51" class="sub">{label} · {n:,}</text>')
-        x += 24 + 6.6 * len(f"{label} · {n:,}") + 22
+        x += 24 + 6.6 * len(f"{label} · {n:,}") + 14
     out.append(f'<circle cx="{x + 5}" cy="47" r="3.5" class="lone"/>'
                f'<text x="{x + 14}" y="51" class="sub">No trail connection</text>')
 

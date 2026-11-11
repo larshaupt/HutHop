@@ -11,7 +11,8 @@ design, APIs, plan) and [`spikes/`](spikes/) for the Phase 0 findings.
 ![Map of all huts with a line for each pair connected by trail within 10 hours, coloured by the hardest trail category](docs/hut-graph.svg)
 
 The route graph built by `build_edges`: one line per hut pair connected within 10 h, the longest connection it
-stores. Hollow huts have no trail connection, usually because they are too far from a signposted trail.
+stores. Dotted purple lines use unofficial OpenStreetMap paths, which reach huts away from the signposted
+trails. Hollow huts have no trail connection, usually because no path within reach leads to them.
 Bus and train stops are left out. Regenerate the figure with `uv run python docs/graph_figure.py`.
 
 ## Setup
