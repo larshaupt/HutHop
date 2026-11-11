@@ -574,3 +574,7 @@ code { font-size: 12px; background: var(--bg-soft); padding: 0 4px; border-radiu
 /* Feedback dialog */
 .feedback { width: min(480px, calc(100vw - 32px)); }
 .feedback textarea { width: 100%; height: auto; padding: 8px 10px; resize: vertical; font: inherit; }
+
+/* Offline: the service worker answered with saved data (js/offline.js) */
+.offline-note { flex: none; margin: 12px 16px 0; background: #fff6e0; color: #7a5200; border-radius: 8px; padding: 6px 10px; font-size: 12.5px; }
+@media (max-width: 720px) { .offline-note { margin-top: 0; } }

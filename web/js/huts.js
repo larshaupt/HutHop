@@ -8,6 +8,7 @@ import { loadBeds } from "./beds.js";
 import { isFavourite, toggleFavourite } from "./favourites.js";
 import { loadWeather } from "./weather.js";
 import { formatHeight, heightUnit, heightValue } from "./settings.js";
+import { noteSaved } from "./offline.js";
 
 const SERVICE_LABELS = {
   half_board: "Half board", plain_meals: "Simple meals", drinks: "Drinks",
@@ -24,6 +25,7 @@ const details = new Map();
 export async function loadHuts() {
   const res = await fetch("/api/huts");
   if (!res.ok) throw new Error(`huts: ${res.status}`);
+  noteSaved(res);
   huts = await res.json();
 }
 

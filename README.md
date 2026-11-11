@@ -5,7 +5,8 @@ A private web app to browse Swiss mountain huts (SAC plus huts added by hand) an
 **Status (Oct 2026):** deployed at huthop.larshauptmann.com (Oracle VM, Cloudflare Access login). Hut map with filters, free-beds calendar and hand
 corrections; walking connections on swisstopo's trail network; multi-day tour suggestions ranked by a fixed "best"
 score (new trail, shape, free beds, opening data, …), sortable in the browser; height profiles; GPX export; weather forecast, trail closures and
-military shooting notices per day; favourite huts; About dialog. Prices are postponed. See [`hut-tour-planner.md`](hut-tour-planner.md) for the project brief (requirements,
+military shooting notices per day; favourite huts; About dialog; installable as an app, with the tours in "My tours"
+saved for use without a connection. Prices are postponed. See [`hut-tour-planner.md`](hut-tour-planner.md) for the project brief (requirements,
 design, APIs, plan) and [`spikes/`](spikes/) for the Phase 0 findings.
 
 ![Map of all huts with a line for each pair connected by trail within 10 hours, coloured by the hardest trail category](docs/hut-graph.svg)
@@ -96,7 +97,8 @@ web/         static frontend (MapLibre, vendored in web/vendor/, + swisstopo til
              connections, tours (form, results, sorting, opening a tour), tour-detail (timeline, profiles),
              tour-editor (editing a tour), your-tours and favourites (kept in the browser), settings (general
              settings and units, kept in the browser), editor (hut data),
-             info (About dialog), feedback (dialog), util
+             info (About dialog), feedback (dialog), offline (saving "My tours" for offline use), util;
+             sw.js: the service worker (app shell and saved tours offline), manifest.json and icons: the installable app
 server/      compose.yaml, update.sh (deploy) and refresh.sh (data refresh and graph build) for the server
 docs/        deployment plan, route graph figure
 spikes/      Phase 0 experiments and findings (historical)
