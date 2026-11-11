@@ -127,12 +127,28 @@ export function renderTourDetail(t, { kept = false, booking = false, people = 2,
     <div class="detail-body">
       ${booking ? bookingPanel(t, people) : ""}
       <ol class="timeline">${rows}</ol>
+      ${exportPanel(t)}
       <p class="source">Walking times use the Swiss hiking-time formula without breaks. Opening data from the SAC;
         free beds from hut-reservation.org (cached up to 10 minutes; not a reservation). Weather: MeteoSwiss forecast
         (via Open-Meteo) at the day's hut, for the next 5 days. Trail closures (Swiss Hiking Federation) and military
         shooting notices from map.geo.admin.ch. Check conditions, weather and official sources before you go.</p>
     </div>`;
   dayNotes(t);
+}
+
+/** GPX per day for Komoot (one tour per file) and the swisstopo app, with short import steps. Neither app has a
+ * public import link or API (checked Nov 2026), so files it is. */
+function exportPanel(t) {
+  const url = `/api/tours/${encodeURIComponent(t.id)}/gpx`;
+  const days = t.days.map((d) => `<a class="btn" href="${url}?day=${d.day}" download>Day ${d.day}</a>`).join("");
+  return `<section class="export">
+      <h3>Take it to Komoot or the swisstopo app</h3>
+      <div class="actions">${days}<a class="btn" href="${url}" download>Whole tour</a></div>
+      <p><b>Komoot:</b> download one file per day, then upload each at
+        <a href="https://www.komoot.com/upload" target="_blank" rel="noopener">komoot.com/upload</a>.
+        <b>swisstopo app:</b> on your phone, open the downloaded file and share it to the swisstopo app (or in the
+        app: Tours, +, Import GPX/KML).</p>
+    </section>`;
 }
 
 const warnings = new Map(); // tour id → promise of { days, error }, for the page's life (the server caches an hour)

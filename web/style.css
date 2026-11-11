@@ -305,6 +305,11 @@ input[type="range"] { width: 100%; min-height: 24px; accent-color: var(--text); 
 .prices td { padding: 6px 0; border-top: 1px solid var(--line); vertical-align: top; }
 .prices td:last-child { text-align: right; padding-left: 12px; min-width: 7em; }
 .unverified { display: inline-block; margin-left: 4px; color: var(--text-faint); cursor: help; font-size: 11px; }
+/* Export: GPX per day for Komoot and the swisstopo app */
+.export { margin-top: 24px; }
+.export h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-soft); margin: 0 0 10px; }
+.export .actions { margin-bottom: 8px; }
+.export p { margin: 0; color: var(--text-soft); font-size: 13px; }
 .source { margin-top: 24px; color: var(--text-faint); font-size: 11.5px; }
 .source a { color: inherit; }
 
