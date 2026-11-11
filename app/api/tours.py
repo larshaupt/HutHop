@@ -21,6 +21,7 @@ from app.planner.tours import Catering, Night, Tour, TourRequest, build_tour, is
 
 router = APIRouter(prefix="/api", tags=["tours"])
 AVAILABILITY_STATES = ("available", "not_released", "no_booking", "not_checked", "error")
+MAX_FLEX_DAYS = 14  # a search runs once per start date
 
 
 def settings(limit: int = Query(3, ge=1, le=4, description="hardest trail: 1 yellow, 2 red-white, 3 blue-white, "
@@ -34,6 +35,7 @@ def settings(limit: int = Query(3, ge=1, le=4, description="hardest trail: 1 yel
 
 class TourQuery(BaseModel):
     start_date: date
+    flex_days: int = Field(0, ge=0, le=MAX_FLEX_DAYS, description="also start up to this many days later")
     nights: int = Field(2, ge=1, le=10)
     min_hours: float = Field(3, ge=0, le=12)
     max_hours: float = Field(6, gt=0, le=12)
@@ -62,8 +64,9 @@ class TourQuery(BaseModel):
 
 @router.post("/tours/suggest")
 def suggest_tours(q: TourQuery, conn: sqlite3.Connection = Depends(get_db)) -> dict:
-    """A pool of up to tours.POOL_SIZE varied tours, ordered by "best"; the app sorts them otherwise itself."""
-    params = q.model_dump(exclude={"start_stop", "people", "check_availability"})
+    """A pool of up to tours.POOL_SIZE varied tours, ordered by "best"; the app sorts them otherwise itself. With
+    `flex_days`, the best tours over start dates from `start_date` to `flex_days` later, each on its best date."""
+    params = q.model_dump(exclude={"start_stop", "people", "check_availability", "flex_days"})
     # Hours per day are your walking time; the routes are in standard time
     params["min_hours"], params["max_hours"] = round(q.min_hours / q.pace, 2), round(q.max_hours / q.pace, 2)
     if q.start_stop:
@@ -73,7 +76,7 @@ def suggest_tours(q: TourQuery, conn: sqlite3.Connection = Depends(get_db)) -> d
         params["start_near"] = (row["e_lv95"], row["n_lv95"])
     req = TourRequest(**params, weights=config.ranking_weights())
     started = time.monotonic()
-    graph, tours, fetched = planning.search_tours(conn, req, q.people, q.check_availability)
+    graph, tours, fetched = planning.search_tours(conn, req, q.people, q.check_availability, q.flex_days)
     with conn:
         conn.execute("INSERT INTO search_log (created_at, query, results, best_tour, duration_ms) VALUES (?, ?, ?, ?, ?)",
                      (datetime.now(UTC).isoformat(timespec="seconds"), q.model_dump_json(), len(tours),
