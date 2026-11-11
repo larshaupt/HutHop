@@ -72,7 +72,7 @@ def run(skip_huts: bool = False, skip_stops: bool = False, skip_timetable: bool 
     if not skip_timetable:
         # Loaded every time (~30 s, from the local file) so new stops get their lines too.
         report["timetable_updated"] = load_timetable.download()
-        report["stop_lines"] = load_timetable.load(conn, load_timetable.read_all())
+        report["stop_lines"] = load_timetable.load(conn, load_timetable.read_all(load_timetable.ride_stops(conn)))
     if not skip_trails:
         report["trails_updated"] = refresh_trails()
     if not skip_osm:

@@ -87,7 +87,7 @@ app/
   planner/   graph (model, loading, cache), tours (beam search, scoring, rebuilding, diversity),
              planning (search with free-bed rounds, rebuild by id: what the API calls), ranking (sub-scores,
              "best"), geometry (retracing, shape), availability (cache, classification, calendar), opening,
-             transit (stops served on a date), editing (tour editor: possible edits, warnings), gpx,
+             transit (stops served on a date, departures, rides), editing (tour editor: possible edits, warnings), gpx,
              hiking_time, polyline
   clients/   external APIs (SAC, hut-reservation.org, weather via Open-Meteo, geo.admin closures and
              shooting notices)
