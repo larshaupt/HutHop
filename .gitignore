@@ -33,3 +33,7 @@ data/backups/
 # Playwright failure screenshots
 test-results/
 data/osm/
+
+# Claude Code agent worktrees and Playwright MCP output (local only)
+.claude/worktrees/
+.playwright-mcp/
