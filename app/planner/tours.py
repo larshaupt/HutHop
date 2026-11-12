@@ -25,7 +25,7 @@ BEAM_WIDTH = 1000
 # many different hut sequences; the result list has at most one tour per set of huts anyway.
 VARIANTS_PER_CHAIN = 3
 LIFT_MODES = {"cableway", "chairlift", "funicular"}  # "avoid mountain lifts": stops served only by these
-POOL_SIZE = 40  # varied tours returned per search; the browser sorts them
+POOL_SIZE = 300  # varied tours returned per search (usually all there are); the browser sorts them
 MAX_TOURS_PER_HUT = 3  # in one result list, so the list isn't the same few huts in different orders
 MIN_RESULTS = 10
 LOOP_RADIUS_M = 3000
