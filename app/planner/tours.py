@@ -4,8 +4,9 @@ Beam search over hut sequences; public transport is attached to each sequence, n
 stop to get there and the last hut a stop to get home: by default the closest one (walking time) that is served on
 that day (timetable, transit.py), optionally without mountain lifts. Their days only have a maximum length, the
 days between huts must lie in [min, max] hours. Each hut must be open on its night (SAC monthly codes, or the
-booking calendar where known) in the requested way. The beam keeps the partial tours with the lowest cost, which is
-what each day loses of the "best" score (ranking.py, same weights), and a few trail-limit variants per hut
+booking calendar where known) in the requested way. With `transit`, a day between huts can also be a walk to a
+stop, one ride and a walk to the next hut (ride_options). The beam keeps the partial tours with the lowest cost,
+which is what each day loses of the "best" score (ranking.py, same weights), and a few trail-limit variants per hut
 sequence; complete tours are ranked by "best" and diversified into a pool that the browser sorts. Other stops for a
 tour: access_options / exit_options.
 """
@@ -17,7 +18,7 @@ from datetime import date, timedelta
 
 from app.planner import opening, ranking, transit
 from app.planner.availability import NightAvailability
-from app.planner.graph import Graph, Hut, Leg, Stop
+from app.planner.graph import Graph, Hut, Leg, RideLeg, Stop, ride_leg
 
 Catering = opening.Wanted
 BEAM_WIDTH = 1000
@@ -28,6 +29,7 @@ LIFT_MODES = {"cableway", "chairlift", "funicular"}  # "avoid mountain lifts": s
 POOL_SIZE = 300  # varied tours returned per search (usually all there are); the browser sorts them
 MAX_TOURS_PER_HUT = 3  # in one result list, so the list isn't the same few huts in different orders
 MIN_RESULTS = 10
+MAX_RIDES = 2  # days with a ride per tour (TourRequest.transit): mostly a hut tour, not a bus tour
 LOOP_RADIUS_M = 3000
 START_RADIUS_M = 1500  # a chosen start stop means "start around here" (nearby bus stops, stations)
 HRS_STATUS = {"SERVICED": "catered", "UNSERVICED": "self_service"}
@@ -51,6 +53,7 @@ class TourRequest:
     pace: float = 1.0  # walking time / Swiss standard time; the hours above are already in standard time (the API
     #                    divides them), this only judges the connection times at the start and end stop
     max_results: int = POOL_SIZE
+    transit: bool = False  # a day between huts may include one public transport ride (ride_options)
     weights: dict[str, float] = field(default_factory=lambda: dict(ranking.DEFAULT_WEIGHTS))
 
 
@@ -77,13 +80,19 @@ class Tour:
     @property
     def id(self) -> str:
         """Start date, place ids, each day's category limit and the hours per day, e.g.
-        '2027-07-17_123-45-67-89_2-2-3_3-6.5'.
+        '2027-07-17_123-45-67-89_2-2-3_3-6.5', then the days with a ride, if any: day (0-based), the stop you walk
+        to and that walk's limit, the stop you ride to and the next walk's limit, the departure (minutes), e.g.
+        '_1.501.2.502.3.545'; several joined by '-'.
 
         Uses places, not edge ids, so the id survives rebuilds of the edge table; the hours make a shared tour
         score the same as in the search it came from."""
         places = [self.legs[0].frm, *(leg.to for leg in self.legs)]
+        rides = [f"{i}.{leg.walk_to.to}.{leg.walk_to.category_limit}.{leg.walk_from.frm}."
+                 f"{leg.walk_from.category_limit}.{leg.ride.departure}"
+                 for i, leg in enumerate(self.legs) if isinstance(leg, RideLeg)]
         return (f"{self.start_date.isoformat()}_{'-'.join(map(str, places))}_"
-                f"{'-'.join(str(leg.category_limit) for leg in self.legs)}_{self.hours[0]:g}-{self.hours[1]:g}")
+                f"{'-'.join(str(leg.category_limit) for leg in self.legs)}_{self.hours[0]:g}-{self.hours[1]:g}"
+                + (f"_{'-'.join(rides)}" if rides else ""))
 
 
 @dataclass(frozen=True)
@@ -94,23 +103,31 @@ class TourKey:
     places: list[int]
     limits: list[int]
     hours: tuple[float, float] = DEFAULT_HOURS
+    # Days with a ride: day → (stop walked to, its walk's limit, stop ridden to, the next walk's limit, departure)
+    rides: dict[int, tuple[int, int, int, int, int]] = field(default_factory=dict)
 
 
 def parse_tour_id(tour_id: str) -> TourKey:
     """Inverse of Tour.id. Ids without hours (older links) get DEFAULT_HOURS. Raises ValueError if malformed."""
     parts = tour_id.split("_")
-    if len(parts) not in (3, 4):
+    if len(parts) not in (3, 4, 5):
         raise ValueError("malformed tour id")
     place_ids, limit_ids = [int(p) for p in parts[1].split("-")], [int(x) for x in parts[2].split("-")]
     if len(place_ids) < 3 or len(limit_ids) != len(place_ids) - 1 or not set(limit_ids) <= {1, 2, 3, 4}:
         raise ValueError("malformed tour id")
     hours = DEFAULT_HOURS
-    if len(parts) == 4:
+    if len(parts) >= 4:
         lo, hi = (float(h) for h in parts[3].split("-"))
         if not (0 <= lo <= hi <= 24 and hi > 0):  # standard time: the API allows 12 h at pace 0.5
             raise ValueError("malformed tour id")
         hours = (lo, hi)
-    return TourKey(date.fromisoformat(parts[0]), place_ids, limit_ids, hours)
+    rides = {}
+    for token in parts[4].split("-") if len(parts) == 5 else ():
+        day, a, la, b, lb, dep = (int(x) for x in token.split("."))
+        if not (0 < day < len(limit_ids) - 1 and {la, lb} <= {1, 2, 3, 4} and 0 <= dep < 48 * 60):
+            raise ValueError("malformed tour id")
+        rides[day] = (a, la, b, lb, dep)
+    return TourKey(date.fromisoformat(parts[0]), place_ids, limit_ids, hours, rides)
 
 
 def night_status(hut: Hut, day: date, catering: Catering, include_unknown: bool) -> Night | None:
@@ -190,6 +207,32 @@ def exit_options(graph: Graph, hut_id: int, day: date, max_minutes: float, avoid
     return sorted(legs, key=lambda x: (early(x), x.time_min, x.max_category))
 
 
+def ride_options(graph: Graph, hut_id: int, day: date, lo: float, hi: float, avoid_lifts: bool = False,
+                 max_altitude: int | None = None, pace: float = 1.0) -> list[RideLeg]:
+    """Days from a hut to other huts with one public transport ride on `day`: walk to a stop, ride, walk to the
+    hut. The walks together take lo to hi minutes (standard time); you leave the hut at
+    transit.EARLIEST_HUT_DEPARTURE and arrive by transit.LATEST_HUT_ARRIVAL (walks at `pace`). Per hut the one with
+    the walking time closest to the middle of the hours, then the earliest arrival."""
+    target = (lo + hi) / 2
+    best: dict[int, tuple[tuple[float, float], RideLeg]] = {}
+    for out in graph.stop_out.get(hut_id, ()):
+        if out.time_min >= hi or not below(out, max_altitude):
+            continue
+        rides = graph.timetable.rides_from(out.to, day, transit.EARLIEST_HUT_DEPARTURE + out.time_min * pace,
+                                           transit.LATEST_HUT_ARRIVAL, avoid_lifts)
+        for ride in rides.values():
+            for inn in graph.from_stop.get(ride.to, ()):
+                walk = out.time_min + inn.time_min
+                arrival = ride.arrival + inn.time_min * pace
+                if inn.to == hut_id or not lo <= walk <= hi or arrival > transit.LATEST_HUT_ARRIVAL or \
+                        not below(inn, max_altitude):
+                    continue
+                rank = (abs(walk - target), arrival)
+                if inn.to not in best or rank < best[inn.to][0]:
+                    best[inn.to] = (rank, ride_leg(out, ride, inn))
+    return [leg for _, leg in best.values()]
+
+
 def suggest(graph: Graph, req: TourRequest, availability: AvailabilityLookup | None = None) -> list[Tour]:
     lo, hi = req.min_hours * 60, req.max_hours * 60
     target = (lo + hi) / 2
@@ -240,8 +283,18 @@ def suggest(graph: Graph, req: TourRequest, availability: AvailabilityLookup | N
 
     fp = graph.footprints
 
+    def cells(leg: Leg) -> int:
+        return sum(len(fp.cells(w.edge_id)) for w in leg.walks)
+
     def repeated(legs: tuple[Leg, ...], leg: Leg) -> float:
-        return fp.repeated([x.edge_id for x in legs], leg.edge_id)
+        earlier = [w.edge_id for x in legs for w in x.walks]
+        if len(leg.walks) == 1:
+            return fp.repeated(earlier, leg.edge_id)
+        r = 0.0  # a day with a ride: its walks weighted by length, the second also against the first
+        for w in leg.walks:
+            r += fp.repeated(earlier, w.edge_id) * len(fp.cells(w.edge_id))
+            earlier.append(w.edge_id)
+        return r / cells(leg) if cells(leg) else 0.0
 
     end_day = req.start_date + timedelta(days=req.nights)
     exits: dict[int, list[Leg]] = {}
@@ -264,20 +317,32 @@ def suggest(graph: Graph, req: TourRequest, availability: AvailabilityLookup | N
             states.append((day_cost(access[0], True) + penalty(n), (access[0],), (n,), 0.0))
     states = best_per_chain(states, 1)
 
+    rides: dict[tuple[int, int], list[RideLeg]] = {}
+
+    def day_legs(hut_id: int, i: int) -> list[Leg]:
+        """The hut's walks to other huts, and with `transit` its days with a ride on day i."""
+        if not req.transit:
+            return graph.hut_out.get(hut_id, [])
+        if (hut_id, i) not in rides:
+            rides[(hut_id, i)] = ride_options(graph, hut_id, req.start_date + timedelta(days=i), lo, hi,
+                                              req.avoid_lifts, req.max_altitude, req.pace)
+        return [*graph.hut_out.get(hut_id, ()), *rides[(hut_id, i)]]
+
     # Days 2..nights: hut → hut; the last hut needs a stop to get home
     for i in range(1, req.nights):
         nxt = []
         for cost, legs, nights, walked in states:
             visited = {n.hut for n in nights}
-            for leg in graph.hut_out.get(legs[-1].to, ()):
+            for leg in day_legs(legs[-1].to, i):
                 if leg.to in visited or not (lo <= leg.time_min <= hi) or not in_region(leg.to) or \
                         not below(leg, req.max_altitude) or \
-                        (i == req.nights - 1 and not exit_legs(leg.to)):
+                        (i == req.nights - 1 and not exit_legs(leg.to)) or \
+                        (isinstance(leg, RideLeg) and sum(isinstance(x, RideLeg) for x in legs) >= MAX_RIDES):
                     continue
                 if n := night(leg.to, i):
                     r = repeated(legs, leg)
                     nxt.append((cost + day_cost(leg) + even_cost(legs, leg) + retrace_cost(r) + penalty(n),
-                                legs + (leg,), nights + (n,), walked + r * len(fp.cells(leg.edge_id))))
+                                legs + (leg,), nights + (n,), walked + r * cells(leg)))
         states = best_per_chain(nxt, VARIANTS_PER_CHAIN)
 
     # Last day: last hut → the closest usable stop (for a loop, near the first stop)
@@ -293,7 +358,7 @@ def suggest(graph: Graph, req: TourRequest, availability: AvailabilityLookup | N
         # the tour's trail again
         r, leg = min(((repeated(legs, x), x) for x in ends if x.time_min == ends[0].time_min), key=lambda x: x[0])
         tour_legs = legs + (leg,)
-        total = sum(len(fp.cells(x.edge_id)) for x in tour_legs)
+        total = sum(cells(x) for x in tour_legs)
         retraced = min(1.0, (walked + r * len(fp.cells(leg.edge_id))) / total) if total else 0.0
         tours.append(scored(graph, tour_legs, nights, req.start_date, (req.min_hours, req.max_hours),
                             req.weights, retraced))
@@ -318,7 +383,7 @@ def best_per_chain(states: list[tuple], variants: int) -> list[tuple]:
 def scored(graph: Graph, legs: tuple[Leg, ...], nights: tuple[Night, ...], start_date: date,
            hours: tuple[float, float], weights: dict[str, float], retraced: float | None = None) -> Tour:
     """A tour with its metrics and "best" score. `retraced` if the caller already knows it (the search does)."""
-    edge_ids = [leg.edge_id for leg in legs]
+    edge_ids = [w.edge_id for leg in legs for w in leg.walks]
     if retraced is None:
         retraced = graph.footprints.retraced(edge_ids)
     m = ranking.metrics(legs, nights, [graph.huts[n.hut].altitude for n in nights], hours[0] * 60, hours[1] * 60,
@@ -336,13 +401,24 @@ def build_tour(graph: Graph, key: TourKey, catering: Catering = "any", availabil
     start_date, places, limits = key.start_date, key.places, key.limits
     if places[0] not in graph.stops or places[-1] not in graph.stops or any(p not in graph.huts for p in places[1:-1]):
         raise ValueError("a tour must go stop → hut → … → hut → stop")
-    legs = []
-    for frm, to, limit in zip(places, places[1:], limits):
+
+    def edge(frm: int, to: int, limit: int) -> Leg:
         # The edge for exactly this limit, or (if that variant was dropped) the best one at an easier limit
         leg = next((graph.legs[(frm, to, lim)] for lim in range(limit, 0, -1) if (frm, to, lim) in graph.legs), None)
         if leg is None:
             raise ValueError(f"the connection {frm} → {to} is no longer available")
-        legs.append(leg)
+        return leg
+
+    legs = []
+    for i, (frm, to, limit) in enumerate(zip(places, places[1:], limits)):
+        if i not in key.rides:
+            legs.append(edge(frm, to, limit))
+            continue
+        a, la, b, lb, departure = key.rides[i]
+        ride = graph.timetable.rides_from(a, start_date + timedelta(days=i), departure, departure).get(b)
+        if ride is None:
+            raise ValueError(f"the ride {a} → {b} no longer runs")
+        legs.append(ride_leg(edge(frm, a, la), ride, edge(b, to, lb)))
     legs = tuple(legs)
     nights = []
     for i, leg in enumerate(legs[:-1]):

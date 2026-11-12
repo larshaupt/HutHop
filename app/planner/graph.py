@@ -9,6 +9,7 @@ import json
 import sqlite3
 import threading
 from dataclasses import dataclass, field
+from functools import cached_property
 
 from app.planner import opening, transit
 from app.planner.geometry import Footprints
@@ -27,6 +28,34 @@ class Leg:
     sac_time_min: int | None
     category_limit: int = 1  # search limit the edge was stored for; with frm/to it names the edge stably
     max_altitude_m: int | None = None  # highest point of the route
+
+    @property
+    def walks(self) -> tuple["Leg", ...]:
+        """The stored edges walked on this day."""
+        return (self,)
+
+
+@dataclass(frozen=True)
+class RideLeg(Leg):
+    """A day hut → stop, one public transport ride, stop → hut. Made by ride_leg: the totals are the two walks'
+    (only walking counts towards the day's hours); edge_id is 0, the edges are in `walks`."""
+
+    walk_to: Leg | None = None
+    ride: transit.Ride | None = None
+    walk_from: Leg | None = None
+
+    @property
+    def walks(self) -> tuple[Leg, ...]:
+        return (self.walk_to, self.walk_from)
+
+
+def ride_leg(walk_to: Leg, ride: transit.Ride, walk_from: Leg) -> RideLeg:
+    a, b = walk_to, walk_from
+    return RideLeg(0, a.frm, b.to, a.time_min + b.time_min, a.distance_m + b.distance_m, a.ascent_m + b.ascent_m,
+                   a.descent_m + b.descent_m, max(a.max_category, b.max_category),
+                   a.sac_time_min + b.sac_time_min if a.sac_time_min and b.sac_time_min else None,
+                   max(a.category_limit, b.category_limit),
+                   max(a.max_altitude_m or 0, b.max_altitude_m or 0) or None, a, ride, b)
 
 
 @dataclass(frozen=True)
@@ -66,6 +95,15 @@ class Graph:
     stop_out: dict[int, list[Leg]] = field(default_factory=dict)  # hut → stop, keyed by hut
     footprints: Footprints = field(default_factory=lambda: Footprints({}))  # route lines, for retracing and shape
     timetable: transit.Timetable = field(default_factory=lambda: transit.Timetable([]))  # empty: every stop served
+
+    @cached_property
+    def from_stop(self) -> dict[int, list[Leg]]:
+        """Stop → hut legs keyed by stop (stop_in is keyed by hut), for rides within a tour."""
+        out: dict[int, list[Leg]] = {}
+        for legs in self.stop_in.values():
+            for leg in legs:
+                out.setdefault(leg.frm, []).append(leg)
+        return out
 
 
 def load_graph(conn: sqlite3.Connection, limit: int, footprints: Footprints | None = None,

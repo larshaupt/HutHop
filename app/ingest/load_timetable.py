@@ -10,7 +10,9 @@ streaming pass: ~25 s and ~600 MB RAM per year. Stores
   - stop_line: lines per stop with summer departures (newest timetable), for build_edges (closest stop of each
     line per hut) and the connection list;
   - timetable, timetable_service, stop_service: per stop and service pattern the first and last time and number
-    of calls, and the days each pattern runs, so the planner knows whether a stop is served on a date.
+    of calls, and the days each pattern runs, so the planner knows whether a stop is served on a date;
+  - trip_pattern, trip_call: the trips through the stops that have walking connections (`ride_stops`, from the
+    edges built so far), with their times there: stop timetables and rides within a tour.
 """
 
 import argparse
@@ -36,6 +38,7 @@ from app.db import ROOT, connect
 PERMALINK = "https://data.opentransportdata.swiss/en/dataset/timetable-{year}-gtfs2020/permalink"
 GTFS_DIR = ROOT / "data/gtfs"
 SUMMER = ((7, 1), (8, 31))  # summer departures per line are averaged over the hut season of the timetable year
+LIFT_ROUTE_TYPES = {6, 7}  # aerial lift, funicular; extended types 1300–1499 (aerial lifts, funiculars) as well
 
 
 def feed_path(year: int) -> Path:
@@ -161,11 +164,18 @@ class Feed:
     lines: list[dict] = field(default_factory=list)  # {uic, line, label, departures (summer calls per day)}
     services: dict[str, int] = field(default_factory=dict)  # service id → day bits (bit i = start + i days)
     stop_services: list[tuple] = field(default_factory=list)  # (uic, service id, first min, last min, calls)
+    patterns: list[tuple] = field(default_factory=list)  # (label, headsign, lift, service ids, ((uic, min), …))
 
 
-def read(path: Path, since: date | None = None) -> Feed:
+def is_lift(route_type: str) -> bool:
+    t = int(route_type or 0)
+    return t in LIFT_ROUTE_TYPES or 1300 <= t < 1500
+
+
+def read(path: Path, since: date | None = None, keep: set[int] | None = None) -> Feed:
     """One year's timetable from its zip. Days before `since` (default today) are dropped: tours are never planned
-    in the past, and the current year's file holds many past service patterns (e.g. for construction work)."""
+    in the past, and the current year's file holds many past service patterns (e.g. for construction work).
+    Trips are kept with their calls at the stops `keep` (stop numbers), if given."""
     since = since or date.today()
     with zipfile.ZipFile(path) as z:
         info = next(_rows(z, "feed_info.txt"))
@@ -183,10 +193,12 @@ def read(path: Path, since: date | None = None) -> Feed:
         n_summer = (last - first).days + 1
 
         uic = {r["stop_id"]: int(r["didok"]) for r in _rows(z, "stops.txt") if r.get("didok", "").isdigit()}
-        lines, labels = {}, {}
+        lines, labels, lifts = {}, {}, set()
         for r in _rows(z, "routes.txt"):
             lines[r["route_id"]] = key = line_key(r["route_id"])
             labels.setdefault(key, line_label(r["route_desc"], r["route_short_name"]))
+            if is_lift(r.get("route_type", "")):
+                lifts.add(key)
         # Trips given as "every N minutes from … to …": runs, first and last start (minutes)
         frequency: dict[str, list[int]] = {}
         for r in _rows(z, "frequencies.txt"):
@@ -197,10 +209,25 @@ def read(path: Path, since: date | None = None) -> Feed:
             f[0] += runs
             f[1] = min(f[1], begin)
             f[2] = max(f[2], round(begin + (runs - 1) * headway))
-        trips = {}
+        trips, headsigns = {}, {}
         for r in _rows(z, "trips.txt"):
             if all_days.get(r["service_id"]):
                 trips[r["trip_id"]] = (lines[r["route_id"]], r["service_id"], frequency.get(r["trip_id"]))
+                headsigns[r["trip_id"]] = r.get("trip_headsign", "")
+
+        patterns: dict[tuple, set[str]] = {}  # (line, headsign, calls) → services
+        kept: list[tuple[int, int]] = []  # the current trip's calls at `keep` stops
+
+        def add_trip(trip_id: str, start: int) -> None:
+            """The current trip's calls as a pattern; a trip given by frequency as one per run."""
+            line, service, freq = trips[trip_id]
+            # shortcut: runs are spread evenly from the first to the last start, exact for one frequency row per trip
+            shifts = [0] if freq is None else \
+                [freq[1] - start + (round(k * (freq[2] - freq[1]) / (freq[0] - 1)) if freq[0] > 1 else 0)
+                 for k in range(freq[0])]
+            for shift in shifts:
+                key = (line, headsigns[trip_id], tuple((s, t + shift) for s, t in kept))
+                patterns.setdefault(key, set()).add(service)
 
         line_calls: dict[tuple[int, str], int] = defaultdict(int)
         service_calls: dict[tuple[int, str], list[int]] = {}
@@ -215,6 +242,9 @@ def read(path: Path, since: date | None = None) -> Feed:
                 continue
             t = _minutes(row[i_time]) if row[i_time] else None
             if trip_id != current:  # rows are grouped by trip, in stop order
+                if kept:
+                    add_trip(current, trip_start)
+                    kept.clear()
                 current, trip_start = trip_id, t or 0
             stop = uic.get(row[i_stop])
             if stop is None:
@@ -225,6 +255,8 @@ def read(path: Path, since: date | None = None) -> Feed:
             line_calls[(stop, line)] += summer_days[service] * runs
             if not days[service]:  # no future days: counts towards the lines only
                 continue
+            if keep is not None and stop in keep and t is not None:
+                kept.append((stop, t))
             agg = service_calls.get((stop, service))
             if agg is None:
                 service_calls[(stop, service)] = [t_first, t_last, runs]
@@ -234,18 +266,30 @@ def read(path: Path, since: date | None = None) -> Feed:
                 if t_last is not None and (agg[1] is None or t_last > agg[1]):
                     agg[1] = t_last
                 agg[2] += runs
+        if kept:
+            add_trip(current, trip_start)
     feed.lines = [{"uic": s, "line": line, "label": labels[line], "departures": round(n / n_summer, 2)}
                   for (s, line), n in line_calls.items() if n]
     used = {service for _, service in service_calls}
     feed.services = {s: bits for s, bits in days.items() if s in used}
     feed.stop_services = [(s, service, *agg) for (s, service), agg in service_calls.items()]
+    feed.patterns = [(labels[line], headsign, line in lifts, services, calls)
+                     for (line, headsign, calls), services in patterns.items()]
     print(f"timetable {feed.year} ({feed.version}, {start} to {end}): {len(feed.lines):,} stop/line pairs, "
-          f"{len(feed.stop_services):,} stop/service pairs, {len(feed.services):,} services")
+          f"{len(feed.stop_services):,} stop/service pairs, {len(feed.services):,} services, "
+          f"{len(feed.patterns):,} trip patterns")
     return feed
 
 
-def read_all() -> list[Feed]:
-    return [read(path) for path in feed_files()]
+def read_all(keep: set[int] | None = None) -> list[Feed]:
+    return [read(path, keep=keep) for path in feed_files()]
+
+
+def ride_stops(conn: sqlite3.Connection) -> set[int]:
+    """Stop numbers of the stops with walking connections: the ones whose trips are kept. Edges are built after
+    the timetable, so stops new to them get their trips with the next timetable load."""
+    return {r[0] for r in conn.execute(
+        "SELECT uic FROM stop WHERE place_id IN (SELECT from_place FROM edge UNION SELECT to_place FROM edge)")}
 
 
 def load(conn: sqlite3.Connection, feeds: list[Feed]) -> int:
@@ -256,6 +300,8 @@ def load(conn: sqlite3.Connection, feeds: list[Feed]) -> int:
         conn.execute("DELETE FROM stop_line")
         conn.execute("DELETE FROM stop_service")
         conn.execute("DELETE FROM timetable_service")
+        conn.execute("DELETE FROM trip_pattern")
+        conn.execute("DELETE FROM trip_call")
         conn.execute("DELETE FROM timetable")
         if feeds:
             newest = max(feeds, key=lambda f: f.year)
@@ -274,6 +320,17 @@ def load(conn: sqlite3.Connection, feeds: list[Feed]) -> int:
                 "VALUES (?, ?, ?, ?, ?, ?)",
                 [(f.year, places[uic], number[s], first, last, calls) for uic, s, first, last, calls in f.stop_services
                  if uic in places and s in number])
+            patterns = [(label, headsign, lift, [number[s] for s in services if s in number],
+                         [(places[uic], t) for uic, t in calls if uic in places])
+                        for label, headsign, lift, services, calls in f.patterns]
+            patterns = [p for p in patterns if p[3] and p[4]]
+            conn.executemany("INSERT INTO trip_pattern (feed, pattern, label, headsign, lift, services) "
+                             "VALUES (?, ?, ?, ?, ?, ?)",
+                             [(f.year, i, label, headsign, int(lift), ",".join(map(str, sorted(services))))
+                              for i, (label, headsign, lift, services, _) in enumerate(patterns)])
+            conn.executemany("INSERT INTO trip_call (feed, pattern, seq, stop_place, time_min) VALUES (?, ?, ?, ?, ?)",
+                             [(f.year, i, seq, place, t) for i, p in enumerate(patterns)
+                              for seq, (place, t) in enumerate(p[4])])
         conn.execute("UPDATE data_version SET version = version + 1")  # the planner caches the timetable
     return conn.execute("SELECT COUNT(*) FROM stop_line").fetchone()[0]
 
@@ -290,7 +347,8 @@ def main() -> None:
     args = parser.parse_args()
     if not args.no_download:
         download()
-    print(f"loaded {load(connect(), read_all())} stop lines")
+    conn = connect()
+    print(f"loaded {load(conn, read_all(ride_stops(conn)))} stop lines")
 
 
 if __name__ == "__main__":
