@@ -58,8 +58,8 @@ On the server, `server/refresh.sh` does the same in a one-off container (see the
 footprint (grid cells and shape samples for the tour search) get one with `python -m app.ingest.footprints`, which
 `refresh` also runs.
 
-Every tour search is stored in the `search_log` table (query, number of results, best tour, duration) for
-analysing searches: `sqlite3 data/huthop.db "SELECT * FROM search_log ORDER BY id DESC LIMIT 20"`.
+Every tour search is stored in the `search_log` table (query with the date window `flex_days`, number of results,
+best tour, duration) for analysing searches: `sqlite3 data/huthop.db "SELECT * FROM search_log ORDER BY id DESC LIMIT 20"`.
 
 Other commands: `python -m app.backup` (dated copy in `data/backups/`, keeps 14), `python -m app.admin set-password`.
 

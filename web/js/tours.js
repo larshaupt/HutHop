@@ -8,7 +8,7 @@ import { fitCoords, map, visibleBox } from "./map.js";
 import { selectHut } from "./huts.js";
 import { clearConnections } from "./connections.js";
 import { loadInfo } from "./info.js";
-import { renderTourDetail } from "./tour-detail.js";
+import { formatDay, renderTourDetail } from "./tour-detail.js";
 import { setBooked } from "./booking.js";
 import { findEntry, keepTour, onYourToursChange, removeEntry, yourTours } from "./your-tours.js";
 import { closeEditor, isEditing, openEditor, refreshEditor } from "./tour-editor.js";
@@ -25,6 +25,7 @@ const SORT_KEYS = {
     Object.values(t.cost.totals).reduce((sum, c) => sum + (settings().member ? c.member : c.non_member), 0), -t.score],
 };
 const PAGE = 10;
+const MAX_FLEX = 14; // the API's limit: a search runs once per start date
 let results = null;
 let order = []; // results.tours in the chosen sort order; state.tour is a 1-based index into it
 let current = null; // the open tour: a search result (state.tour) or one opened by id (state.tid)
@@ -62,6 +63,7 @@ export function syncTourForm() {
   if (!state.tDate || state.tDate < localIso()) state.tDate = defaultTourDate();
   $("#tDate").min = localIso();
   $("#tDate").value = state.tDate;
+  $("#tFlex").value = state.tFlex;
   $("#tNightsLabel").textContent = state.tNights;
   $("#tPeopleLabel").textContent = state.tPeople;
   $("#tMin").value = state.tMin;
@@ -85,6 +87,9 @@ export function bindTourForm() {
     setState({ tDate: e.target.value && e.target.value >= localIso() ? e.target.value : defaultTourDate() });
     syncTourForm();
   });
+  $("#tFlex").innerHTML = Array.from({ length: MAX_FLEX + 1 }, (_, n) =>
+    `<option value="${n}">${n ? `up to ${n} day${n > 1 ? "s" : ""} later` : "Exact date"}</option>`).join("");
+  $("#tFlex").addEventListener("change", (e) => setState({ tFlex: Number(e.target.value) }));
   const stepper = (attr, key, max) => document.querySelectorAll(`[${attr}]`).forEach((b) => b.addEventListener("click", () => {
     setState({ [key]: Math.min(max, Math.max(1, state[key] + Number(b.getAttribute(attr)))) });
     syncTourForm();
@@ -192,7 +197,7 @@ function bindStopPicker() {
 // ---------- Search ----------
 export async function runTourSearch() {
   const body = {
-    start_date: state.tDate, nights: state.tNights, min_hours: state.tMin, max_hours: state.tMax,
+    start_date: state.tDate, flex_days: Math.min(MAX_FLEX, Math.max(0, state.tFlex)), nights: state.tNights, min_hours: state.tMin, max_hours: state.tMax,
     ...settingsParams(), catering: state.tCat, loop: state.tLoop && !!state.tStart,
     include_unknown: state.tUnknown, start_stop: state.tStart || null,
     people: state.tPeople, check_availability: settings().checkBeds,
@@ -280,7 +285,7 @@ function tourCard(t, i) {
       <span>${(d.time_min / 60).toFixed(1).replace(".0", "")}h</span></div>`).join("");
   return `<article class="tour-card" data-n="${i + 1}" tabindex="0">
     <div class="tour-head">
-      <div><b>${t.nights} night${t.nights > 1 ? "s" : ""}</b> · ${distanceValue(t.distance_m, 0)} ${distanceUnit()} · ↑ ${formatHeight(t.ascent_m)}</div>
+      <div>${results?.query?.flex_days ? `<b>${formatDay(t.days[0].date)}</b> · ` : ""}<b>${t.nights} night${t.nights > 1 ? "s" : ""}</b> · ${distanceValue(t.distance_m, 0)} ${distanceUnit()} · ↑ ${formatHeight(t.ascent_m)}</div>
       <div class="tour-flags">${unofficialBadge(t)}${transitBadge(t)}${availBadge(t)}${costBadge(t)}${scoreBadge(t)}</div>
     </div>
     <div class="tour-body">

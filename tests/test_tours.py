@@ -236,6 +236,20 @@ def test_free_bed_search_reuses_last_pass(monkeypatch):
     assert calls == ["suggest"]  # calendars already known: one search pass
 
 
+def test_flexible_start_date(graph, monkeypatch):
+    """A date window: each tour once, on its best start date."""
+    from app.planner import planning
+
+    monkeypatch.setattr(planning, "cached_graph", lambda conn, limit: graph)
+    # Hut 3 is self-service in July only: from 28 June, its tour first works on 1 July. Huts 1 and 2 are open only
+    # part of June, so their tour scores best from 1 July too.
+    _, tours, _ = planning.search_tours(None, TourRequest(date(2027, 6, 28), 2, 3, 6), 2, False, flex_days=4)
+    assert sorted((routes([t])[0], t.start_date) for t in tours) == [
+        ([11, 1, 2, 12], date(2027, 7, 1)), ([11, 1, 3, 13], date(2027, 7, 1))]
+    _, exact, _ = planning.search_tours(None, TourRequest(date(2027, 6, 28), 2, 3, 6), 2, False)
+    assert routes(exact) == [[11, 1, 2, 12]]
+
+
 def test_warm_up_loads_everything_once(tmp_path):
     from app.db import connect
     from app.planner import graph as graph_mod

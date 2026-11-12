@@ -126,6 +126,21 @@ def test_tour_uses_availability(client, monkeypatch, status, free, total, people
     assert calls == [7]
 
 
+def test_flexible_window_fetches_each_calendar_once(client, monkeypatch):
+    """A 14-day window: one tour on the date with free beds, the hut's calendar fetched once, the window logged."""
+    c, ids = client
+    calls = []
+    monkeypatch.setattr("app.clients.hut_reservation.fetch_calendar", lambda hrs_id, _client: calls.append(hrs_id) or
+                        calendar("2027-07-10", "SERVICED", 0, 40) + calendar("2027-07-12", "SERVICED", 10, 40))
+    body = {"start_date": "2027-07-10", "flex_days": 14, "nights": 1, "min_hours": 1, "max_hours": 2}
+    tours = c.post("/api/tours/suggest", json=body).json()["tours"]
+    assert calls == [7]
+    assert [t["days"][0]["date"] for t in tours] == ["2027-07-12"]  # full on the 10th; free beds beat unknown nights
+    assert c.post("/api/tours/suggest", json=body | {"flex_days": 15}).status_code == 422
+    conn = app.dependency_overrides[get_db]()
+    assert json.loads(conn.execute("SELECT query FROM search_log").fetchone()["query"])["flex_days"] == 14
+
+
 def test_closed_before_released_season(client, monkeypatch):
     """Like Chamanna Cluozza: closed (0 of 0) on 10 July, released from 20 July. The hut must drop out."""
     c, _ = client

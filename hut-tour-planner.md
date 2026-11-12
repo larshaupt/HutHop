@@ -31,7 +31,7 @@ A private web app to browse and filter Swiss mountain huts (SAC plus selected no
 
 **F2: Tour suggestions** (core feature)
 - Inputs:
-  - start date, number of days / nights
+  - start date, number of days / nights; optionally a flexible start ("up to N days later", at most 14): the search runs once per start date and returns the best tours over the window, each on its best date (the same huts count as one tour); hut calendars are fetched once for all dates
   - max hiking hours per day (and optionally min hours)
   - max trail category (yellow / red-white / blue-white)
   - start/end region or specific public transport stops, including cable car and lift stations; loop vs. point-to-point

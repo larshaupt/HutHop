@@ -160,3 +160,14 @@ def test_search_everywhere_unless_limited_to_the_map(phone: Page, server):
     phone.get_by_label("Only in the area visible on the map").check()
     phone.locator("#tFind").click()
     expect(phone).to_have_url(re.compile(r"tb=[-\d.]+%2C"))
+
+
+def test_flexible_search_from_link(phone: Page, server):
+    """A shared flexible search: the window comes from the link, and each card names its start date."""
+    phone.goto(server + "#v=tours&tf=3")
+    phone.locator("#sheetHandle").click()
+    expect(phone.locator("#tFlex")).to_have_value("3")
+    phone.locator("#tFind").click()
+    expect(phone.locator(".tour-card").first).to_be_visible()
+    expect(phone.locator(".tour-head").first).to_contain_text(re.compile(r"(Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d+ \w+ · "))
+    no_sideways_scroll(phone)
