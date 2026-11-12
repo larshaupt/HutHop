@@ -10,7 +10,7 @@ A private web app to browse and filter Swiss mountain huts (SAC plus selected no
 
 ### Scope
 
-- **Private project** (single user / friends). Not public, not commercial. See the legal notes in §6.
+- **Private project** (single user / friends). Not public, not commercial. See the legal notes in §6. Going public as "the Swiss hut planner" is planned, pending SAC's written consent.
 - **Region:** Switzerland. SAC huts first, plus selected non-SAC huts added manually.
 - **Activity:** summer hiking only, on the official signposted trail network. Difficulty uses the official trail categories (yellow / red-white / blue-white), with a user-selectable maximum.
 - **Platform:** web app (desktop and mobile browser).
@@ -25,7 +25,7 @@ A private web app to browse and filter Swiss mountain huts (SAC plus selected no
   - catered / half board available
   - number of beds
   - altitude
-  - price range (postponed with prices)
+  - price range (not built; prices are shown in the hut details and as a cost estimate per tour)
   - SAC vs. non-SAC
 - Hut detail view: description, opening/catering per month, services, links, access routes.
 
@@ -57,7 +57,7 @@ A private web app to browse and filter Swiss mountain huts (SAC plus selected no
 - Review tool for computed route edges, with the ability to exclude bad ones.
 
 **F6 (later)**
-- ~~GPX export~~ (done, with heights), saved tours, offline/PWA.
+- ~~GPX export~~ (done, with heights), saved tours (in the browser as "Your tours"; on the server later), offline/PWA.
 
 ### Non-functional requirements
 
@@ -303,11 +303,11 @@ Answer the open questions before building:
 ### Later
 
 - ~~GPX export~~ done: `GET /api/tours/{id}/gpx`, one track per day + waypoints. Tour ids are `date_places_limits` (e.g. `2027-07-17_123-45-67-89_2-2-3`), stable across edge rebuilds, so they also serve sharing, saved tours and the editor.
-- Saved tours, non-SAC huts, PWA/offline, better ranking.
+- Saved tours on the server (in the browser: "Your tours"), PWA/offline, better ranking. (~~Non-SAC huts~~ done: "+ Add hut".)
 - ~~Elevation in GPX~~ done: `edge.elevation` holds the swissTLM3D height of each route point (from `build_edges`); used for `<ele>` in GPX and a height profile per day in the tour view.
 - ~~Tour links keep the search hours~~ done: tour ids end in the hours per day (`…_2-2-3_3-6.5`), so a shared or reopened tour is scored as in its search; older ids default to 3–6 h.
 - ~~Free-beds calendar~~ done: `GET /api/huts/{id}/availability?people=N`, a month calendar in the hut details (same 10-minute cache as tour checks).
-- ~~Export to Komoot and the swisstopo app~~ done (Nov 2026) as GPX files: neither has a public import link or API (checked Nov 2026: Komoot's API is undocumented/partners only, its help centre describes only manual GPX/TCX/FIT upload; the swisstopo app documents no URL scheme or import link, it imports GPX/KML from a file via Tours › + › Import or the phone's share sheet). `GET /api/tours/{id}/gpx?day=N` gives one day (Komoot imports one tour per file); the tour view has a link per day plus the whole tour, with short import steps (komoot.com/upload; open/share the file to the swisstopo app). Elevation is in every track point, so both apps show the right ascent. map.geo.admin.ch can show a GPX by URL only if the file is publicly reachable.
+- ~~Export to Komoot and the swisstopo app~~ done (Nov 2026) as GPX files: neither has a public import link or API (checked Nov 2026: Komoot's API is undocumented/partners only, its help centre describes only manual GPX/TCX/FIT upload; the swisstopo app documents no URL scheme or import link, it imports GPX/KML from a file via Tours › + › Import or the phone's share sheet). `GET /api/tours/{id}/gpx?day=N` gives one day (Komoot imports one tour per file); the tour view has a link per day plus the whole tour, with short import steps (komoot.com/upload; open/share the file to the swisstopo app). Elevation is in every track point, so both apps show the right ascent. map.geo.admin.ch can show a GPX by URL only if the file is publicly reachable, which HutHop isn't (behind Cloudflare Access).
 - ~~Custom sorting and a "best" score~~ done (see Tour search); weights fixed in `huthop.toml`.
 - ~~General settings~~ done (21 Oct 2026): ⚙ in the header, kept in the browser (`web/js/settings.js`) and sent with every request that offers or shows routes. Hardest trail (default blue-white), highest point of a route (default no limit; `edge.max_altitude_m` from the height profile), avoid mountain lifts at the start and end, walking pace (times scale with it; the search divides your hours by it), Alpine Club member prices (default on), check free beds, metric or imperial units. Routes outside them are never offered (search, editor, a hut's connections); a tour made earlier or shared opens with a note ("Outside your settings: …"). The search form keeps hours, huts, end and huts without opening data.
 - **Tour editor** (agreed 21 Oct 2026, replaces the "Other stops" list): edit any tour, or start one from a hut. Each day is a stored edge and a tour id names the whole tour, so an edit = another tour id, rebuilt with `build_tour` (which keeps nights that no longer fit, flagged).
@@ -327,7 +327,7 @@ Answer the open questions before building:
 - ~~Short-term weather~~ done (27 Oct 2026): MeteoSwiss ICON-CH2 through Open-Meteo (`models=meteoswiss_icon_ch2`, about 5 days, corrected to the hut's altitude; free for non-commercial use), `GET /api/huts/{id}/weather`, cached an hour in the process. A row of days in the hut details; in the tour view a line per day at that day's hut (the last day: the hut it starts at). MeteoSwiss's own open data was skipped: large CSV files for fixed points, not any spot.
 - **Public transport stops with timetables:** add a stop and show its timetable (departures per line on the planned date, from the loaded GTFS data).
 - ~~Favourite huts~~ done (27 Oct 2026, `web/js/favourites.js`): "☆ Favourite" in the hut details, a ★ before the name in the list, and a "★ Favourites" filter chip; kept in the browser like "Your tours".
-- **Mobile testing:** the app has a phone layout (bottom sheet below 720 px) but no frontend tests at all, and it is mostly checked on a desktop. Two parts:
+- **Mobile testing:** the app has a phone layout (bottom sheet below 720 px) and is mostly checked on a desktop. Two parts:
   1. *Manual checklist* on a real iPhone and Android phone on the live site: map gestures (pinch, pan, tap on huts), bottom sheet, filter panel, tour form and results, tour detail with height profiles, free-beds calendar, GPX download/share to the swisstopo app, editor dialogs, landscape orientation, dark mode.
   2. ~~*Automated browser tests*~~ done (`tests/test_mobile.py`, issue #11): Playwright (Python, `pytest-playwright`) in mobile emulation (e.g. iPhone 13 and Pixel 7 viewports, touch enabled) against the app on a small test database: no horizontal scrolling, key flows work (select a hut, open connections, search tours, open a tour), no console errors. Run in CI next to pytest; screenshots of failures as build artifacts.
 - **Winter tours (ski touring, snowshoe hiking):** the same planner for winter, with a season switch. What changes:
@@ -356,7 +356,7 @@ The repo layout is described in `README.md`.
 **Legal / terms (not legal advice):**
 - SAC's [legal information](https://www.sac-cas.ch/en/meta/impressum/legal-information/): site content is copyrighted and "only freely accessible for browsing purposes". Public or commercial use requires SAC's **prior written consent**. Reproduction requires naming sac-cas.ch as the source.
 - So: **private use only**, credit SAC as the source, and no redistribution of their data.
-- SAC has granted API permission before (e.g. the OSM hut-metadata import, with the condition "moderate usage"). If the project ever goes public, **ask SAC first**.
+- SAC has granted API permission before (e.g. the OSM hut-metadata import, with the condition "moderate usage"). If the project ever goes public, **ask SAC first**. (Planned; not public until SAC agrees in writing.)
 - Paid route portal content (routes with `availability != "free"`) must not be used.
 - hut-reservation.org has its own terms. Read only, low rate, no booking automation.
 - Hut websites: public pages only, robots.txt respected, low rate, once or twice per season. Extracted facts (dates, prices) for private use; no copies of the pages are published.

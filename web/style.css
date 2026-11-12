@@ -17,6 +17,13 @@
   --radius: 12px;
   --shadow: 0 1px 2px rgb(20 30 25 / 0.06), 0 8px 28px rgb(20 30 25 / 0.12);
   --panel-w: 400px;
+  /* Shared spacing: the panel's side gutter, and steps for gaps and margins */
+  --gutter: 16px;
+  --space-xs: 4px;
+  --space-s: 8px;
+  --space-m: 12px;
+  --space-l: 16px;
+  --space-xl: 24px;
   --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   color-scheme: light;
 }
@@ -34,6 +41,7 @@ button, input, select { font: inherit; color: inherit; }
 button { cursor: pointer; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 [hidden] { display: none !important; }
+a { color: var(--accent); }
 
 #map { position: fixed; inset: 0; }
 
@@ -52,13 +60,14 @@ button { cursor: pointer; }
 .view { display: flex; flex-direction: column; min-height: 0; flex: 1; }
 .sheet-handle { display: none; }
 
-.brand { display: flex; align-items: center; gap: 10px; padding: 18px 20px 12px; }
+.brand { display: flex; align-items: center; gap: var(--space-s); padding: 18px var(--gutter) var(--space-m); }
+.brand > div { margin: 0 auto 0 2px; }  /* the title pushes the header buttons to the right */
 .brand h1 { font-size: 19px; line-height: 1.1; margin: 0; letter-spacing: -0.01em; }
 .brand p { margin: 1px 0 0; color: var(--text-soft); font-size: 12.5px; }
 .logo { width: 30px; height: 30px; flex: none; }
 .logo path { fill: var(--accent); }
 .logo .logo-door { fill: #fff; }
-.about-btn { margin-left: auto; width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 50%; background: var(--bg); display: grid; place-items: center; }
+.about-btn { flex: none; width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 50%; background: var(--bg); display: grid; place-items: center; }
 .about-btn:hover { background: var(--bg-soft); border-color: var(--text-faint); }
 .about-btn svg { width: 20px; height: 20px; fill: none; stroke: var(--text); stroke-width: 2; stroke-linecap: round; }
 
@@ -69,9 +78,9 @@ button { cursor: pointer; }
 }
 .about[open] { display: flex; flex-direction: column; }
 .about::backdrop { background: rgb(20 30 25 / .35); }
-.about-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px 8px; }
+.about-head { display: flex; align-items: center; justify-content: space-between; gap: var(--space-m); padding: var(--space-l) 20px var(--space-s); }
 .about-head h2 { margin: 0; font-size: 20px; }
-.about-close { width: 32px; height: 32px; border: 0; border-radius: 50%; background: var(--bg-soft); font-size: 20px; line-height: 1; }
+.about-close { flex: none; width: 32px; height: 32px; border: 0; border-radius: 50%; background: var(--bg-soft); font-size: 20px; line-height: 1; }
 .about-close:hover { background: var(--bg-hover); }
 .about-body { padding: 0 20px 20px; overflow-y: auto; overscroll-behavior: contain; }
 .about-body h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-soft); margin: 22px 0 8px; }
@@ -89,7 +98,7 @@ button { cursor: pointer; }
   .about { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; }
 }
 
-.search { position: relative; margin: 0 16px 6px; }
+.search { position: relative; margin: 0 var(--gutter) var(--space-xs); }
 .search svg { position: absolute; left: 12px; top: 50%; width: 17px; height: 17px; transform: translateY(-50%);
   fill: none; stroke: var(--text-faint); stroke-width: 2; stroke-linecap: round; }
 .search input {
@@ -103,7 +112,7 @@ button { cursor: pointer; }
   font: 11px var(--font); color: var(--text-faint); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; }
 
 /* ---------- Tabs ---------- */
-.tabs { display: flex; gap: 4px; margin: 0 16px 10px; border-bottom: 1px solid var(--line); }
+.tabs { display: flex; gap: var(--space-xs); margin: 0 var(--gutter) var(--space-m); border-bottom: 1px solid var(--line); }
 .tabs button {
   border: 0; background: none; padding: 8px 4px 10px; margin-right: 12px; font-weight: 600; color: var(--text-soft);
   border-bottom: 2px solid transparent; margin-bottom: -1px;
@@ -114,10 +123,10 @@ button { cursor: pointer; }
 .tab.scroll, #hutsTab { overflow-y: auto; overscroll-behavior: contain; }
 
 /* ---------- Filters ---------- */
-.filters { margin: 4px 16px 0; border-bottom: 1px solid var(--line); }
+.filters { margin: var(--space-xs) var(--gutter) 0; border-bottom: 1px solid var(--line); }
 .filters summary {
   display: flex; align-items: center; gap: 8px;
-  list-style: none; cursor: pointer; padding: 10px 2px; font-weight: 600; user-select: none;
+  list-style: none; cursor: pointer; padding: 10px 0; font-weight: 600; user-select: none;
 }
 .filters summary::-webkit-details-marker { display: none; }
 .filters summary::after {
@@ -181,13 +190,13 @@ input[type="range"] { width: 100%; min-height: 24px; accent-color: var(--text); 
 .range2-fill { position: absolute; top: 0; bottom: 0; background: var(--text); border-radius: 2px; }
 
 /* ---------- Results ---------- */
-.results-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px 20px 6px; color: var(--text-soft); font-size: 13px; }
+.results-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 10px var(--gutter) 6px; color: var(--text-soft); font-size: 13px; }
 .results-head strong { color: var(--text); font-size: 15px; }
 .sort { display: flex; align-items: center; gap: 6px; }
 .sort select { border: 0; background: transparent; font-weight: 500; color: var(--text); cursor: pointer; padding: 2px; min-height: 24px; }
 
 /* The whole Huts tab scrolls (filters included), so the list never shrinks to a sliver on short screens. */
-.list { list-style: none; margin: 0; padding: 0 8px 12px; flex: none; }
+.list { list-style: none; margin: 0; padding: 0 calc(var(--gutter) - 8px) var(--space-m); flex: none; }  /* text on the gutter */
 .hut {
   display: grid; grid-template-columns: 64px 1fr auto; gap: 12px; align-items: center;
   padding: 8px; border-radius: 10px; cursor: pointer; transition: background .1s;
@@ -223,7 +232,7 @@ input[type="range"] { width: 100%; min-height: 24px; accent-color: var(--text); 
 }
 .back svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
 
-.detail-body { padding: 16px 20px 24px; }
+.detail-body { padding: var(--space-l) var(--gutter) var(--space-xl); }
 .detail-body h2 { margin: 0; font-size: 22px; line-height: 1.2; letter-spacing: -0.01em; }
 .subtitle { color: var(--text-soft); margin-top: 3px; }
 .facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 16px 0; }
@@ -314,7 +323,7 @@ input[type="range"] { width: 100%; min-height: 24px; accent-color: var(--text); 
 .source a { color: inherit; }
 
 /* ---------- Tour planner ---------- */
-.tour-form { padding: 4px 16px 8px; }
+.tour-form { padding: var(--space-xs) var(--gutter) var(--space-s); }
 .input {
   width: 100%; height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg);
 }
@@ -324,8 +333,8 @@ label.field-label { display: flex; }
 .stepper button { width: 36px; height: 100%; border: 0; background: var(--bg-soft); font-size: 17px; }
 .stepper button:hover { background: var(--bg-hover); }
 .stepper output { flex: 1; text-align: center; font-weight: 600; }
-.check { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-soft); margin: 4px 0 8px; cursor: pointer; }
-.check input { accent-color: var(--text); width: 15px; height: 15px; margin: 0; }
+.check { display: flex; align-items: flex-start; gap: var(--space-s); font-size: 13px; color: var(--text-soft); margin: 4px 0 8px; cursor: pointer; }
+.check input { flex: none; accent-color: var(--text); width: 15px; height: 15px; margin: 2px 0 0; }  /* on the first line */
 .btn.wide { width: 100%; height: 42px; margin-top: 8px; font-size: 14.5px; }
 .btn:disabled { opacity: .6; cursor: progress; }
 .stop-picker { position: relative; }
@@ -344,17 +353,19 @@ label.field-label { display: flex; }
 .suggest li.none { color: var(--text-faint); cursor: default; }
 
 #tAreaHint { margin-top: 6px; }
-#tourResults { padding: 0 8px 16px; }
-#tourResults .results-head { padding: 12px 8px 8px; }
+#tourResults { padding: 0 var(--gutter) var(--space-l); }
+#tourResults .results-head { padding: var(--space-m) 0 var(--space-s); }
 #tourResults .empty b { color: var(--text); }
 .tour-card {
   border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-bottom: 8px; cursor: pointer;
   transition: border-color .12s, box-shadow .12s;
 }
 .tour-card:hover, .tour-card:focus-visible { border-color: var(--text-soft); box-shadow: 0 2px 10px rgb(0 0 0 / .07); outline: none; }
-.tour-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; color: var(--text-soft); font-size: 13px; }
+.tour-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--space-xs) var(--space-s);
+  color: var(--text-soft); font-size: 13px; }
+.tour-head > div:first-child { white-space: nowrap; }  /* the badges wrap below rather than the numbers */
 .tour-head b { color: var(--text); }
-.tour-flags { display: flex; gap: 6px; align-items: center; }
+.tour-flags { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .score { font-size: 11.5px; font-weight: 700; color: var(--text-soft); background: var(--bg-soft); border-radius: 99px; padding: 1px 8px; cursor: help; }
 .tour-cost { margin: 0 0 12px; font-size: 13.5px; }
 .flag.ok { background: #e6f4ec; color: #1f6b43; }
@@ -377,7 +388,8 @@ label.field-label { display: flex; }
 .daybar i { width: 100%; border-radius: 4px 4px 2px 2px; opacity: .85; }
 .daybar span { font-size: 10.5px; color: var(--text-soft); font-variant-numeric: tabular-nums; }
 
-.tour-top { padding: 16px 20px 0; }
+.tour-top { padding: var(--space-l) var(--gutter) 0; }
+.tour-top .actions { margin-bottom: var(--space-xs); }
 .tour-top h2 { margin: 10px 0 0; font-size: 20px; line-height: 1.25; letter-spacing: -0.01em; }
 .back.flat { position: static; box-shadow: none; background: var(--bg-soft); }
 .tour-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -444,7 +456,7 @@ label.field-label { display: flex; }
 .season-edit-row:nth-child(3) .code.c1 { background: #e5edf7; border-color: var(--self-service); color: var(--self-service); }
 .code.edited { box-shadow: 0 0 0 2px var(--accent); }
 .btn.danger { color: var(--accent); border-color: var(--accent); background: var(--bg); }
-.results-head .add-hut { margin-left: auto; margin-right: 14px; font-size: 13px; }
+.results-head .add-hut { margin-left: auto; font-size: 13px; }
 code { font-size: 12px; background: var(--bg-soft); padding: 0 4px; border-radius: 4px; }
 
 /* ---------- Connections ---------- */
@@ -516,7 +528,7 @@ code { font-size: 12px; background: var(--bg-soft); padding: 0 4px; border-radiu
   .sheet-handle span { width: 40px; height: 5px; border-radius: 3px; background: var(--line); }
   /* Drag zones of the sheet (main.js): no browser panning there, so the drag reaches the page */
   .sheet-handle, #browse .brand, #tabs { touch-action: none; }
-  .brand { padding: 2px 16px 8px; }
+  .brand { padding: 2px var(--gutter) var(--space-s); }
   .brand p { display: none; }
   .search kbd { display: none; }
   .hero { aspect-ratio: 2 / 1; }
@@ -533,7 +545,7 @@ code { font-size: 12px; background: var(--bg-soft); padding: 0 4px; border-radiu
 /* ---------- My tours ---------- */
 #yoursCount:not(:empty) { margin-left: 3px; font-size: 11px; font-weight: 700; background: var(--bg-soft); border-radius: 99px;
   padding: 0 6px; }
-#mineTab { padding: 12px 16px 8px; }  /* same side spacing as the search form */
+#mineTab { padding: var(--space-m) var(--gutter) var(--space-s); }
 .your-tours { list-style: none; margin: 0 0 8px; padding: 0; display: grid; gap: 6px; }
 .your-tours li { display: flex; align-items: flex-start; gap: 6px; }
 .your-tour { flex: 1; display: grid; gap: 1px; text-align: left; background: var(--bg-soft); border: 0; border-radius: 8px;
@@ -548,7 +560,7 @@ code { font-size: 12px; background: var(--bg-soft); padding: 0 4px; border-radiu
 .editing-label { margin-left: auto; font-size: 11.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: var(--accent); }
 .editor-date { margin: 8px 0; }
 .timeline.editor .tl-stop .tl-dot { background: #fff; border: 2px solid var(--text); }
-.tl-insert .tl-dot.add { background: transparent; border: 1.5px dashed var(--text-faint); }
+.tl-insert .tl-dot.add { background: transparent; border: 1.5px dashed var(--text-faint); box-shadow: none; }
 .slot { margin-top: 2px; }
 .slot-row { display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: flex-start; }
 .slot-row .slot { flex: 1 1 100%; }
@@ -564,10 +576,19 @@ code { font-size: 12px; background: var(--bg-soft); padding: 0 4px; border-radiu
 .pick { margin-top: 10px; border: 1px solid var(--accent); border-radius: 10px; padding: 8px 10px; background: var(--accent-soft); }
 
 /* ---------- Settings dialog ---------- */
-#aboutBtn { margin-left: 6px; }
-.settings-body .field { margin: 14px 0; }
-.settings-body .check { margin: 10px 0; }
-.settings-body select.input { width: 100%; }
+.settings-body .field { margin: 0 0 var(--space-l); }
+.settings-body .field .hint { margin: 6px 0 0; }
+.settings-body > .hint:first-child { margin: 0 0 var(--space-l); }
+.settings-body .check { margin: 0 0 var(--space-m); }
+.settings-body .link.inline { margin-top: var(--space-xs); }
+/* Two or four options per row, so the longer labels never run out of the dialog on a phone */
+.settings-body .seg { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); }
+.seg button .trail-swatch { margin-right: 6px; vertical-align: middle; }
+
+/* Phones and tablets: icon buttons big enough to tap */
+@media (pointer: coarse) {
+  .about-btn, .about-close { width: 44px; height: 44px; }
+}
 
 /* Weather forecast (hut details) and favourite marks */
 .forecast { display: grid; grid-template-columns: repeat(auto-fit, minmax(52px, 1fr)); gap: 4px; text-align: center; }
