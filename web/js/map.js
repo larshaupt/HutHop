@@ -7,6 +7,8 @@ const CH_BOUNDS = [[5.9, 45.8], [10.5, 47.85]];
 const ATTRIBUTION = '<a href="https://www.swisstopo.admin.ch" target="_blank" rel="noopener">© swisstopo</a> · ' +
   'Hut data <a href="https://www.sac-cas.ch" target="_blank" rel="noopener">© SAC-CAS</a> · ' +
   'Unofficial paths <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a>';
+/** The topographic map's tiles (also saved with tours for offline use, js/offline.js). */
+export const TOPO_TILES = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-farbe/default/current/3857/{z}/{x}/{y}.jpeg";
 const TRAILS_TILES = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swisstlm3d-wanderwege/default/current/3857/{z}/{x}/{y}.png";
 const STYLES = {
   light: "https://vectortiles.geo.admin.ch/styles/ch.swisstopo.lightbasemap.vt/style.json",
@@ -16,7 +18,7 @@ const STYLES = {
     sources: {
       topo: {
         type: "raster", tileSize: 256, maxzoom: 18,
-        tiles: ["https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-farbe/default/current/3857/{z}/{x}/{y}.jpeg"],
+        tiles: [TOPO_TILES],
       },
     },
     layers: [{ id: "topo", type: "raster", source: "topo" }],

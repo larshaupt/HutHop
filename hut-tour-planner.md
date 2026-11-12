@@ -31,7 +31,7 @@ A private web app to browse and filter Swiss mountain huts (SAC plus selected no
 
 **F2: Tour suggestions** (core feature)
 - Inputs:
-  - start date, number of days / nights
+  - start date, number of days / nights; optionally a flexible start ("up to N days later", at most 14): the search runs once per start date and returns the best tours over the window, each on its best date (the same huts count as one tour); hut calendars are fetched once for all dates
   - max hiking hours per day (and optionally min hours)
   - max trail category (yellow / red-white / blue-white)
   - start/end region or specific public transport stops, including cable car and lift stations; loop vs. point-to-point
@@ -57,7 +57,7 @@ A private web app to browse and filter Swiss mountain huts (SAC plus selected no
 - Review tool for computed route edges, with the ability to exclude bad ones.
 
 **F6 (later)**
-- ~~GPX export~~ (done, with heights), saved tours (in the browser as "Your tours"; on the server later), offline/PWA.
+- ~~GPX export~~ (done, with heights), saved tours (in the browser as "Your tours"; on the server later), ~~offline/PWA~~ (done, see §4 Later).
 
 ### Non-functional requirements
 
@@ -303,7 +303,9 @@ Answer the open questions before building:
 ### Later
 
 - ~~GPX export~~ done: `GET /api/tours/{id}/gpx`, one track per day + waypoints. Tour ids are `date_places_limits` (e.g. `2027-07-17_123-45-67-89_2-2-3`), stable across edge rebuilds, so they also serve sharing, saved tours and the editor.
-- Saved tours on the server (in the browser: "Your tours"), PWA/offline, better ranking. (~~Non-SAC huts~~ done: "+ Add hut".)
+- ~~Share button and link previews~~ done (Nov 2026): **Share** in the tour view shares `/t/{tour_id}` (the phone's share sheet via the Web Share API, else the link is copied). That page has Open Graph / Twitter meta tags (title like "4-day hut tour: Hut A → Hut D", dates, start and end stop, distance, ascent, hardest trail) and redirects to `/#v=tours&tid={id}`; a tour that no longer exists gets a generic preview and the app's "no longer available" note. Previews only work once the app is public (Cloudflare Access hides the page from messenger crawlers). No preview image yet.
+- Saved tours on the server (in the browser: "Your tours"), better ranking. (~~Non-SAC huts~~ done: "+ Add hut".)
+- ~~Offline use (PWA) and saved tours~~ done (Nov 2026, issue #5): installable (`web/manifest.json`, icons) with a hand-written service worker (`web/sw.js`). Our files and API network first, the cache only as a fallback, so a deploy is never hidden; the app shell, `/api/huts`, `/api/osm-paths` and `/api/info` are kept with it (a versioned cache; `skipWaiting` and `clients.claim`). Only 200 same-origin responses of the expected content type are cached, never a Cloudflare Access redirect. A tour in "My tours" is saved when added or opened (`web/js/offline.js`): its JSON (with the height profiles), its huts' details and the topographic map along the route (one tile around each point, zoom 8 up to the level that still fits in 500 tiles, 4 downloads at a time: swisstopo fair use), in a cache per tour that is deleted with the tour. Offline, the app opens on the topographic map (the light map's vector tiles aren't saved) and says "Offline — showing saved data from <date>". Saved tours stay per device (local storage): no accounts or sync.
 - ~~Elevation in GPX~~ done: `edge.elevation` holds the swissTLM3D height of each route point (from `build_edges`); used for `<ele>` in GPX and a height profile per day in the tour view.
 - ~~Tour links keep the search hours~~ done: tour ids end in the hours per day (`…_2-2-3_3-6.5`), so a shared or reopened tour is scored as in its search; older ids default to 3–6 h.
 - ~~Free-beds calendar~~ done: `GET /api/huts/{id}/availability?people=N`, a month calendar in the hut details (same 10-minute cache as tour checks).
@@ -315,7 +317,7 @@ Answer the open questions before building:
   - *Edits:* E1 start or end stop (stops connected to the first/last hut: walk, transport type, served that day, first/last connection, time flags); E2 swap a hut (huts connected to both neighbours); E3 add a night between two huts or at either end (at an end, the stop is re-picked: closest that runs that day); E4 remove a night (if the neighbours connect directly); E5 change the start date (all nights move; opening, free beds and stops re-checked); E6 a day's trail limit (where another variant of that day's edge exists).
   - *After each edit:* walking times, score and sub-scores, opening per night and stop service recomputed, with the change shown (e.g. score 82 % → 79 %). A tour you design needn't follow the search settings: days outside the hours or on harder trails are neither blocked nor flagged (warnings were tried and removed, 21 Oct 2026); the night's opening status and the start / end connection times are still shown. Free beds re-checked automatically for new huts when the search had "check free beds" on. Undo and redo.
   - *Candidates:* per slot, huts and stops **nearest first** (the walk between the new hut and its neighbouring huts in the tour, or to / from a stop), each with that distance and walking time, the tour's day lengths, ascent and the night's status; no scores in the editor; also shown on the map, where a click on a hut offers the edits it fits (swap night N, add between …). On phones, the lists only.
-  - *Your tours:* an edited tour becomes a new entry (the original stays as it was), and any tour can be added. Kept in the browser (local storage, per device), each entry as its tour id; the open tour's id is in the URL, so it can be shared. Saving on the server comes later.
+  - *Your tours:* an edited tour becomes a new entry (the original stays as it was), and any tour can be added. Kept in the browser (local storage, per device), each entry as its tour id; the open tour's id is in the URL, so it can be shared. Stays per device (decided Nov 2026: no accounts or sync); saved for offline use too.
   - *Plan:* (1) backend: an options endpoint listing every slot's candidates with their resulting tour id and key numbers, flags in the tour JSON, a tour from a hut; tests. (2) "Your tours" and the tour id in the URL. (3) Edit mode in the tour view (`web/js/tour-editor.js`; `editor.js` is the hut-data editor): slot menus, candidate lists and map candidates, undo/redo, free beds; "Other stops" and its endpoint removed. (4) "Plan a tour from here" in the hut details. (5) Docs, deploy.
 - SAC times as automatic overrides (per-grade calibration for T4+).
 - ~~Fewer redundant stops in a hut's connections~~ done: `load_timetable` reads the lines per stop from the GTFS timetable; `build_edges` keeps per hut and direction only the closest stop of each line with summer service (stops without summer service get no edges). Stop edges −30 %, e.g. Glecksteinhütte: 10 Grindelwald stops instead of ~25. The connection list shows lines and departures per day. Possible next step: also drop stops whose lines can all be reached by riding from a closer kept stop (fewer town-bus stops, but fewer traverse end points too).

@@ -10,6 +10,10 @@
   <link rel="preconnect" href="https://static.www.suissealpine.sac-cas.ch">
   <link rel="stylesheet" href="vendor/maplibre-gl/maplibre-gl.css">
   <link rel="stylesheet" href="style.css">
+  <!-- with credentials: behind Cloudflare Access, the manifest is fetched without the login cookie otherwise -->
+  <link rel="manifest" href="manifest.json" crossorigin="use-credentials">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <meta name="theme-color" content="#ffffff">
 </head>
 <body>
   <main>
@@ -17,6 +21,7 @@
 
   <aside id="panel" class="panel" data-sheet="peek">
     <button class="sheet-handle" id="sheetHandle" aria-label="Expand or collapse panel"><span></span></button>
+    <p class="offline-note" id="offlineNote" role="status" hidden></p>
 
     <section id="browse" class="view">
       <header class="brand">
@@ -115,9 +120,15 @@
 
       <div class="tab scroll" id="toursTab" hidden>
         <form class="tour-form" id="tourForm" autocomplete="off">
-          <div class="field">
-            <label class="field-label" for="tDate">Start date</label>
-            <input class="input" type="date" id="tDate" required>
+          <div class="field two">
+            <div>
+              <label class="field-label" for="tDate">Start date</label>
+              <input class="input" type="date" id="tDate" required>
+            </div>
+            <div>
+              <label class="field-label" for="tFlex">Flexible</label>
+              <select class="input" id="tFlex"></select>
+            </div>
           </div>
 
           <div class="field two">
@@ -181,7 +192,9 @@
 
       <div class="tab scroll" id="mineTab" hidden>
         <ul class="your-tours" id="yoursList"></ul>
-        <p class="hint">Kept in this browser only. Tours you edit are added automatically.</p>
+        <p class="hint">Kept in this browser only. Tours you edit are added automatically. Each tour is also saved
+          for use without a connection when you add or open it: the tour, its height profiles, huts and the map along
+          the route (at most 500 map tiles per tour).</p>
       </div>
     </section>
 

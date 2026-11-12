@@ -13,6 +13,7 @@ import { addTourLayers, bindTourForm, clearTour, closeTour, hasResults, openTour
 import { addEditorLayers, bindEditorEvents as bindTourEditorEvents, editorHutClick, isEditing, reloadEditor }
   from "./tour-editor.js";
 import { bindSettings, onSettingsChange } from "./settings.js";
+import { bindOffline } from "./offline.js";
 
 /** Our layers, bottom to top. Runs after every base-style (re)load. */
 function addLayers() {
@@ -162,6 +163,8 @@ function bindSheetDrag() {
 }
 
 async function main() {
+  bindOffline();
+  if (!navigator.onLine) state.base = "topo";  // the light map's vector tiles are not saved offline
   renderControls();
   bindHutEvents();
   bindConnectionEvents();

@@ -126,6 +126,21 @@ def test_tour_uses_availability(client, monkeypatch, status, free, total, people
     assert calls == [7]
 
 
+def test_flexible_window_fetches_each_calendar_once(client, monkeypatch):
+    """A 14-day window: one tour on the date with free beds, the hut's calendar fetched once, the window logged."""
+    c, ids = client
+    calls = []
+    monkeypatch.setattr("app.clients.hut_reservation.fetch_calendar", lambda hrs_id, _client: calls.append(hrs_id) or
+                        calendar("2027-07-10", "SERVICED", 0, 40) + calendar("2027-07-12", "SERVICED", 10, 40))
+    body = {"start_date": "2027-07-10", "flex_days": 14, "nights": 1, "min_hours": 1, "max_hours": 2}
+    tours = c.post("/api/tours/suggest", json=body).json()["tours"]
+    assert calls == [7]
+    assert [t["days"][0]["date"] for t in tours] == ["2027-07-12"]  # full on the 10th; free beds beat unknown nights
+    assert c.post("/api/tours/suggest", json=body | {"flex_days": 15}).status_code == 422
+    conn = app.dependency_overrides[get_db]()
+    assert json.loads(conn.execute("SELECT query FROM search_log").fetchone()["query"])["flex_days"] == 14
+
+
 def test_closed_before_released_season(client, monkeypatch):
     """Like Chamanna Cluozza: closed (0 of 0) on 10 July, released from 20 July. The hut must drop out."""
     c, _ = client
@@ -173,6 +188,22 @@ def test_tour_by_id_and_gpx(client):
 
     assert c.get("/api/tours/not-a-tour").status_code == 400
     assert c.get(f"/api/tours/2027-07-10_{ids['stop']}-{ids['b']}-{ids['stop']}_1-1").status_code == 404
+
+
+def test_share_page(client):
+    c, ids = client
+    c.app.dependency_overrides[get_db]().execute("UPDATE place SET name = '<b>\"Hut\"' WHERE id = ?", (ids["a"],))
+    body = {"start_date": "2027-07-10", "nights": 1, "min_hours": 1, "max_hours": 2, "check_availability": False}
+    tour = c.post("/api/tours/suggest", json=body).json()["tours"][0]
+    res = c.get(f"/t/{tour['id']}")
+    assert res.status_code == 200 and res.headers["content-type"].startswith("text/html")
+    page = res.text
+    assert '<meta property="og:title" content="2-day hut tour: &lt;b&gt;&quot;Hut&quot;">' in page  # escaped
+    assert "10 Jul 2027 – 11 Jul 2027 · Valley Station to Valley Station · 2.0 km · 200 m ascent" in page
+    assert f'url=/#v=tours&amp;tid={tour["id"]}"' in page
+    assert c.get("/t/not-a-tour").status_code == 400
+    gone = c.get(f"/t/2027-07-10_{ids['stop']}-{ids['b']}-{ids['stop']}_1-1")
+    assert gone.status_code == 200 and "HutHop hut tour" in gone.text and "url=/#v=tours" in gone.text
 
 
 def test_editor_options_and_tour_from_hut(client):
