@@ -6,8 +6,9 @@ import unicodedata
 
 import httpx
 
+from app.clients import USER_AGENT
+
 BASE = "https://www.suissealpine.sac-cas.ch/api/1/"
-USER_AGENT = "HutHop/0.1 (private hut planner)"
 SEARCH_PARAMS = {
     "lang": "en",
     "output_lang": "en",

@@ -16,12 +16,12 @@ import pyogrio.raw
 from pyproj import Transformer
 from shapely import from_wkb
 
+from app.clients import USER_AGENT
 from app.db import ROOT, connect
 
 STAC_ITEMS = "https://data.geo.admin.ch/api/stac/v1/collections/ch.bav.haltestellen-oev/items"
 ASSET_SUFFIX = "_2056_de.gpkg.zip"
 STOPS_DIR = ROOT / "data/stops"
-USER_AGENT = "HutHop/0.1 (private hut planner)"
 LV95_TO_WGS84 = Transformer.from_crs("EPSG:2056", "EPSG:4326", always_xy=True)
 PASSENGER_TYPES = {"Haltestelle", "Haltestelle und Bedienpunkt"}
 MODES = {"A": "bus", "B": "train", "C": "tram", "D": "metro", "E": "rack_railway", "F": "funicular",

@@ -177,6 +177,15 @@ def test_tour_by_id_and_gpx(client):
     assert [w.find("g:desc", ns).text for w in root.findall("g:wpt", ns)] == ["Start", "Night 1 (2027-07-10)", "End"]
     assert root.find("g:trk/g:trkseg/g:trkpt", ns) is not None
 
+    day2 = c.get(f"/api/tours/{tour['id']}/gpx", params={"day": 2})  # one day, for Komoot
+    assert 'filename="huthop-2027-07-10-valley-station-1n-day2.gpx"' in day2.headers["content-disposition"]
+    root = ET.fromstring(day2.text)
+    assert [t.find("g:name", ns).text for t in root.findall("g:trk", ns)] == [root.find("g:metadata/g:name", ns).text]
+    assert [w.find("g:desc", ns).text for w in root.findall("g:wpt", ns)] == ["Start", "End"]
+    assert root.find("g:trk/g:name", ns).text.startswith("Day 2:")
+    assert c.get(f"/api/tours/{tour['id']}/gpx", params={"day": 3}).status_code == 404
+    assert c.get(f"/api/tours/{tour['id']}/gpx", params={"day": 0}).status_code == 422
+
     assert c.get("/api/tours/not-a-tour").status_code == 400
     assert c.get(f"/api/tours/2027-07-10_{ids['stop']}-{ids['b']}-{ids['stop']}_1-1").status_code == 404
 

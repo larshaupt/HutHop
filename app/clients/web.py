@@ -12,7 +12,8 @@ from urllib.parse import urldefrag, urljoin, urlsplit
 
 import httpx
 
-USER_AGENT = "HutHop/0.1 (private hut planner)"
+from app.clients import USER_AGENT
+
 TIMEOUT_S = 20
 HOST_DELAY_S = 2.0          # pause between two requests to the same host
 MAX_BYTES = 8_000_000       # skip bigger responses (photo galleries, brochures)
