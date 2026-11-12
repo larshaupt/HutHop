@@ -2,10 +2,12 @@
 
 A private web app to browse Swiss mountain huts (SAC plus huts added by hand) and to suggest multi-day summer hut tours from your constraints, with live free-bed checks.
 
-**Status (Oct 2026):** deployed at huthop.larshauptmann.com (Oracle VM, Cloudflare Access login). Hut map with filters, free-beds calendar and hand
+**Status (Nov 2026):** deployed at huthop.larshauptmann.com (Oracle VM, Cloudflare Access login). Hut map with filters, free-beds calendar and hand
 corrections; walking connections on swisstopo's trail network; multi-day tour suggestions ranked by a fixed "best"
-score (new trail, shape, free beds, opening data, …), sortable in the browser; height profiles; GPX export; weather forecast, trail closures and
-military shooting notices per day; favourite huts; About dialog. Prices are postponed. See [`hut-tour-planner.md`](hut-tour-planner.md) for the project brief (requirements,
+score (new trail, shape, free beds, opening data, …), sortable in the browser; height profiles; GPX export (whole tour or per day, for Komoot and the swisstopo app); weather forecast, trail closures and
+military shooting notices per day; prices, season dates and booking details read from the hut websites, with a cost
+estimate per tour and a "Cheapest" sort; a tour editor, "Your tours" and favourite huts (kept in the browser);
+shareable links (the open view is in the URL); a "Book this tour" checklist; About dialog. See [`hut-tour-planner.md`](hut-tour-planner.md) for the project brief (requirements,
 design, APIs, plan) and [`spikes/`](spikes/) for the Phase 0 findings.
 
 ![Map of all huts with a line for each pair connected by trail within 10 hours, coloured by the hardest trail category](docs/hut-graph.svg)
@@ -45,7 +47,7 @@ rebuilds. New huts get walking connections at the next `refresh`.
 and the official timetables (GTFS, opentransportdata.swiss, about 90 MB each: this year's and, from autumn, next
 year's) into `data/gtfs/` when a new edition is out. They give the lines and summer departures of each stop (a hut
 only gets a connection to the closest stop of each line) and on which days and from when to when each stop is
-served: tours start and end at the closest stop that runs on that day.
+served: tours start and end at the closest stop that runs on that day (cable car and lift stations included).
 Huts more than 500 m from a signposted trail (glacier and high-alpine huts, bivouacs) get the shortest
 OpenStreetMap path to one, fetched with the Overpass API by `osm_access` into `data/osm/access.json`, with heights from
 the Open-Meteo elevation API (Copernicus DEM, ~90 m; the free tier's rate limit makes a fetch take several minutes).
@@ -80,21 +82,22 @@ app/
   admin.py   admin password (HTTP Basic) for data-changing routes; `python -m app.admin set-password`
   backup.py  database backup; config.py: huthop.toml
   api/       routes: huts (list, detail, /availability calendar, /weather), edges (connections, exclude), manual
-             (overrides, added huts), tours (/suggest, /{id}, /{id}/gpx, /{id}/warnings, /{id}/options for the editor, /huts/{id}/tour, /stops),
+             (overrides, added huts), tours (/suggest, /{id}, /{id}/gpx (?day=N for one day), /{id}/warnings, /{id}/options for the editor, /huts/{id}/tour, /stops),
              info (About dialog), feedback (sent from the app; reading it needs the admin password)
   db/        schema.sql (tables, views, change-counter triggers) and connect() (migrations, WAL)
-  ingest/    offline jobs: refresh, sync_sac, load_stops, load_timetable, osm_access, build_edges, footprints
+  ingest/    offline jobs: refresh, sync_sac, load_stops, load_timetable, osm_access, build_edges, footprints,
+             scrape_huts (prices, season dates and booking from the hut websites)
   planner/   graph (model, loading, cache), tours (beam search, scoring, rebuilding, diversity),
              planning (search with free-bed rounds, rebuild by id: what the API calls), ranking (sub-scores,
-             "best"), geometry (retracing, shape), availability (cache, classification, calendar), opening,
+             "best"), geometry (retracing, shape), costs (price estimate), availability (cache, classification, calendar), opening,
              transit (stops served on a date, departures, rides), editing (tour editor: possible edits, warnings), gpx,
              hiking_time, polyline
   clients/   external APIs (SAC, hut-reservation.org, weather via Open-Meteo, geo.admin closures and
-             shooting notices)
+             shooting notices, hut websites, Gemini); USER_AGENT for all outgoing requests
 web/         static frontend (MapLibre, vendored in web/vendor/, + swisstopo tiles, no build step), ES modules in web/js/:
              main (wiring), state (URL hash), map, huts (list, detail), beds (free-beds calendar), weather,
              connections, tours (form, results, sorting, opening a tour), tour-detail (timeline, profiles),
-             tour-editor (editing a tour), your-tours and favourites (kept in the browser), settings (general
+             tour-editor (editing a tour), booking (book-this-tour checklist), your-tours and favourites (kept in the browser), settings (general
              settings and units, kept in the browser), editor (hut data),
              info (About dialog), feedback (dialog), util
 server/      compose.yaml, update.sh (deploy) and refresh.sh (data refresh and graph build) for the server
@@ -105,4 +108,4 @@ tests/
 
 ## Usage and data
 
-Private, non-commercial use only. Hut data comes from the SAC (© sac-cas.ch) and must not be redistributed. Maps and trail data © swisstopo. Unofficial paths © OpenStreetMap contributors (ODbL). Suggested tours are planning aids: always check difficulty, conditions, weather and official sources before you go.
+Private, non-commercial use only. Going public is planned, but only once SAC has given its written consent. Hut data comes from the SAC (© sac-cas.ch) and must not be redistributed. Maps and trail data © swisstopo. Unofficial paths © OpenStreetMap contributors (ODbL). Suggested tours are planning aids: always check difficulty, conditions, weather and official sources before you go.

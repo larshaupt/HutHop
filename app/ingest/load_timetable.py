@@ -32,11 +32,11 @@ from pathlib import Path
 
 import httpx
 
+from app.clients import USER_AGENT
 from app.db import ROOT, connect
 
 PERMALINK = "https://data.opentransportdata.swiss/en/dataset/timetable-{year}-gtfs2020/permalink"
 GTFS_DIR = ROOT / "data/gtfs"
-USER_AGENT = "HutHop/0.1 (private hut planner)"
 SUMMER = ((7, 1), (8, 31))  # summer departures per line are averaged over the hut season of the timetable year
 LIFT_ROUTE_TYPES = {6, 7}  # aerial lift, funicular; extended types 1300–1499 (aerial lifts, funiculars) as well
 

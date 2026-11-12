@@ -152,11 +152,14 @@ def tour_from_hut(hut_id: int, start_date: date, min_hours: float = Query(3, ge=
 
 
 @router.get("/tours/{tour_id}/gpx")
-def get_tour_gpx(tour_id: str, conn: sqlite3.Connection = Depends(get_db)) -> Response:
+def get_tour_gpx(tour_id: str, day: int | None = Query(None, ge=1, description="only this day (1-based)"),
+                 conn: sqlite3.Connection = Depends(get_db)) -> Response:
     graph, tour = rebuild(conn, tour_id, people=1, check_availability=False)
     data = tour_json(conn, graph, [tour])[0]
-    return Response(gpx.to_gpx(data), media_type="application/gpx+xml",
-                    headers={"Content-Disposition": f'attachment; filename="{gpx.filename(data)}"'})
+    if day is not None and day > len(data["days"]):
+        raise HTTPException(404, "no such day")
+    return Response(gpx.to_gpx(data, day), media_type="application/gpx+xml",
+                    headers={"Content-Disposition": f'attachment; filename="{gpx.filename(data, day)}"'})
 
 
 @router.get("/tours/{tour_id}/warnings")
