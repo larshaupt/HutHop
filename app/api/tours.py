@@ -1,14 +1,16 @@
-"""Tour suggestions, single tours by id (JSON and GPX), the tour editor's options, a tour from a hut, and the
-stop search used to pick a start point."""
+"""Tour suggestions, single tours by id (JSON and GPX), the tour editor's options, a tour from a hut, the stop
+search used to pick a start point, and a stop's departures on a day, and the share page of a tour (link previews)."""
 
+import html
 import json
 import sqlite3
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime, timedelta
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import Response
+from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, Field, model_validator
 
 from app import config
@@ -16,11 +18,13 @@ from app.api.deps import get_db
 from app.clients import geoadmin, hut_reservation
 from app.ingest import osm_access
 from app.planner import costs, editing, gpx, planning, polyline, ranking, transit
-from app.planner.graph import Graph, cached_graph
+from app.planner.graph import Graph, Leg, RideLeg, cached_graph
 from app.planner.tours import Catering, Night, Tour, TourRequest, build_tour, is_lift, parse_tour_id
 
 router = APIRouter(prefix="/api", tags=["tours"])
+pages = APIRouter(tags=["tours"])  # outside /api: links people share
 AVAILABILITY_STATES = ("available", "not_released", "no_booking", "not_checked", "error")
+MAX_FLEX_DAYS = 14  # a search runs once per start date
 
 
 def settings(limit: int = Query(3, ge=1, le=4, description="hardest trail: 1 yellow, 2 red-white, 3 blue-white, "
@@ -34,6 +38,7 @@ def settings(limit: int = Query(3, ge=1, le=4, description="hardest trail: 1 yel
 
 class TourQuery(BaseModel):
     start_date: date
+    flex_days: int = Field(0, ge=0, le=MAX_FLEX_DAYS, description="also start up to this many days later")
     nights: int = Field(2, ge=1, le=10)
     min_hours: float = Field(3, ge=0, le=12)
     max_hours: float = Field(6, gt=0, le=12)
@@ -48,6 +53,7 @@ class TourQuery(BaseModel):
                                                  "funiculars")
     max_altitude: int | None = Field(None, ge=500, le=5000, description="highest point of a route (m)")
     pace: float = Field(1.0, ge=0.5, le=2.0, description="walking time / Swiss standard time")
+    transit: bool = Field(False, description="a day between huts may include one bus, train or cable car ride")
     people: int = Field(2, ge=1, le=30)
     check_availability: bool = True
 
@@ -62,8 +68,9 @@ class TourQuery(BaseModel):
 
 @router.post("/tours/suggest")
 def suggest_tours(q: TourQuery, conn: sqlite3.Connection = Depends(get_db)) -> dict:
-    """A pool of up to tours.POOL_SIZE varied tours, ordered by "best"; the app sorts them otherwise itself."""
-    params = q.model_dump(exclude={"start_stop", "people", "check_availability"})
+    """A pool of up to tours.POOL_SIZE varied tours, ordered by "best"; the app sorts them otherwise itself. With
+    `flex_days`, the best tours over start dates from `start_date` to `flex_days` later, each on its best date."""
+    params = q.model_dump(exclude={"start_stop", "people", "check_availability", "flex_days"})
     # Hours per day are your walking time; the routes are in standard time
     params["min_hours"], params["max_hours"] = round(q.min_hours / q.pace, 2), round(q.max_hours / q.pace, 2)
     if q.start_stop:
@@ -73,7 +80,7 @@ def suggest_tours(q: TourQuery, conn: sqlite3.Connection = Depends(get_db)) -> d
         params["start_near"] = (row["e_lv95"], row["n_lv95"])
     req = TourRequest(**params, weights=config.ranking_weights())
     started = time.monotonic()
-    graph, tours, fetched = planning.search_tours(conn, req, q.people, q.check_availability)
+    graph, tours, fetched = planning.search_tours(conn, req, q.people, q.check_availability, q.flex_days)
     with conn:
         conn.execute("INSERT INTO search_log (created_at, query, results, best_tour, duration_ms) VALUES (?, ?, ?, ?, ?)",
                      (datetime.now(UTC).isoformat(timespec="seconds"), q.model_dump_json(), len(tours),
@@ -166,13 +173,13 @@ def tour_warnings(tour_id: str, conn: sqlite3.Connection = Depends(get_db)) -> d
     """Official trail closures and military danger zones along each day's route, with shooting times on that day
     (clients/geoadmin.py). Separate from the tour, so a slow or failing geoportal never holds the tour up."""
     _, tour = rebuild(conn, tour_id, people=1, check_availability=False)
-    edge_ids = [leg.edge_id for leg in tour.legs]
+    edge_ids = [w.edge_id for leg in tour.legs for w in leg.walks]
     lines = {r["id"]: r["geometry"] for r in conn.execute(
         f"SELECT id, geometry FROM edge WHERE id IN ({','.join('?' * len(edge_ids))})", edge_ids)}
 
     def day(i: int) -> dict:
-        line = lines.get(edge_ids[i])
-        found = geoadmin.identify(polyline.decode(line), line) if line else []
+        found = [f for w in tour.legs[i].walks if (line := lines.get(w.edge_id))
+                 for f in geoadmin.identify(polyline.decode(line), line)]
         return {"day": i + 1, "closures": geoadmin.closures(found),
                 "shooting": geoadmin.shooting(found, tour.start_date + timedelta(days=i))}
 
@@ -181,6 +188,42 @@ def tour_warnings(tour_id: str, conn: sqlite3.Connection = Depends(get_db)) -> d
             return {"days": list(pool.map(day, range(len(tour.legs)))), "error": False}
     except Exception:  # network and HTTP errors, unexpected JSON
         return {"days": [], "error": True}
+
+
+@pages.get("/t/{tour_id}", response_class=HTMLResponse)
+def share_page(tour_id: str, conn: sqlite3.Connection = Depends(get_db)) -> HTMLResponse:
+    """The link the app's Share button shares: Open Graph meta tags for a preview in messengers (the URL hash never
+    reaches the server), then straight on to the tour in the app."""
+    try:
+        graph, tour = planning.rebuild_tour(conn, tour_id, 1, False, config.ranking_weights())
+    except ValueError:  # malformed (parse_tour_id): nothing to put into the page
+        raise HTTPException(400, "malformed tour id") from None
+    except LookupError:  # gone meanwhile: no preview, the app says so
+        title, desc = "HutHop hut tour", "A hut-to-hut tour in the Swiss Alps, planned with HutHop."
+    else:
+        huts = [graph.huts[n.hut].name for n in tour.nights]
+        days, end = len(tour.legs), tour.start_date + timedelta(days=len(tour.legs) - 1)
+        title = f"{days}-day hut tour: {huts[0]}" + (f" → {huts[-1]}" if len(huts) > 1 else "")
+        desc = (f"{tour.start_date.day} {tour.start_date:%b %Y} – {end.day} {end:%b %Y} · "
+                f"{graph.stops[tour.legs[0].frm].name} to {graph.stops[tour.legs[-1].to].name} · "
+                f"{sum(leg.distance_m for leg in tour.legs) / 1000:.1f} km · "
+                f"{sum(leg.ascent_m for leg in tour.legs):,} m ascent · "
+                f"up to {gpx.CATEGORY_NAME[max(leg.max_category for leg in tour.legs)]}")
+    target = "/#" + urlencode({"v": "tours", "tid": tour_id})
+    title, desc, target = html.escape(title), html.escape(desc), html.escape(target)
+    return HTMLResponse(f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>{title}</title>
+<meta name="description" content="{desc}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="HutHop">
+<meta property="og:title" content="{title}">
+<meta property="og:description" content="{desc}">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="{title}">
+<meta name="twitter:description" content="{desc}">
+<meta http-equiv="refresh" content="0; url={target}">
+</head><body><p><a href="{target}">Open the tour in HutHop</a></p></body></html>""")
 
 
 def rebuild(conn: sqlite3.Connection, tour_id: str, people: int, check_availability: bool,
@@ -200,7 +243,7 @@ def tour_json(conn: sqlite3.Connection, graph: Graph, tours: list[Tour],
     """The one serialisation of tours for the frontend (and for GPX export). Walking times are at the settings'
     pace; `outside_settings` lists what of a tour (made earlier, or shared) the settings wouldn't offer."""
     pace = rules.pace
-    edge_ids = sorted({leg.edge_id for t in tours for leg in t.legs})
+    edge_ids = sorted({w.edge_id for t in tours for leg in t.legs for w in leg.walks})
     lines = {r["id"]: r for r in conn.execute(
         f"SELECT id, geometry, elevation FROM edge WHERE id IN ({','.join('?' * len(edge_ids))})", edge_ids)}
     prices = costs.load_prices(conn, {n.hut for t in tours for n in t.nights})
@@ -239,6 +282,7 @@ def tour_json(conn: sqlite3.Connection, graph: Graph, tours: list[Tour],
             "time_min": round(leg.time_min * pace),
             "geometry": lines[leg.edge_id]["geometry"] if leg.edge_id in lines else None,
             "elevation": lines[leg.edge_id]["elevation"] if leg.edge_id in lines else None,  # heights per point
+            **(ride_json(graph, leg, lines, pace) if isinstance(leg, RideLeg) else {}),
             "night": night_json(t.nights[i], graph.huts[leg.to].hrs_id)
             | {"cost": cost["nights"][i], "contact": contacts.get(leg.to)}
             if i < len(t.nights) else None,
@@ -268,9 +312,26 @@ def outside_settings(graph: Graph, t: Tour, rules: editing.Rules) -> list[str]:
         out.append("trail")
     if rules.max_altitude is not None and any((leg.max_altitude_m or 0) > rules.max_altitude for leg in t.legs):
         out.append("altitude")
-    if rules.avoid_lifts and (is_lift(graph.stops[t.legs[0].frm].mode) or is_lift(graph.stops[t.legs[-1].to].mode)):
+    if rules.avoid_lifts and (is_lift(graph.stops[t.legs[0].frm].mode) or is_lift(graph.stops[t.legs[-1].to].mode)
+                              or any(isinstance(leg, RideLeg) and leg.ride.lift for leg in t.legs)):
         out.append("lift")
     return out
+
+
+def ride_json(graph: Graph, leg: RideLeg, lines: dict, pace: float) -> dict:
+    """A day with a ride: the ride (line, stops, times) and its two walks, each with its own route line (the day
+    itself has none)."""
+    r = leg.ride
+
+    def walk(w: Leg) -> dict:
+        line = lines.get(w.edge_id)
+        return {"from": place_json(graph, w.frm), "to": place_json(graph, w.to), "time_min": round(w.time_min * pace),
+                **{k: getattr(w, k) for k in ("distance_m", "ascent_m", "descent_m", "max_category")},
+                "geometry": line["geometry"] if line else None, "elevation": line["elevation"] if line else None}
+    return {"ride": {"from": place_json(graph, r.frm), "to": place_json(graph, r.to), "line": r.label,
+                     "headsign": r.headsign, "departure": transit.hhmm(r.departure),
+                     "arrival": transit.hhmm(r.arrival), "lift": r.lift},
+            "walks": [walk(leg.walk_to), walk(leg.walk_from)], "edge_id": None}
 
 
 def service_json(graph: Graph, stop_id: int, day: date, walk_min: int, role: str) -> dict:
@@ -322,3 +383,21 @@ def search_stops(q: str = Query(..., min_length=2), conn: sqlite3.Connection = D
         {"any": f"%{q}%", "prefix": f"{q}%"},
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+@router.get("/stops/{stop_id}/departures")
+def stop_departures(stop_id: int, day: date = Query(..., alias="date"),
+                    conn: sqlite3.Connection = Depends(get_db)) -> dict:
+    """A stop's timetable on a day: the times per line and direction (headsign). Only stops with walking
+    connections have their trips loaded; `known` is False when no loaded timetable covers the date."""
+    graph = cached_graph(conn, 4)
+    if stop_id not in graph.stops:
+        raise HTTPException(404, "stop not found")
+    lines: dict[tuple[str, str], list[str]] = {}
+    # shortcut: lists every call, also where a trip ends; GTFS pickup types aren't loaded
+    for t, p, _ in graph.timetable.departures(stop_id, day):
+        lines.setdefault((p.label, p.headsign), []).append(transit.hhmm(t))
+    return {"stop": place_json(graph, stop_id), "date": day.isoformat(),
+            "known": graph.timetable.day(stop_id, day).known,
+            "lines": [{"line": label, "headsign": headsign, "times": times}
+                      for (label, headsign), times in sorted(lines.items())]}

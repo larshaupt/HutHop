@@ -5,6 +5,7 @@ import { state } from "./state.js";
 import { LOCALE, t as tr } from "./i18n.js";  // t is a tour here
 import { bookingPanel, isBooked } from "./booking.js";
 import { hutForecast, weatherLine } from "./weather.js";
+import { offlineStatus } from "./offline.js";
 import { distanceUnit, distanceValue, formatDistance, formatHeight, heightUnit, heightValue, settings } from "./settings.js";
 
 const NIGHT_LABEL = { catered: tr("Catered"), self_service: tr("Self-service"), unknown: tr("No opening data"), closed: tr("Closed") };
@@ -25,12 +26,17 @@ function stopLabel(p) {
   return `<span class="mode">${modeLabel(p.mode)}</span> ${esc(p.name)}`;
 }
 
-/** Distance (m) and height (m) of each route point of a day, or null without a height profile. */
+/** Distance (m) and height (m) of each route point of a day, or null without a height profile. A day with a ride
+ * joins its two walks (the ride adds no distance). */
 function dayProfile(d) {
-  const points = decodePolyline(d.geometry || ""), heights = decodeValues(d.elevation || "");
-  if (points.length < 2 || heights.length !== points.length) return null;
+  const out = [];
   let dist = 0;
-  return points.map((p, i) => [(dist += i ? distanceM(points[i - 1], p) : 0), heights[i]]);
+  for (const part of d.walks || [d]) {
+    const points = decodePolyline(part.geometry || ""), heights = decodeValues(part.elevation || "");
+    if (points.length < 2 || heights.length !== points.length) return null;
+    points.forEach((p, i) => out.push([(dist += i ? distanceM(points[i - 1], p) : 0), heights[i]]));
+  }
+  return out;
 }
 
 /** Small height profile of one day. All days share the height scale, and widths follow the day's distance. */
@@ -51,17 +57,68 @@ function profileChart(profile, scale, color) {
     </div>`;
 }
 
+/** Height profile of the whole tour, its days end to end, without axis (tour cards and the tour's header);
+ * none if a day has no heights. */
+export function tourSparkline(t) {
+  const points = [];
+  let length = 0;
+  for (const d of t.days) {
+    const p = dayProfile(d);
+    if (!p) return "";
+    points.push(...p.map(([m, z]) => [m + length, z]));
+    length += p[p.length - 1][0];
+  }
+  const zs = points.map(([, z]) => z), lo = Math.min(...zs), hi = Math.max(...zs);
+  const W = 300, H = 40;
+  const x = (m) => ((m / length) * W).toFixed(1), y = (z) => (H - 1 - ((z - lo) / (hi - lo || 1)) * (H - 4)).toFixed(1);
+  const line = points.map(([m, z], i) => `${i ? "L" : "M"}${x(m)},${y(z)}`).join("");
+  const label = tr("Height profile: {from}–{to}", { from: heightValue(lo), to: formatHeight(hi) });
+  return `<svg class="sparkline" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${label}">
+      <title>${label}</title><path class="area" d="${line}L${W},${H}L0,${H}Z"/>
+      <path class="line" d="${line}" vector-effect="non-scaling-stroke"/></svg>`;
+}
+
 /** First or last connection of the day at the tour's start or end stop, with a warning when it is tight. */
-function connectionLine(s, role) {
+function connectionLine(s, role, extra = "") {
   if (!s) return "";
   if (!s.known) return `<div class="tl-meta transit warn-text">${tr("No timetable for this date yet – check connections")}</div>`;
   if (!s.calls) return `<div class="tl-meta transit warn-text">${tr("No public transport on this day")}</div>`;
   if (role === "access") {
     return `<div class="tl-meta transit${s.late ? " warn-text" : ""}">${tr("First connection {first} · at the hut from about {time}", { first: s.first, time: s.hut_from })}${
-      s.late ? ` – ${tr("late for dinner, plan an earlier arrival")}` : ""}</div>`;
+      s.late ? ` – ${tr("late for dinner, plan an earlier arrival")}` : ""}${extra}</div>`;
   }
   return `<div class="tl-meta transit${s.early ? " warn-text" : ""}">${tr("Last connection {last} · leave the hut by {time}", { last: s.last, time: s.leave_by })}${
-    s.early ? ` – ${tr("a very early start")}` : ""}</div>`;
+    s.early ? ` – ${tr("a very early start")}` : ""}${extra}</div>`;
+}
+
+/** A day with a ride: the walk to the stop, the ride (line, direction, times, stops) and the walk on to the hut. */
+function rideLine(d) {
+  const r = d.ride, [a, b] = d.walks;
+  const ride = r.headsign
+    ? tr("Walk {walk} to {stop} · {line} towards {headsign} at {departure}, arrives {arrival} at {to} · walk {walkOn} to the hut",
+      { walk: formatMinutes(a.time_min), stop: stopLabel(r.from), line: `<b>${esc(r.line)}</b>`, headsign: esc(r.headsign),
+        departure: `<b>${r.departure}</b>`, arrival: r.arrival, to: stopLabel(r.to), walkOn: formatMinutes(b.time_min) })
+    : tr("Walk {walk} to {stop} · {line} at {departure}, arrives {arrival} at {to} · walk {walkOn} to the hut",
+      { walk: formatMinutes(a.time_min), stop: stopLabel(r.from), line: `<b>${esc(r.line)}</b>`,
+        departure: `<b>${r.departure}</b>`, arrival: r.arrival, to: stopLabel(r.to), walkOn: formatMinutes(b.time_min) });
+  return `<div class="tl-meta transit ride">${ride}${timetableLink(r.from, d.date)}</div>`;
+}
+
+const timetableLink = (stop, date) =>
+  ` <button class="link inline" data-timetable="${stop.id}" data-date="${date}">${tr("Timetable")}</button>`;
+
+/** Show or hide a stop's departures on the day, below the line with its "Timetable" button. */
+export async function toggleTimetable(button) {
+  const line = button.parentElement, shown = line.nextElementSibling;
+  if (shown?.classList.contains("timetable")) { shown.remove(); return; }
+  const res = await fetch(`/api/stops/${button.dataset.timetable}/departures?date=${button.dataset.date}`).catch(() => null);
+  const t = res?.ok ? await res.json() : null;
+  if (line.nextElementSibling?.classList.contains("timetable")) return;  // clicked twice meanwhile
+  const body = !t ? tr("Could not load the timetable.")
+    : !t.known ? tr("No timetable for this date yet.")
+      : !t.lines.length ? tr("No departures on this day.")
+        : t.lines.map((l) => `<div><b>${esc(l.line)}</b>${l.headsign ? ` → ${esc(l.headsign)}` : ""}: ${l.times.join(" ")}</div>`).join("");
+  line.insertAdjacentHTML("afterend", `<div class="tl-meta timetable">${t ? `<b>${esc(t.stop.name)}, ${formatDay(t.date)}</b>` : ""}${body}</div>`);
 }
 
 export { AVAIL_LABEL, connectionLine, formatDay, stopLabel, NIGHT_LABEL };
@@ -91,22 +148,23 @@ export function renderTourDetail(t, { kept = false, booking = false, people = 2,
           <div>${from} → ${to}</div>
           <div class="tl-meta"><b>${formatMinutes(d.time_min)}</b> · ${formatDistance(d.distance_m)} ·
             ↑ ${formatHeight(d.ascent_m)} · ↓ ${formatHeight(d.descent_m)} · <span style="color:${cat.color}">${categoryName(d.max_category, d.osm_grade)}</span>${sac}</div>
-          ${i === 0 ? connectionLine(t.access, "access") : ""}
-          ${i === t.days.length - 1 ? connectionLine(t.exit, "exit") : ""}
+          ${i === 0 ? connectionLine(t.access, "access", timetableLink(d.from, d.date)) : ""}
+          ${d.ride ? rideLine(d) : ""}
+          ${i === t.days.length - 1 ? connectionLine(t.exit, "exit", timetableLink(d.to, d.date)) : ""}
           <div data-day-notes="${d.day}"></div>
           ${profileChart(profiles[i], scale, cat.color)}
         </div></li>${night}`;
   }).join("");
   $("#tourDetail").innerHTML = `
-    <div class="tour-top">
-      <div class="tour-nav">
+    <div class="tour-nav">
         <button class="back flat" id="tourBack"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>${state.view === "mine" ? tr("My tours") : tr("Tours")}</button>
         ${nav ? `<div class="tour-step">
           <button class="btn" data-step-tour="-1" aria-label="${tr("Previous tour")}"${nav.n > 1 ? "" : " disabled"}>‹</button>
           <span>${nav.n} / ${nav.total}</span>
           <button class="btn" data-step-tour="1" aria-label="${tr("Next tour")}"${nav.n < nav.total ? "" : " disabled"}>›</button>
         </div>` : ""}
-      </div>
+    </div>
+    <div class="tour-top">
       <h2>${esc(start.name)} → ${esc(end.name)}</h2>
       <div class="subtitle">${tr("{n} nights", { n: t.nights })}, ${tr("{n} days", { n: t.days.length })} ·
         ${formatDay(t.days[0].date)} – ${formatDay(t.days[t.days.length - 1].date)}</div>
@@ -115,15 +173,20 @@ export function renderTourDetail(t, { kept = false, booking = false, people = 2,
         <div class="fact"><b>${distanceValue(t.distance_m)}</b><span>${distanceUnit()}</span></div>
         <div class="fact"><b>${heightValue(t.ascent_m)}</b><span>${heightUnit()} ${tr("ascent")}</span></div>
       </div>
+      ${tourSparkline(t)}
       ${outsideSettings(t)}
       ${unofficialWarning(t)}
       ${tourCost(t)}
       <div class="actions">
-        <button class="btn primary" id="tourEdit">${tr("Edit tour")}</button>
-        <button class="btn" id="tourBook" aria-pressed="${booking}">${tr("Book this tour")}</button>
-        <button class="btn" id="tourKeep" aria-pressed="${kept}">${kept ? `★ ${tr("In my tours")}` : `☆ ${tr("Add to my tours")}`}</button>
-        <a class="btn" href="/api/tours/${encodeURIComponent(t.id)}/gpx" download>${tr("Download GPX")}</a>
+        <button class="btn${booking ? "" : " primary"}" id="tourBook" aria-pressed="${booking}">${booking ? tr("Hide booking") : tr("Book this tour")}</button>
+        <button class="btn" id="tourEdit">${tr("Edit tour")}</button>
       </div>
+      <div class="actions quiet">
+        <button class="btn" id="tourKeep" aria-pressed="${kept}">${kept ? `★ ${tr("In my tours")}` : `☆ ${tr("Add to my tours")}`}</button>
+        <a class="btn" href="/api/tours/${encodeURIComponent(t.id)}/gpx" download>↓ GPX</a>
+        <button class="btn" id="tourShare">${tr("Share")}</button>
+      </div>
+      ${kept ? `<p class="hint" id="offlineStatus" data-tour="${esc(t.id)}">${esc(offlineStatus(t.id))}</p>` : ""}
     </div>
     <div class="detail-body">
       ${booking ? bookingPanel(t, people) : ""}

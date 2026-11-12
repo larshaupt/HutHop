@@ -152,6 +152,25 @@ CREATE TABLE IF NOT EXISTS stop_service (
   calls      INTEGER NOT NULL,
   PRIMARY KEY (feed, stop_place, service)
 ) WITHOUT ROWID;
+-- Trips through the stops with walking connections (load_timetable.py), for stop timetables and rides within a
+-- tour: a pattern is one run of a line (its calls at those stops and times), shared by all services it runs on.
+CREATE TABLE IF NOT EXISTS trip_pattern (
+  feed     INTEGER NOT NULL,
+  pattern  INTEGER NOT NULL,          -- numbered per feed
+  label    TEXT NOT NULL,             -- e.g. "B 121"
+  headsign TEXT,
+  lift     INTEGER NOT NULL,          -- 1: cable car, chairlift, gondola or funicular
+  services TEXT NOT NULL,             -- the timetable_service numbers it runs on, comma-separated
+  PRIMARY KEY (feed, pattern)
+) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS trip_call (
+  feed       INTEGER NOT NULL,
+  pattern    INTEGER NOT NULL,
+  seq        INTEGER NOT NULL,        -- order within the pattern
+  stop_place INTEGER NOT NULL,
+  time_min   INTEGER NOT NULL,        -- departure, minutes after midnight (can exceed 1440)
+  PRIMARY KEY (feed, pattern, seq)
+) WITHOUT ROWID;
 
 CREATE TABLE IF NOT EXISTS edge (
   id             INTEGER PRIMARY KEY,

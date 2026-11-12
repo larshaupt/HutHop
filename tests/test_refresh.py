@@ -28,7 +28,7 @@ def fake(tmp_path, monkeypatch, lines):
     monkeypatch.setattr(refresh.load_stops, "read_stops", lambda: [
         {"uic": 1, "name": "Valley", "mode": "bus", "e_lv95": 2620000.0, "n_lv95": 1150000.0, "lat": 46.5, "lon": 7.9}])
     monkeypatch.setattr(refresh.load_timetable, "download", lambda: False)
-    monkeypatch.setattr(refresh.load_timetable, "read_all", lambda: [
+    monkeypatch.setattr(refresh.load_timetable, "read_all", lambda keep=None: [
         Feed(2027, "v1", date(2026, 12, 13), date(2027, 12, 11), lines=list(lines))])
     monkeypatch.setattr(refresh, "refresh_trails", lambda: False)
     monkeypatch.setattr(refresh.osm_access, "FILE", tmp_path / "access.json")

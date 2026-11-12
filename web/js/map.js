@@ -8,6 +8,8 @@ const CH_BOUNDS = [[5.9, 45.8], [10.5, 47.85]];
 const ATTRIBUTION = '<a href="https://www.swisstopo.admin.ch" target="_blank" rel="noopener">© swisstopo</a> · ' +
   `${t("Hut data")} <a href="https://www.sac-cas.ch" target="_blank" rel="noopener">© SAC-CAS</a> · ` +
   `${t("Unofficial paths")} <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a>`;
+/** The topographic map's tiles (also saved with tours for offline use, js/offline.js). */
+export const TOPO_TILES = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-farbe/default/current/3857/{z}/{x}/{y}.jpeg";
 const TRAILS_TILES = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swisstlm3d-wanderwege/default/current/3857/{z}/{x}/{y}.png";
 const STYLES = {
   light: "https://vectortiles.geo.admin.ch/styles/ch.swisstopo.lightbasemap.vt/style.json",
@@ -17,7 +19,7 @@ const STYLES = {
     sources: {
       topo: {
         type: "raster", tileSize: 256, maxzoom: 18,
-        tiles: ["https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-farbe/default/current/3857/{z}/{x}/{y}.jpeg"],
+        tiles: [TOPO_TILES],
       },
     },
     layers: [{ id: "topo", type: "raster", source: "topo" }],
@@ -63,6 +65,11 @@ function bindOsmPaths() {
   });
 }
 
+/** All of Switzerland, as at the start. */
+export function showAll() {
+  map.fitBounds(CH_BOUNDS, { padding: mapPadding(), duration: 700 });
+}
+
 export function setBaseStyle(name) {
   map.setStyle(STYLES[name], { diff: false });  // a full reload re-runs onStyleLoad, so our layers come back
 }
@@ -94,8 +101,9 @@ export function setTrailsVisible(visible) {
 
 /** Space the panel covers, so fitted content stays visible. */
 export function mapPadding() {
-  if (isMobile()) return { top: 60, bottom: window.innerHeight * 0.55, left: 20, right: 20 };
-  return { top: 60, bottom: 40, left: $("#panel").offsetWidth + 40, right: 40 };
+  const top = $("#topbar").offsetHeight + 24;  // the search and filter bar over the map
+  if (isMobile()) return { top, bottom: window.innerHeight * 0.55, left: 20, right: 20 };
+  return { top, bottom: 40, left: $("#panel").offsetWidth + 40, right: 40 };
 }
 
 export function fitCoords(coords, maxZoom = 13) {

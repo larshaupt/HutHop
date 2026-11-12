@@ -1,7 +1,7 @@
 // Tour planner: form, search, result cards (sorted here, without a new search), "My tours", opening a tour (a
 // search result, or by id: my tours, shared links, the editor), map drawing.
 import { $, CATEGORY, EMPTY, categoryColor, categoryName, costTitle, decodePolyline, esc, formatCost, formatMinutes, localIso,
-  modeLabel, revealPanel } from "./util.js";
+  modeLabel, revealPanel, shareLink } from "./util.js";
 import { setState, state } from "./state.js";
 import { t as tr } from "./i18n.js";  // t is a tour here
 import { distanceValue, distanceUnit, formatHeight, settings, settingsParams, settingsQuery } from "./settings.js";
@@ -9,10 +9,11 @@ import { fitCoords, map, visibleBox } from "./map.js";
 import { selectHut } from "./huts.js";
 import { clearConnections } from "./connections.js";
 import { loadInfo } from "./info.js";
-import { renderTourDetail } from "./tour-detail.js";
+import { formatDay, renderTourDetail, toggleTimetable, tourSparkline } from "./tour-detail.js";
 import { setBooked } from "./booking.js";
 import { findEntry, keepTour, onYourToursChange, removeEntry, yourTours } from "./your-tours.js";
 import { closeEditor, isEditing, openEditor, refreshEditor } from "./tour-editor.js";
+import { noteSaved, saveTourOffline } from "./offline.js";
 
 const SORTS = { best: tr("Best"), time: tr("Shortest"), ascent: tr("Least ascent"), altitude: tr("Highest huts"),
   beds: tr("Most free beds"), cost: tr("Cheapest") };
@@ -26,11 +27,13 @@ const SORT_KEYS = {
     Object.values(t.cost.totals).reduce((sum, c) => sum + (settings().member ? c.member : c.non_member), 0), -t.score],
 };
 const PAGE = 10;
+const MAX_FLEX = 14; // the API's limit: a search runs once per start date
 let results = null;
 let order = []; // results.tours in the chosen sort order; state.tour is a 1-based index into it
 let current = null; // the open tour: a search result (state.tour) or one opened by id (state.tid)
 let booking = false; // the booking checklist is open
 let shown = PAGE;
+let listed = []; // map lines of the found tours, filtered (renderResults)
 let metricLabels = {};
 const stopSearch = { timer: null, seq: 0 };
 let searchSeq = 0;
@@ -41,6 +44,14 @@ export function setCurrent(t) {
   setState({ tour: 0, tid: t.id });
 }
 
+/** Filters on the found tours (chips in the top bar): they narrow the list without a new search. */
+const RESULT_FILTERS = {
+  beds: (t) => results?.query?.check_availability && t.availability?.available === t.nights,
+  catered: (t) => t.days.every((d) => !d.night || d.night.status === "catered"),
+  self: (t) => t.days.every((d) => !d.night || d.night.status === "self_service"),
+};
+const resultFilters = () => state.rFilter.split(",").filter((f) => RESULT_FILTERS[f]);
+
 function sortResults() {
   const key = SORT_KEYS[state.tSort] || SORT_KEYS.best;
   const cmp = (a, b) => {
@@ -48,7 +59,33 @@ function sortResults() {
     for (let i = 0; i < ka.length; i++) if (ka[i] !== kb[i]) return ka[i] - kb[i];
     return 0;
   };
-  order = results ? results.tours.slice().sort(cmp) : [];
+  const filters = resultFilters().map((f) => RESULT_FILTERS[f]);
+  order = results ? results.tours.filter((t) => filters.every((f) => f(t))).sort(cmp) : [];
+}
+
+function syncResultFilters() {
+  const on = resultFilters();
+  $("#tourQuick").hidden = !results;
+  document.querySelectorAll("[data-rfilter]").forEach((b) => b.setAttribute("aria-pressed", on.includes(b.dataset.rfilter)));
+}
+
+function toggleResultFilter(name) {
+  let on = resultFilters();
+  on = on.includes(name) ? on.filter((f) => f !== name) : [...on.filter((f) => !(EXCLUSIVE[name] === f)), name];
+  setResultFilters(on);
+}
+const EXCLUSIVE = { catered: "self", self: "catered" };  // a tour can't be both
+
+function setResultFilters(on) {
+  setState({ rFilter: on.join(",") });
+  sortResults();
+  shown = PAGE;
+  // The open tour keeps its place if it still matches, else back to the list
+  if (state.tour) {
+    const n = order.indexOf(current) + 1;
+    if (n) { setState({ tour: n }); renderTourDetail(current, detailOptions()); } else closeTour();
+  }
+  renderResults();
 }
 
 /** The coming Saturday (today if it is a Saturday), as a local date. */
@@ -63,14 +100,16 @@ export function syncTourForm() {
   if (!state.tDate || state.tDate < localIso()) state.tDate = defaultTourDate();
   $("#tDate").min = localIso();
   $("#tDate").value = state.tDate;
+  $("#tFlex").value = state.tFlex;
   $("#tNightsLabel").textContent = state.tNights;
   $("#tPeopleLabel").textContent = state.tPeople;
+  $("#tNightsWord").textContent = tr("nights", { n: state.tNights });
+  $("#tPeopleWord").textContent = tr("people", { n: state.tPeople });
   $("#tMin").value = state.tMin;
   $("#tMax").value = state.tMax;
   $("#tHoursLabel").textContent = `${state.tMin}–${state.tMax} h`;
   $("#tHoursFill").style.left = `${((state.tMin - 1) / 9) * 100}%`;
   $("#tHoursFill").style.right = `${100 - ((state.tMax - 1) / 9) * 100}%`;
-  document.querySelectorAll("#tCat button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.v === state.tCat));
   document.querySelectorAll("#tLoop button").forEach((b) => b.setAttribute("aria-pressed", (b.dataset.v === "1") === state.tLoop));
   $("#tLoopField").hidden = !state.tStart;
   $("#tUnknown").checked = state.tUnknown;
@@ -86,6 +125,9 @@ export function bindTourForm() {
     setState({ tDate: e.target.value && e.target.value >= localIso() ? e.target.value : defaultTourDate() });
     syncTourForm();
   });
+  $("#tFlex").innerHTML = Array.from({ length: MAX_FLEX + 1 }, (_, n) =>
+    `<option value="${n}">${n ? tr("up to {n} days later", { n }) : tr("Exact date")}</option>`).join("");
+  $("#tFlex").addEventListener("change", (e) => setState({ tFlex: Number(e.target.value) }));
   const stepper = (attr, key, max) => document.querySelectorAll(`[${attr}]`).forEach((b) => b.addEventListener("click", () => {
     setState({ [key]: Math.min(max, Math.max(1, state[key] + Number(b.getAttribute(attr)))) });
     syncTourForm();
@@ -94,7 +136,7 @@ export function bindTourForm() {
   stepper("data-people", "tPeople", 30);
   $("#tMin").addEventListener("input", (e) => { setState({ tMin: Math.min(Number(e.target.value), state.tMax - 0.5) }); syncTourForm(); });
   $("#tMax").addEventListener("input", (e) => { setState({ tMax: Math.max(Number(e.target.value), state.tMin + 0.5) }); syncTourForm(); });
-  for (const [id, key, parse] of [["#tCat", "tCat", String], ["#tLoop", "tLoop", (v) => v === "1"]]) {
+  for (const [id, key, parse] of [["#tLoop", "tLoop", (v) => v === "1"]]) {
     $(id).addEventListener("click", (e) => {
       const b = e.target.closest("button");
       if (b) { setState({ [key]: parse(b.dataset.v) }); syncTourForm(); }
@@ -104,6 +146,10 @@ export function bindTourForm() {
   $("#tArea").addEventListener("change", (e) => setState({ tArea: e.target.checked }));
   bindStopPicker();
   bindYourTours();
+  $("#tourQuick").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-rfilter]");
+    if (b) toggleResultFilter(b.dataset.rfilter);
+  });
 
   $("#tourForm").addEventListener("submit", (e) => {
     e.preventDefault();
@@ -135,12 +181,16 @@ export function bindTourForm() {
       return;
     }
     if (e.target.closest("#bookRecheck")) { recheckBeds(); return; }
+    if (e.target.closest("#tourShare")) { shareTour(current, e.target.closest("#tourShare")); return; }
     if (e.target.closest("#tourKeep")) {
       const entry = findEntry(current.id);
       entry ? removeEntry(entry.key) : keepTour(current);
       renderTourDetail(current, detailOptions());
+      if (!entry) saveTourOffline(current);
       return;
     }
+    const timetable = e.target.closest("[data-timetable]");
+    if (timetable) { toggleTimetable(timetable); return; }
     const hut = e.target.closest("[data-hut]");
     if (hut) { e.preventDefault(); selectHut(Number(hut.dataset.hut)); return; }
     const day = e.target.closest("[data-day]");
@@ -192,8 +242,8 @@ function bindStopPicker() {
 // ---------- Search ----------
 export async function runTourSearch() {
   const body = {
-    start_date: state.tDate, nights: state.tNights, min_hours: state.tMin, max_hours: state.tMax,
-    ...settingsParams(), catering: state.tCat, loop: state.tLoop && !!state.tStart,
+    start_date: state.tDate, flex_days: Math.min(MAX_FLEX, Math.max(0, state.tFlex)), nights: state.tNights, min_hours: state.tMin, max_hours: state.tMax,
+    ...settingsParams(), transit: settings().transit, loop: state.tLoop && !!state.tStart,
     include_unknown: state.tUnknown, start_stop: state.tStart || null,
     people: state.tPeople, check_availability: settings().checkBeds,
     bbox: state.tBox ? state.tBox.split(",").map(Number) : null,
@@ -237,7 +287,10 @@ export async function runTourSearch() {
   shown = Math.max(PAGE, Math.ceil(n / PAGE) * PAGE);
   renderResults();
   if (n && order[n - 1]) selectTour(n);
-  else if (state.tour) closeTour();
+  else {
+    if (state.tour) closeTour();
+    fitCoords(listed.flatMap((f) => f.geometry.coordinates.flat()));  // the found tours, on the map
+  }
 }
 
 /** After a display-only settings change (units, member prices): show the loaded results and tour again. */
@@ -250,13 +303,29 @@ export function rerenderTours() {
 
 function renderResults() {
   const tours = order;
+  syncResultFilters();
+  listed = tours.map((t, i) => ({
+    type: "Feature", properties: { n: i + 1 },
+    geometry: { type: "MultiLineString", coordinates: t.days.map((d) => decodePolyline(d.geometry || "")) },
+  }));
+  drawListed();
+  if (!tours.length && results?.tours.length) {
+    $("#tourResults").innerHTML = `<div class="empty"><b>${tr("No tour matches these filters.")}</b><br>
+      ${tr("{n} tours were found.", { n: results.tours.length })}<br><button class="link" id="rReset">${tr("Clear the filters")}</button></div>`;
+    $("#rReset").addEventListener("click", () => setResultFilters([]));
+    return;
+  }
   if (!tours.length) {
     $("#tourResults").innerHTML = `<div class="empty"><b>${tr("No tours found.")}</b><br>${state.tStart
       ? tr("Try a wider range of hours, a harder trail, fewer nights, another start, or including huts without opening data.")
       : tr("Try a wider range of hours, a harder trail, fewer nights, a larger map area, or including huts without opening data.")}</div>`;
     return;
   }
-  $("#tourResults").innerHTML = `<div class="results-head"><span>${tr("{count} tours", { n: tours.length, count: `<strong>${tours.length}</strong>` })}</span>
+  const count = `<strong>${tours.length}</strong>`;
+  const heading = tours.length < results.tours.length
+    ? tr("{count} of {total} tours", { n: results.tours.length, count, total: results.tours.length })
+    : tr("{count} tours", { n: tours.length, count });
+  $("#tourResults").innerHTML = `<div class="results-head"><span>${heading}</span>
     <label class="sort">${tr("Sort")} <select id="tSort">${Object.entries(SORTS).map(([v, label]) =>
       `<option value="${v}"${v === state.tSort ? " selected" : ""}>${label}</option>`).join("")}</select></label></div>` +
     tours.slice(0, shown).map(tourCard).join("") +
@@ -281,15 +350,17 @@ function tourCard(t, i) {
       <span>${(d.time_min / 60).toFixed(1).replace(".0", "")}h</span></div>`).join("");
   return `<article class="tour-card" data-n="${i + 1}" tabindex="0">
     <div class="tour-head">
-      <div><b>${tr("{n} nights", { n: t.nights })}</b> · ${distanceValue(t.distance_m, 0)} ${distanceUnit()} · ↑ ${formatHeight(t.ascent_m)}</div>
-      <div class="tour-flags">${unofficialBadge(t)}${transitBadge(t)}${availBadge(t)}${costBadge(t)}${scoreBadge(t)}</div>
+      <div>${results?.query?.flex_days ? `<b>${formatDay(t.days[0].date)}</b> · ` : ""}<b>${tr("{n} nights", { n: t.nights })}</b> · ${distanceValue(t.distance_m, 0)} ${distanceUnit()} · ↑ ${formatHeight(t.ascent_m)}</div>
+      <div class="tour-flags">${unofficialBadge(t)}${rideBadge(t)}${transitBadge(t)}${availBadge(t)}${costBadge(t)}${scoreBadge(t)}</div>
     </div>
     <div class="tour-body">
       <ol class="chain">${chainItems(chain)}</ol>
       <div class="daybars${t.days.length > 6 ? " dense" : ""}" style="--days:${t.days.length}">${bars}</div>
     </div>
+    ${tourSparkline(t)}
   </article>`;
 }
+
 
 /** "Best" score as a percentage; the tooltip lists the sub-scores (weights come from huthop.toml). */
 function scoreBadge(t) {
@@ -305,6 +376,14 @@ function unofficialBadge(t) {
   const grade = days.map((d) => d.osm_grade).filter(Boolean).sort().pop();
   return `<span class="flag" title="${tr("Not signposted: a path from OpenStreetMap, often glacier or alpine terrain")}">` +
     `${tr("Unofficial path")}${grade ? ` ${grade}` : ""}</span>`;
+}
+
+/** Card badge: days with a bus, train or cable car ride between huts. */
+function rideBadge(t) {
+  const rides = t.days.filter((d) => d.ride);
+  if (!rides.length) return "";
+  return `<span class="flag" title="${esc(rides.map((d) => `${tr("Day {day}", { day: d.day })}: ${d.ride.line} ${d.ride.from.name} → ${d.ride.to.name}`).join("; "))}">` +
+    `${tr("{n} rides between huts", { n: rides.length })}</span>`;
 }
 
 /** Card badge when the first connection reaches the first hut late, or the last one leaves early. */
@@ -409,6 +488,13 @@ function bindTourSwipe() {
   });
 }
 
+/** Share a tour's preview link (/t/{id}, see app/api/tours.py): the phone's share sheet, else copy it. */
+async function shareTour(t, button) {
+  if (!await shareLink(`${location.origin}/t/${encodeURIComponent(t.id)}`, tr("HutHop tour"))) return;
+  button.textContent = `✓ ${tr("Link copied")}`;
+  setTimeout(() => { button.textContent = tr("Share"); }, 2000);
+}
+
 /** A tour by id (my tours, a shared link, the editor's result), or null if it no longer exists. */
 export async function openTourById(id, { edit = false } = {}) {
   const res = await fetch(`/api/tours/${encodeURIComponent(id)}?people=${state.tPeople}&${settingsQuery()}`);
@@ -419,6 +505,7 @@ export async function openTourById(id, { edit = false } = {}) {
       ${tr("This tour is no longer available (a connection was removed or excluded).")}</p>`);
     return null;
   }
+  noteSaved(res);
   current = await res.json();
   setState({ tour: 0, tid: id, tEdit: edit });
   if (edit) openEditor(current);
@@ -437,8 +524,10 @@ export function showTour(t) {
   $("#tourDetail").scrollTop = 0;
   clearConnections();
   drawTour(t);
+  drawListed();
   revealPanel();
   checkTourBeds(t);
+  if (findEntry(t.id)) saveTourOffline(t);
 }
 
 /** Free beds of a tour's nights not checked yet (beyond a search's first candidates, or edited / opened by id):
@@ -477,6 +566,7 @@ export function closeTour() {
   clearTour();
   $("#tourDetail").hidden = true;
   $("#browse").hidden = false;
+  drawListed();
 }
 
 /** Back from a hut opened inside a tour: return to that tour. */
@@ -492,7 +582,7 @@ export function drawTour(t, { fit = true } = {}) {
   if (!map.getSource("tour") || !t) return;
   const lines = t.days.map((d) => ({
     type: "Feature", id: d.day,
-    geometry: { type: "LineString", coordinates: decodePolyline(d.geometry || "") },
+    geometry: { type: "MultiLineString", coordinates: (d.walks || [d]).map((w) => decodePolyline(w.geometry || "")) },
     properties: { day: d.day, category: d.max_category },
   }));
   const points = [
@@ -503,23 +593,65 @@ export function drawTour(t, { fit = true } = {}) {
     properties: { label: p.label, role: p.role, name: p.name } }));
   map.getSource("tour").setData({ type: "FeatureCollection", features: lines });
   map.getSource("tour-points").setData({ type: "FeatureCollection", features: points });
-  if (fit) fitCoords(lines.flatMap((l) => l.geometry.coordinates));
+  if (fit) fitCoords(t.days.flatMap(dayCoords));
 }
 
 function focusDay(day) {
   const t = current;
-  if (t) fitCoords(decodePolyline(t.days[day - 1].geometry || ""), 14);
+  if (t) fitCoords(dayCoords(t.days[day - 1]), 14);
 }
+
+/** A day's route points; a day with a ride has two walks. */
+const dayCoords = (d) => (d.walks || [d]).flatMap((w) => decodePolyline(w.geometry || ""));
 
 /** Remove a hovered preview; keeps the selected tour drawn while its detail is open. */
 export function clearTour() {
   map?.getSource("tour")?.setData(EMPTY);
   map?.getSource("tour-points")?.setData(EMPTY);
   if (!$("#tourDetail").hidden) drawTour(current, { fit: false });
+  drawListed();
 }
 
 export function redrawTour() {
   if (current && !$("#tourDetail").hidden) drawTour(current, { fit: false });
+  drawListed();
+}
+
+/** The found tours as thin lines, only while the list itself is shown (not over an open tour). */
+function drawListed() {
+  const show = state.view === "tours" && $("#tourDetail").hidden && $("#detail").hidden && !$("#browse").hidden;
+  map?.getSource("tours-listed")?.setData(show ? { type: "FeatureCollection", features: listed } : EMPTY);
+}
+
+/** A found tour's line on the map: hover shows the tour and marks its card, a click opens it (a hut under the
+ * pointer wins). Events go to a wide invisible line, so the thin one is easy to hit. */
+export function bindTourMap() {
+  let hovered = 0;
+  const mark = (n) => {
+    document.querySelectorAll(".tour-card.hover").forEach((el) => el.classList.remove("hover"));
+    document.querySelector(`.tour-card[data-n="${n}"]`)?.classList.add("hover");
+  };
+  map.on("mousemove", "tours-hit", (e) => {
+    const n = e.features[0].properties.n;
+    map.getCanvas().style.cursor = "pointer";
+    if (n === hovered || !$("#tourDetail").hidden) return;
+    hovered = n;
+    drawTour(order[n - 1], { fit: false });
+    mark(n);
+  });
+  map.on("mouseleave", "tours-hit", () => {
+    map.getCanvas().style.cursor = "";
+    hovered = 0;
+    mark(0);
+    clearTour();
+  });
+  map.on("click", "tours-hit", (e) => {
+    if (map.queryRenderedFeatures(e.point, { layers: ["huts"] }).length) return;
+    const n = e.features[0].properties.n;
+    if (n > shown) { shown = Math.ceil(n / PAGE) * PAGE; renderResults(); }  // its card is there when you go back
+    hovered = 0;
+    selectTour(n);
+  });
 }
 
 export function hasResults() {
@@ -527,6 +659,13 @@ export function hasResults() {
 }
 
 export function addTourLayers() {
+  map.addSource("tours-listed", { type: "geojson", data: EMPTY });
+  map.addLayer({  // under the hut dots, so huts stay clickable
+    id: "tours-listed", type: "line", source: "tours-listed", layout: { "line-cap": "round", "line-join": "round" },
+    paint: { "line-color": "#1d2521", "line-opacity": 0.6, "line-width": ["interpolate", ["linear"], ["zoom"], 8, 2.5, 13, 4] },
+  }, map.getLayer("huts-selected") ? "huts-selected" : undefined);
+  map.addLayer({ id: "tours-hit", type: "line", source: "tours-listed", paint: { "line-width": 16, "line-opacity": 0 } },
+    map.getLayer("huts-selected") ? "huts-selected" : undefined);
   map.addSource("tour", { type: "geojson", data: EMPTY });
   map.addSource("tour-points", { type: "geojson", data: EMPTY });
   map.addLayer({

@@ -16,5 +16,11 @@ export default {
 "+ {n} more huts": {"one": "+ {n} more hut", "other": "+ {n} more huts"},
 "Free beds not checked yet for {n} nights. Open the tour to check them.": {"one": "Free beds not checked yet for {n} night. Open the tour to check them.", "other": "Free beds not checked yet for {n} nights. Open the tour to check them."},
 "Full ({n} beds free)": {"one": "Full ({n} bed free)", "other": "Full ({n} beds free)"},
-"HutHop doesn't book for you. Open each hut's booking page, choose the night shown here for {n} people, then tick it off. Ticks stay in this browser.": {"one": "HutHop doesn't book for you. Open each hut's booking page, choose the night shown here for {n} person, then tick it off. Ticks stay in this browser.", "other": "HutHop doesn't book for you. Open each hut's booking page, choose the night shown here for {n} people, then tick it off. Ticks stay in this browser."}
+"HutHop doesn't book for you. Open each hut's booking page, choose the night shown here for {n} people, then tick it off. Ticks stay in this browser.": {"one": "HutHop doesn't book for you. Open each hut's booking page, choose the night shown here for {n} person, then tick it off. Ticks stay in this browser.", "other": "HutHop doesn't book for you. Open each hut's booking page, choose the night shown here for {n} people, then tick it off. Ticks stay in this browser."},
+"nights": {"one": "night", "other": "nights"},
+"up to {n} days later": {"one": "up to {n} day later", "other": "up to {n} days later"},
+"{count} of {total} tours": {"one": "{count} of {total} tour", "other": "{count} of {total} tours"},
+"{n} rides between huts": {"one": "Ride between huts", "other": "{n} rides between huts"},
+"{n} tiles could not be loaded.": {"one": "{n} tile could not be loaded.", "other": "{n} tiles could not be loaded."},
+"{n} tours were found.": {"one": "{n} tour was found.", "other": "{n} tours were found."}
 }

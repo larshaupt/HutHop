@@ -139,6 +139,35 @@ def test_search_open_and_swipe_between_tours(phone: Page, server):
     no_sideways_scroll(phone)
 
 
+def test_logo_goes_back_to_the_start(phone: Page, server):
+    phone.goto(server + SEARCH + "&tour=1")
+    expect(phone.locator("#tourDetail")).to_be_visible()
+    phone.locator("#homeBtn").click()
+    expect(phone.locator("#tourDetail")).to_be_hidden()
+    expect(phone.locator("#hutsTab")).to_be_visible()
+    assert not re.search(r"[#&](v|tour)=", phone.url)
+
+
+def test_shared_hut_link_opens_the_hut(phone: Page, server):
+    phone.goto(server)
+    hut = phone.locator("#list .hut", has_text="Hut C").get_attribute("data-id")
+    phone.goto(server + f"#hut={hut}")  # the link the hut's share button gives
+    phone.reload()
+    expect(phone.locator("#detail h2")).to_have_text("Hut C")
+    expect(phone.locator("#hutShare")).to_be_visible()
+
+
+def test_search_from_an_open_tour(phone: Page, server):
+    """Outside the hut list, the search suggests huts; one opens, and back returns to the tour."""
+    phone.goto(server + SEARCH + "&tour=1")
+    expect(phone.locator("#tourDetail")).to_be_visible()
+    phone.locator("#q").fill("Hut C")
+    phone.locator("#qList li[data-id]").click()
+    expect(phone.locator("#detail h2")).to_have_text("Hut C")
+    phone.locator("#detail .back").click()
+    expect(phone.locator("#tourDetail")).to_be_visible()
+
+
 def test_mostly_vertical_swipe_keeps_the_tour(phone: Page, server):
     phone.goto(server + SEARCH + "&tour=1")
     expect(phone.locator(".tour-step span")).to_contain_text("1 /")
@@ -149,6 +178,26 @@ def test_mostly_vertical_swipe_keeps_the_tour(phone: Page, server):
         el.dispatchEvent(new TouchEvent('touchend', { touches: [], changedTouches: [t(120, 200)] }));
     }""")
     expect(phone.locator(".tour-step span")).to_contain_text("1 /")
+
+
+def test_filter_found_tours(phone: Page, server):
+    """Chips in the top bar narrow the found tours without a new search, and can be cleared."""
+    phone.goto(server + "#v=tours")
+    phone.locator("#sheetHandle").click()
+    phone.locator("#tFind").click()
+    cards = phone.locator(".tour-card")
+    expect(cards.first).to_be_visible()
+    total = cards.count()
+    catered, self_service = phone.locator('[data-rfilter="catered"]'), phone.locator('[data-rfilter="self"]')
+    catered.click()  # the seeded huts are catered all year
+    expect(cards).to_have_count(total)
+    self_service.click()  # turns "catered" off: a tour can't be both
+    expect(catered).to_have_attribute("aria-pressed", "false")
+    expect(phone.locator("#tourResults")).to_contain_text("No tour matches these filters")
+    assert "rf=self" in phone.url
+    phone.locator("#rReset").click()
+    expect(cards).to_have_count(total)
+    expect(self_service).to_have_attribute("aria-pressed", "false")
 
 
 def test_search_everywhere_unless_limited_to_the_map(phone: Page, server):
@@ -216,3 +265,45 @@ def test_language_from_browser_and_switcher(browser, server):
     page.reload()
     expect(page.locator("html")).to_have_attribute("lang", "en")
     context.close()
+def test_saved_tour_works_offline(phone: Page, server):
+    phone.context.route(re.compile(r"^https://wmts\.geo\.admin\.ch/"), lambda route: route.abort())  # no map downloads
+    phone.goto(server + SEARCH + "&tour=1")
+    phone.wait_for_function("navigator.serviceWorker.controller")  # sw.js installed and in charge
+    phone.locator("#tourKeep").click()
+    expect(phone.locator("#offlineStatus")).to_contain_text("Saved for offline use", timeout=15000)
+    expect(phone.locator("#offlineNote")).to_be_hidden()
+
+    phone.context.set_offline(True)
+    phone.goto(server + "#v=mine")
+    phone.reload()  # a new page load, from the service worker's cache
+    phone.locator("#sheetHandle").click()
+    phone.locator("#yoursList .your-tour").click()
+    expect(phone.locator("#tourDetail h2")).to_be_visible()
+    expect(phone.locator("#offlineNote")).to_contain_text("Offline — showing saved data from")
+    phone.locator("#tourDetail [data-hut]").first.click()  # the huts' details are saved too
+    expect(phone.locator("#detail h2")).to_have_text(re.compile("Hut"))
+    no_sideways_scroll(phone)
+    phone.context.set_offline(False)
+
+
+def test_offline_map_tiles_are_capped(phone: Page, server):
+    phone.goto(server)
+    # one straight day of 115 km: the gap between its two points is filled, and the cap keeps high zoom levels out
+    tiles = phone.evaluate("""async () => {
+        const { tourTiles, MAX_TILES } = await import('/js/offline.js');
+        const { urls, zoom } = tourTiles({ days: [{ geometry: '_`yzG_ptf@?_~cH' }] });
+        return { count: urls.length, unique: new Set(urls).size, zoom, max: MAX_TILES };
+    }""")
+    assert 0 < tiles["count"] <= tiles["max"] and tiles["unique"] == tiles["count"]
+    assert 10 <= tiles["zoom"] < 15
+
+
+def test_flexible_search_from_link(phone: Page, server):
+    """A shared flexible search: the window comes from the link, and each card names its start date."""
+    phone.goto(server + "#v=tours&tf=3")
+    phone.locator("#sheetHandle").click()
+    expect(phone.locator("#tFlex")).to_have_value("3")
+    phone.locator("#tFind").click()
+    expect(phone.locator(".tour-card").first).to_be_visible()
+    expect(phone.locator(".tour-head").first).to_contain_text(re.compile(r"(Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d+ \w+ · "))
+    no_sideways_scroll(phone)

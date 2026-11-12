@@ -48,6 +48,7 @@ app.include_router(manual.router)
 app.include_router(huts.router)
 app.include_router(edges.router)
 app.include_router(tours.router)
+app.include_router(tours.pages)
 app.include_router(info.router)
 app.include_router(feedback.router)
 

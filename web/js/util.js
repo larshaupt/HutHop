@@ -29,6 +29,22 @@ export const localIso = (d = new Date()) => new Date(d.getTime() - d.getTimezone
 /** Phone number as a tel: link (digits and + only). */
 export const telHref = (phone) => `tel:${phone.replace(/[^\d+]/g, "")}`;
 
+/** Share a link: the system share sheet where there is one (phones), else copy it. True when it was copied, so the
+ * caller can say so. */
+export async function shareLink(url, title) {
+  if (navigator.share) {
+    try { await navigator.share({ title, url }); } catch { /* cancelled */ }
+    return false;
+  }
+  try {
+    await navigator.clipboard.writeText(url);
+    return true;
+  } catch {
+    prompt(t("Copy this link:"), url);  // no clipboard access (e.g. not https)
+    return false;
+  }
+}
+
 export function setSheet(mode) {
   $("#panel").dataset.sheet = mode;
 }

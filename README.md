@@ -4,10 +4,11 @@ A private web app to browse Swiss mountain huts (SAC plus huts added by hand) an
 
 **Status (Nov 2026):** deployed at huthop.larshauptmann.com (Oracle VM, Cloudflare Access login). Hut map with filters, free-beds calendar and hand
 corrections; walking connections on swisstopo's trail network; multi-day tour suggestions ranked by a fixed "best"
-score (new trail, shape, free beds, opening data, …), sortable in the browser; height profiles; GPX export (whole tour or per day, for Komoot and the swisstopo app); weather forecast, trail closures and
+score (new trail, shape, free beds, opening data, …), sortable in the browser; height profiles; GPX export (whole tour or per day, for Komoot and the swisstopo app); a Share button with link previews; weather forecast, trail closures and
 military shooting notices per day; prices, season dates and booking details read from the hut websites, with a cost
 estimate per tour and a "Cheapest" sort; a tour editor, "Your tours" and favourite huts (kept in the browser);
-shareable links (the open view is in the URL); a "Book this tour" checklist; About dialog. See [`hut-tour-planner.md`](hut-tour-planner.md) for the project brief (requirements,
+shareable links (the open view is in the URL); a "Book this tour" checklist; About dialog; installable as an app, with the tours in "My tours"
+saved for use without a connection. See [`hut-tour-planner.md`](hut-tour-planner.md) for the project brief (requirements,
 design, APIs, plan) and [`spikes/`](spikes/) for the Phase 0 findings.
 
 ![Map of all huts with a line for each pair connected by trail within 10 hours, coloured by the hardest trail category](docs/hut-graph.svg)
@@ -58,8 +59,8 @@ On the server, `server/refresh.sh` does the same in a one-off container (see the
 footprint (grid cells and shape samples for the tour search) get one with `python -m app.ingest.footprints`, which
 `refresh` also runs.
 
-Every tour search is stored in the `search_log` table (query, number of results, best tour, duration) for
-analysing searches: `sqlite3 data/huthop.db "SELECT * FROM search_log ORDER BY id DESC LIMIT 20"`.
+Every tour search is stored in the `search_log` table (query with the date window `flex_days`, number of results,
+best tour, duration) for analysing searches: `sqlite3 data/huthop.db "SELECT * FROM search_log ORDER BY id DESC LIMIT 20"`.
 
 Other commands: `python -m app.backup` (dated copy in `data/backups/`, keeps 14), `python -m app.admin set-password`.
 
@@ -95,7 +96,7 @@ app/
   planner/   graph (model, loading, cache), tours (beam search, scoring, rebuilding, diversity),
              planning (search with free-bed rounds, rebuild by id: what the API calls), ranking (sub-scores,
              "best"), geometry (retracing, shape), costs (price estimate), availability (cache, classification, calendar), opening,
-             transit (stops served on a date), editing (tour editor: possible edits, warnings), gpx,
+             transit (stops served on a date, departures, rides), editing (tour editor: possible edits, warnings), gpx,
              hiking_time, polyline
   clients/   external APIs (SAC, hut-reservation.org, weather via Open-Meteo, geo.admin closures and
              shooting notices, hut websites, Gemini); USER_AGENT for all outgoing requests
@@ -104,7 +105,9 @@ web/         static frontend (MapLibre, vendored in web/vendor/, + swisstopo til
              connections, tours (form, results, sorting, opening a tour), tour-detail (timeline, profiles),
              tour-editor (editing a tour), booking (book-this-tour checklist), your-tours and favourites (kept in the browser), settings (general
              settings and units, kept in the browser), editor (hut data),
-             info (About dialog), feedback (dialog), i18n (translations; dictionaries in web/js/i18n/), util
+             info (About dialog), feedback (dialog), offline (saving "My tours" for offline use), i18n (translations;
+             dictionaries in web/js/i18n/), util; sw.js: the service worker (app shell and saved tours offline),
+             manifest.json and icons: the installable app
 server/      compose.yaml, update.sh (deploy) and refresh.sh (data refresh and graph build) for the server
 docs/        deployment plan, route graph figure
 spikes/      Phase 0 experiments and findings (historical)

@@ -1,18 +1,19 @@
 // Entry point: wires the modules together, global controls and start-up.
 import { $, isMobile, setSheet } from "./util.js";
 import { reloadFromHash, setState, state } from "./state.js";
-import { addTrailLayer, initMap, setBaseStyle, setTrailsVisible } from "./map.js";
+import { addTrailLayer, initMap, setBaseStyle, setTrailsVisible, showAll } from "./map.js";
 import { addHutLayers, bindHutEvents, bindHutMap, closeDetail, loadHuts, renderControls, selectHut, setHutClickHook, syncControls,
   update } from "./huts.js";
 import { addEdgeLayers, bindConnectionEvents, redrawConnections } from "./connections.js";
 import { bindEditorEvents } from "./editor.js";
 import { bindAbout } from "./info.js";
 import { bindFeedback } from "./feedback.js";
-import { addTourLayers, bindTourForm, clearTour, closeTour, hasResults, openTourById, redrawTour, rerenderTours, runTourSearch,
+import { addTourLayers, bindTourForm, bindTourMap, clearTour, closeTour, hasResults, openTourById, redrawTour, rerenderTours, runTourSearch,
   syncTourForm } from "./tours.js";
 import { addEditorLayers, bindEditorEvents as bindTourEditorEvents, editorHutClick, isEditing, reloadEditor }
   from "./tour-editor.js";
 import { bindSettings, onSettingsChange, setSettings } from "./settings.js";
+import { bindOffline } from "./offline.js";
 import { LANG, LANGUAGES, t, translatePage } from "./i18n.js";
 
 /** Our layers, bottom to top. Runs after every base-style (re)load. */
@@ -28,6 +29,7 @@ function addLayers() {
 
 function setView(view) {
   setState({ view });
+  document.body.dataset.view = view;  // style.css: the hut filters in the top bar only for the hut list
   document.querySelectorAll("#tabs button").forEach((b) => b.setAttribute("aria-selected", b.dataset.view === view));
   $("#hutsTab").hidden = view !== "huts";
   $("#toursTab").hidden = view !== "tours";
@@ -90,15 +92,28 @@ function bindGlobalEvents() {
     setSettings({ lang: e.target.value });
     location.reload();  // every text is in the new language, without re-rendering each view
   });
-  $("#q").addEventListener("focus", () => { if (isMobile()) setSheet("full"); });
+  $("#q").addEventListener("focus", () => {
+    if (isMobile() && state.view === "huts") setSheet("half");  // the hut list below the search, in view
+  });
+  // The logo: back to the start (the hut list, nothing open, all of Switzerland); filters and search stay
+  $("#homeBtn").addEventListener("click", () => {
+    if (state.tour || state.tid) closeTour();
+    if (state.hut) closeDetail();
+    setView("huts");
+    if (isMobile()) setSheet("peek");
+    showAll();
+  });
+  // The filters popover closes on a click elsewhere
+  document.addEventListener("click", (e) => {
+    if (!e.target.closest("#filters")) $("#filters").open = false;
+  });
   document.addEventListener("keydown", (e) => {
     if (e.key === "/" && !e.target.closest("input, textarea")) {
       e.preventDefault();
-      if (state.hut) closeDetail();
-      setView("huts");
       $("#q").focus();
     } else if (e.key === "Escape") {
-      if (state.hut) closeDetail();
+      if ($("#filters").open) $("#filters").open = false;
+      else if (state.hut) closeDetail();
       else if (state.tour || state.tid) closeTour();
       else if (document.activeElement === $("#q")) $("#q").blur();
     }
@@ -112,7 +127,7 @@ function bindGlobalEvents() {
 }
 
 const SHEETS = ["full", "half", "peek"];  // top to bottom
-const DRAG_ZONES = "#sheetHandle, #browse .brand, #tabs";
+const DRAG_ZONES = "#sheetHandle, #tabs";
 let sheetDragged = false;
 
 /** Mobile: drag the bottom sheet by its handle, header or tabs. It follows the finger and settles at the nearest
@@ -170,6 +185,8 @@ function bindSheetDrag() {
 
 async function main() {
   translatePage();
+  bindOffline();
+  if (!navigator.onLine) state.base = "topo";  // the light map's vector tiles are not saved offline
   renderControls();
   bindHutEvents();
   bindConnectionEvents();
@@ -182,6 +199,7 @@ async function main() {
   bindGlobalEvents();
   initMap(addLayers);
   bindHutMap();
+  bindTourMap();
   bindTourEditorEvents();
   setHutClickHook(editorHutClick);
   await loadHuts();
