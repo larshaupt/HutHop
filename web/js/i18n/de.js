@@ -454,5 +454,8 @@ export default {
 "Walking times use the Swiss hiking-time formula without breaks. Opening data from the SAC; free beds from hut-reservation.org (cached up to 10 minutes; not a reservation). Weather: MeteoSwiss forecast (via Open-Meteo) at the day's hut, for the next 5 days. Trail closures (Swiss Hiking Federation) and military shooting notices from map.geo.admin.ch. Check conditions, weather and official sources before you go.": "Wanderzeiten nach der Schweizer Wanderzeitberechnung, ohne Pausen. Öffnungsdaten vom SAC; freie Betten von hut-reservation.org (bis zu 10 Minuten zwischengespeichert; keine Reservation). Wetter: Prognose von MeteoSchweiz (via Open-Meteo) bei der Hütte des Tages, für die nächsten 5 Tage. Wegsperrungen (Schweizer Wanderwege) und militärische Schiessanzeigen von map.geo.admin.ch. Prüfe Verhältnisse, Wetter und offizielle Quellen, bevor du losgehst.",
 "walking": "zu Fuss",
 "Without this night": "Ohne diese Nacht",
-"from (price)": "ab"
+"from (price)": "ab",
+"Take it to Komoot or the swisstopo app": "In Komoot oder die swisstopo-App übernehmen",
+"Whole tour": "Ganze Tour",
+"<b>Komoot:</b> download one file per day, then upload each at {link}. <b>swisstopo app:</b> on your phone, open the downloaded file and share it to the swisstopo app (or in the app: Tours, +, Import GPX/KML).": "<b>Komoot:</b> Lade eine Datei pro Tag herunter und lade jede unter {link} hoch. <b>swisstopo-App:</b> Öffne die heruntergeladene Datei auf dem Handy und teile sie mit der swisstopo-App (oder in der App: Touren, +, GPX/KML importieren)."
 }

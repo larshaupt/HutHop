@@ -21,6 +21,7 @@ from datetime import UTC, datetime
 
 import httpx
 
+from app.clients import USER_AGENT
 from app.db import ROOT, connect
 from app.ingest import build_edges, footprints, load_stops, load_timetable, osm_access, sync_sac
 
@@ -29,7 +30,6 @@ TLM_DIR = ROOT / "data/tlm"
 TLM_EDITION = TLM_DIR / "edition.json"
 LOG = ROOT / "data/refresh_log.json"
 BUILT = ROOT / "data/built_from.json"  # what the edges were last built from (see run)
-USER_AGENT = "HutHop/0.1 (private hut planner)"
 
 
 def positions_fingerprint(conn: sqlite3.Connection, kind: str) -> str:

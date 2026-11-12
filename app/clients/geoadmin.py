@@ -7,7 +7,7 @@ from datetime import date, datetime
 
 import httpx
 
-from app.clients.hut_reservation import USER_AGENT
+from app.clients import USER_AGENT
 
 URL = "https://api3.geo.admin.ch/rest/services/ech/MapServer/identify"
 CLOSURES = "ch.astra.wanderland-sperrungen_umleitungen"
