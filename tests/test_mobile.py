@@ -139,6 +139,35 @@ def test_search_open_and_swipe_between_tours(phone: Page, server):
     no_sideways_scroll(phone)
 
 
+def test_logo_goes_back_to_the_start(phone: Page, server):
+    phone.goto(server + SEARCH + "&tour=1")
+    expect(phone.locator("#tourDetail")).to_be_visible()
+    phone.locator("#homeBtn").click()
+    expect(phone.locator("#tourDetail")).to_be_hidden()
+    expect(phone.locator("#hutsTab")).to_be_visible()
+    assert not re.search(r"[#&](v|tour)=", phone.url)
+
+
+def test_shared_hut_link_opens_the_hut(phone: Page, server):
+    phone.goto(server)
+    hut = phone.locator("#list .hut", has_text="Hut C").get_attribute("data-id")
+    phone.goto(server + f"#hut={hut}")  # the link the hut's share button gives
+    phone.reload()
+    expect(phone.locator("#detail h2")).to_have_text("Hut C")
+    expect(phone.locator("#hutShare")).to_be_visible()
+
+
+def test_search_from_an_open_tour(phone: Page, server):
+    """Outside the hut list, the search suggests huts; one opens, and back returns to the tour."""
+    phone.goto(server + SEARCH + "&tour=1")
+    expect(phone.locator("#tourDetail")).to_be_visible()
+    phone.locator("#q").fill("Hut C")
+    phone.locator("#qList li[data-id]").click()
+    expect(phone.locator("#detail h2")).to_have_text("Hut C")
+    phone.locator("#detail .back").click()
+    expect(phone.locator("#tourDetail")).to_be_visible()
+
+
 def test_mostly_vertical_swipe_keeps_the_tour(phone: Page, server):
     phone.goto(server + SEARCH + "&tour=1")
     expect(phone.locator(".tour-step span")).to_contain_text("1 /")
@@ -149,6 +178,26 @@ def test_mostly_vertical_swipe_keeps_the_tour(phone: Page, server):
         el.dispatchEvent(new TouchEvent('touchend', { touches: [], changedTouches: [t(120, 200)] }));
     }""")
     expect(phone.locator(".tour-step span")).to_contain_text("1 /")
+
+
+def test_filter_found_tours(phone: Page, server):
+    """Chips in the top bar narrow the found tours without a new search, and can be cleared."""
+    phone.goto(server + "#v=tours")
+    phone.locator("#sheetHandle").click()
+    phone.locator("#tFind").click()
+    cards = phone.locator(".tour-card")
+    expect(cards.first).to_be_visible()
+    total = cards.count()
+    catered, self_service = phone.locator('[data-rfilter="catered"]'), phone.locator('[data-rfilter="self"]')
+    catered.click()  # the seeded huts are catered all year
+    expect(cards).to_have_count(total)
+    self_service.click()  # turns "catered" off: a tour can't be both
+    expect(catered).to_have_attribute("aria-pressed", "false")
+    expect(phone.locator("#tourResults")).to_contain_text("No tour matches these filters")
+    assert "rf=self" in phone.url
+    phone.locator("#rReset").click()
+    expect(cards).to_have_count(total)
+    expect(self_service).to_have_attribute("aria-pressed", "false")
 
 
 def test_search_everywhere_unless_limited_to_the_map(phone: Page, server):

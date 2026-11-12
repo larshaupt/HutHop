@@ -19,28 +19,99 @@
   <main>
   <div id="map" aria-label="Map of Swiss mountain huts"></div>
 
+  <!-- Floating over the map: home and search, hut filters, map tools -->
+  <header class="topbar" id="topbar">
+    <div class="pill">
+      <h1 class="sr-only">HutHop</h1>
+      <button class="home" id="homeBtn" aria-label="HutHop: back to the start" title="Back to the start">
+        <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 4 3 27h26z"/><path class="logo-door" d="M16 13l-5 9h10z"/></svg>
+      </button>
+      <div class="search">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+        <input id="q" type="search" placeholder="Search huts" autocomplete="off" aria-label="Search huts by name"
+          aria-autocomplete="list" aria-controls="qList">
+        <kbd>/</kbd>
+        <ul class="suggest" id="qList" role="listbox" aria-label="Matching huts" hidden></ul>
+      </div>
+      <button class="about-btn" id="settingsBtn" aria-label="Settings" title="Settings: hardest trail, altitude, pace, units, …">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><!-- gear: Lucide "settings" (ISC licence) --><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+      </button>
+      <button class="about-btn" id="feedbackBtn" aria-label="Send feedback" title="Send feedback">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><!-- Lucide "message-square" (ISC licence) --><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      </button>
+      <button class="about-btn" id="aboutBtn" aria-label="About HutHop" title="About HutHop, how tours are scored, impressum">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg>
+      </button>
+    </div>
+
+    <div class="bar-row">
+      <div class="quick" id="quick" role="group" aria-label="Hut filters">
+        <details class="filters" id="filters">
+          <summary class="chip map-chip">Filters <span class="active-count" id="activeCount" hidden></span></summary>
+          <div class="filters-body">
+            <div class="filters-head"><b>Filters</b><button type="button" class="link" id="reset" hidden>Reset</button></div>
+
+            <div class="field">
+              <div class="field-label">Open in</div>
+              <div class="months" id="months" role="group" aria-label="Month"></div>
+            </div>
+
+            <div class="field">
+              <div class="field-label">Open as</div>
+              <div class="seg" id="openAs" role="group" aria-label="Open as">
+                <button data-v="any">Any</button><button data-v="catered">Catered</button><button data-v="self_service">Self-service</button>
+              </div>
+            </div>
+
+            <div class="field">
+              <div class="field-label">Altitude <output id="altLabel"></output></div>
+              <div class="range2">
+                <input type="range" id="altMin" min="0" max="4600" step="100" aria-label="Minimum altitude">
+                <input type="range" id="altMax" min="0" max="4600" step="100" aria-label="Maximum altitude">
+                <div class="range2-track"><div class="range2-fill" id="altFill"></div></div>
+              </div>
+            </div>
+
+            <div class="field two">
+              <div>
+                <div class="field-label">Min. beds <output id="bedsLabel"></output></div>
+                <input type="range" id="minBeds" min="0" max="120" step="5" aria-label="Minimum beds">
+              </div>
+              <div>
+                <div class="field-label">Type</div>
+                <div class="seg small" id="operator" role="group" aria-label="Hut type">
+                  <button data-v="all">All</button><button data-v="sac">SAC</button><button data-v="private">Other</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </details>
+        <button class="chip map-chip" data-toggle="hb">Half board</button>
+        <button class="chip map-chip" data-toggle="kitchen">Guest kitchen</button>
+        <button class="chip map-chip" data-toggle="bookable">Book online</button>
+        <button class="chip map-chip" data-toggle="fav">★ Favourites</button>
+      </div>
+
+      <div class="quick" id="tourQuick" role="group" aria-label="Filter the found tours" hidden>
+        <button class="chip map-chip" data-rfilter="beds" title="Free beds confirmed for every night">Beds free</button>
+        <button class="chip map-chip" data-rfilter="catered" title="Every night in a catered hut">Catered</button>
+        <button class="chip map-chip" data-rfilter="self" title="Every night in a self-service hut">Self-service</button>
+      </div>
+
+      <div class="map-tools">
+        <div class="seg map-seg" id="base" role="group" aria-label="Base map">
+          <button data-v="light">Light</button><button data-v="topo">Topo</button>
+        </div>
+        <button class="chip map-chip" id="trails" aria-pressed="false">Hiking trails</button>
+      </div>
+    </div>
+  </header>
+
   <aside id="panel" class="panel" data-sheet="peek">
     <button class="sheet-handle" id="sheetHandle" aria-label="Expand or collapse panel"><span></span></button>
     <p class="offline-note" id="offlineNote" role="status" hidden></p>
 
     <section id="browse" class="view">
-      <header class="brand">
-        <svg class="logo" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 4 3 27h26z"/><path class="logo-door" d="M16 13l-5 9h10z"/></svg>
-        <div>
-          <h1>HutHop</h1>
-          <p>Swiss mountain huts</p>
-        </div>
-        <button class="about-btn" id="settingsBtn" aria-label="Settings" title="Settings: hardest trail, altitude, pace, units, …">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><!-- gear: Lucide "settings" (ISC licence) --><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
-        </button>
-        <button class="about-btn" id="feedbackBtn" aria-label="Send feedback" title="Send feedback">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><!-- Lucide "message-square" (ISC licence) --><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-        </button>
-        <button class="about-btn" id="aboutBtn" aria-label="About HutHop" title="About HutHop, how tours are scored, impressum">
-          <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5v.5"/></svg>
-        </button>
-      </header>
-
       <nav class="tabs" id="tabs" role="tablist">
         <button role="tab" data-view="huts">Huts</button>
         <button role="tab" data-view="tours">Plan a tour</button>
@@ -48,61 +119,6 @@
       </nav>
 
       <div class="tab" id="hutsTab">
-      <div class="search">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-        <input id="q" type="search" placeholder="Search huts" autocomplete="off" aria-label="Search huts by name">
-        <kbd>/</kbd>
-      </div>
-
-      <details class="filters" id="filters" open>
-        <summary>
-          <span>Filters</span>
-          <span class="active-count" id="activeCount" hidden></span>
-          <button type="button" class="link" id="reset" hidden>Reset</button>
-        </summary>
-
-        <div class="field">
-          <div class="field-label">Open in</div>
-          <div class="months" id="months" role="group" aria-label="Month"></div>
-        </div>
-
-        <div class="field">
-          <div class="field-label">Open as</div>
-          <div class="seg" id="openAs" role="group" aria-label="Open as">
-            <button data-v="any">Any</button><button data-v="catered">Catered</button><button data-v="self_service">Self-service</button>
-          </div>
-        </div>
-
-        <div class="field chips" role="group" aria-label="Features">
-          <button class="chip" data-toggle="hb">Half board</button>
-          <button class="chip" data-toggle="kitchen">Guest kitchen</button>
-          <button class="chip" data-toggle="bookable">Book online</button>
-          <button class="chip" data-toggle="fav">★ Favourites</button>
-        </div>
-
-        <div class="field">
-          <div class="field-label">Altitude <output id="altLabel"></output></div>
-          <div class="range2">
-            <input type="range" id="altMin" min="0" max="4600" step="100" aria-label="Minimum altitude">
-            <input type="range" id="altMax" min="0" max="4600" step="100" aria-label="Maximum altitude">
-            <div class="range2-track"><div class="range2-fill" id="altFill"></div></div>
-          </div>
-        </div>
-
-        <div class="field two">
-          <div>
-            <div class="field-label">Min. beds <output id="bedsLabel"></output></div>
-            <input type="range" id="minBeds" min="0" max="120" step="5" aria-label="Minimum beds">
-          </div>
-          <div>
-            <div class="field-label">Type</div>
-            <div class="seg small" id="operator" role="group" aria-label="Hut type">
-              <button data-v="all">All</button><button data-v="sac">SAC</button><button data-v="private">Other</button>
-            </div>
-          </div>
-        </div>
-      </details>
-
       <div class="results-head">
         <span><strong id="count">–</strong> <span id="countLabel">huts</span></span>
         <button class="link add-hut" id="addHut" type="button">+ Add hut</button>
@@ -115,39 +131,42 @@
           </select>
         </label>
       </div>
+      <div class="season-legend season-key">
+        <span>Bars: Jan–Dec</span>
+        <span><i class="key catered"></i>Catered</span><span><i class="key self_service"></i>Self-service</span><span><i class="key"></i>Closed</span>
+      </div>
       <ul class="list" id="list" aria-label="Huts"></ul>
       </div>
 
       <div class="tab scroll" id="toursTab" hidden>
         <form class="tour-form" id="tourForm" autocomplete="off">
-          <div class="field two">
-            <div>
-              <label class="field-label" for="tDate">Start date</label>
-              <input class="input" type="date" id="tDate" required>
+          <!-- The trip in a few short lines: a word, then its control -->
+          <div class="sentence">
+            <span>Start</span>
+            <div class="stop-picker">
+              <div class="chip-picked" id="tStartPicked" hidden><span id="tStartName"></span><button type="button" id="tStartClear" aria-label="Clear start">×</button></div>
+              <input class="input" id="tStartInput" placeholder="anywhere" aria-label="Start: anywhere, or type a station" aria-autocomplete="list" aria-controls="tStartList">
+              <ul class="suggest" id="tStartList" role="listbox" hidden></ul>
             </div>
-            <div>
-              <label class="field-label" for="tFlex">Flexible</label>
-              <select class="input" id="tFlex"></select>
+            <span>on</span>
+            <div class="s-controls">
+              <input class="input" type="date" id="tDate" required aria-label="Start date">
+              <select class="input" id="tFlex" aria-label="Flexible start date"></select>
             </div>
-          </div>
-
-          <div class="field two">
-            <div>
-              <div class="field-label">Nights</div>
-              <div class="stepper">
-                <button type="button" data-step="-1" aria-label="Fewer nights">−</button>
-                <output id="tNightsLabel"></output>
-                <button type="button" data-step="1" aria-label="More nights">+</button>
-              </div>
-            </div>
-            <div>
-              <div class="field-label">People</div>
-              <div class="stepper">
-                <button type="button" data-people="-1" aria-label="Fewer people">−</button>
-                <output id="tPeopleLabel"></output>
-                <button type="button" data-people="1" aria-label="More people">+</button>
-              </div>
-            </div>
+            <span>stay</span>
+            <div class="s-controls"><span class="stepper">
+              <button type="button" data-step="-1" aria-label="Fewer nights">−</button>
+              <output id="tNightsLabel"></output>
+              <button type="button" data-step="1" aria-label="More nights">+</button>
+            </span>
+            <span id="tNightsWord">nights</span></div>
+            <span>with</span>
+            <div class="s-controls"><span class="stepper">
+              <button type="button" data-people="-1" aria-label="Fewer people">−</button>
+              <output id="tPeopleLabel"></output>
+              <button type="button" data-people="1" aria-label="More people">+</button>
+            </span>
+            <span id="tPeopleWord">people</span></div>
           </div>
 
           <div class="field">
@@ -159,23 +178,6 @@
             </div>
           </div>
 
-          <div class="field">
-            <div class="field-label">Huts</div>
-            <div class="seg" id="tCat" role="group" aria-label="Catering">
-              <button type="button" data-v="any">Any</button><button type="button" data-v="catered">Catered</button><button type="button" data-v="self_service">Self-service</button>
-            </div>
-          </div>
-
-          <div class="field">
-            <label class="field-label" for="tStartInput">Start</label>
-            <div class="stop-picker">
-              <div class="chip-picked" id="tStartPicked" hidden><span id="tStartName"></span><button type="button" id="tStartClear" aria-label="Clear start">×</button></div>
-              <input class="input" id="tStartInput" placeholder="Anywhere – or type a station" aria-autocomplete="list" aria-controls="tStartList">
-              <ul class="suggest" id="tStartList" role="listbox" hidden></ul>
-            </div>
-            <label class="check" id="tAreaField"><input type="checkbox" id="tArea"> Only in the area visible on the map</label>
-          </div>
-
           <div class="field" id="tLoopField" hidden>
             <div class="field-label">End</div>
             <div class="seg" id="tLoop" role="group" aria-label="End">
@@ -183,6 +185,7 @@
             </div>
           </div>
 
+          <label class="check" id="tAreaField"><input type="checkbox" id="tArea"> Only in the area visible on the map</label>
           <label class="check"><input type="checkbox" id="tUnknown"> Include huts without opening data</label>
 
           <button class="btn primary wide" type="submit" id="tFind">Find tours</button>
@@ -201,13 +204,6 @@
     <section id="detail" class="view" hidden aria-live="polite"></section>
     <section id="tourDetail" class="view" hidden aria-live="polite"></section>
   </aside>
-
-  <div class="map-tools">
-    <div class="seg map-seg" id="base" role="group" aria-label="Base map">
-      <button data-v="light">Light</button><button data-v="topo">Topo</button>
-    </div>
-    <button class="chip map-chip" id="trails" aria-pressed="false">Hiking trails</button>
-  </div>
 
   <div class="legend" id="legend" hidden>
     <span><i class="dot catered"></i>Catered</span>

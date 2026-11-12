@@ -64,6 +64,11 @@ function bindOsmPaths() {
   });
 }
 
+/** All of Switzerland, as at the start. */
+export function showAll() {
+  map.fitBounds(CH_BOUNDS, { padding: mapPadding(), duration: 700 });
+}
+
 export function setBaseStyle(name) {
   map.setStyle(STYLES[name], { diff: false });  // a full reload re-runs onStyleLoad, so our layers come back
 }
@@ -95,8 +100,9 @@ export function setTrailsVisible(visible) {
 
 /** Space the panel covers, so fitted content stays visible. */
 export function mapPadding() {
-  if (isMobile()) return { top: 60, bottom: window.innerHeight * 0.55, left: 20, right: 20 };
-  return { top: 60, bottom: 40, left: $("#panel").offsetWidth + 40, right: 40 };
+  const top = $("#topbar").offsetHeight + 24;  // the search and filter bar over the map
+  if (isMobile()) return { top, bottom: window.innerHeight * 0.55, left: 20, right: 20 };
+  return { top, bottom: 40, left: $("#panel").offsetWidth + 40, right: 40 };
 }
 
 export function fitCoords(coords, maxZoom = 13) {
