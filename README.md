@@ -4,7 +4,7 @@ A private web app to browse Swiss mountain huts (SAC plus huts added by hand) an
 
 **Status (Nov 2026):** deployed at huthop.larshauptmann.com (Oracle VM, Cloudflare Access login). Hut map with filters, free-beds calendar and hand
 corrections; walking connections on swisstopo's trail network; multi-day tour suggestions ranked by a fixed "best"
-score (new trail, shape, free beds, opening data, …), sortable in the browser; height profiles; GPX export (whole tour or per day, for Komoot and the swisstopo app); weather forecast, trail closures and
+score (new trail, shape, free beds, opening data, …), sortable in the browser; height profiles; GPX export (whole tour or per day, for Komoot and the swisstopo app); a Share button with link previews; weather forecast, trail closures and
 military shooting notices per day; prices, season dates and booking details read from the hut websites, with a cost
 estimate per tour and a "Cheapest" sort; a tour editor, "Your tours" and favourite huts (kept in the browser);
 shareable links (the open view is in the URL); a "Book this tour" checklist; About dialog; installable as an app, with the tours in "My tours"
@@ -59,8 +59,8 @@ On the server, `server/refresh.sh` does the same in a one-off container (see the
 footprint (grid cells and shape samples for the tour search) get one with `python -m app.ingest.footprints`, which
 `refresh` also runs.
 
-Every tour search is stored in the `search_log` table (query, number of results, best tour, duration) for
-analysing searches: `sqlite3 data/huthop.db "SELECT * FROM search_log ORDER BY id DESC LIMIT 20"`.
+Every tour search is stored in the `search_log` table (query with the date window `flex_days`, number of results,
+best tour, duration) for analysing searches: `sqlite3 data/huthop.db "SELECT * FROM search_log ORDER BY id DESC LIMIT 20"`.
 
 Other commands: `python -m app.backup` (dated copy in `data/backups/`, keeps 14), `python -m app.admin set-password`.
 

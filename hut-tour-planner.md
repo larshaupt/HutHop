@@ -31,7 +31,7 @@ A private web app to browse and filter Swiss mountain huts (SAC plus selected no
 
 **F2: Tour suggestions** (core feature)
 - Inputs:
-  - start date, number of days / nights
+  - start date, number of days / nights; optionally a flexible start ("up to N days later", at most 14): the search runs once per start date and returns the best tours over the window, each on its best date (the same huts count as one tour); hut calendars are fetched once for all dates
   - max hiking hours per day (and optionally min hours)
   - max trail category (yellow / red-white / blue-white)
   - start/end region or specific public transport stops, including cable car and lift stations; loop vs. point-to-point
@@ -303,6 +303,7 @@ Answer the open questions before building:
 ### Later
 
 - ~~GPX export~~ done: `GET /api/tours/{id}/gpx`, one track per day + waypoints. Tour ids are `date_places_limits` (e.g. `2027-07-17_123-45-67-89_2-2-3`), stable across edge rebuilds, so they also serve sharing, saved tours and the editor.
+- ~~Share button and link previews~~ done (Nov 2026): **Share** in the tour view shares `/t/{tour_id}` (the phone's share sheet via the Web Share API, else the link is copied). That page has Open Graph / Twitter meta tags (title like "4-day hut tour: Hut A → Hut D", dates, start and end stop, distance, ascent, hardest trail) and redirects to `/#v=tours&tid={id}`; a tour that no longer exists gets a generic preview and the app's "no longer available" note. Previews only work once the app is public (Cloudflare Access hides the page from messenger crawlers). No preview image yet.
 - Saved tours on the server (in the browser: "Your tours"), better ranking. (~~Non-SAC huts~~ done: "+ Add hut".)
 - ~~Offline use (PWA) and saved tours~~ done (Nov 2026, issue #5): installable (`web/manifest.json`, icons) with a hand-written service worker (`web/sw.js`). Our files and API network first, the cache only as a fallback, so a deploy is never hidden; the app shell, `/api/huts`, `/api/osm-paths` and `/api/info` are kept with it (a versioned cache; `skipWaiting` and `clients.claim`). Only 200 same-origin responses of the expected content type are cached, never a Cloudflare Access redirect. A tour in "My tours" is saved when added or opened (`web/js/offline.js`): its JSON (with the height profiles), its huts' details and the topographic map along the route (one tile around each point, zoom 8 up to the level that still fits in 500 tiles, 4 downloads at a time: swisstopo fair use), in a cache per tour that is deleted with the tour. Offline, the app opens on the topographic map (the light map's vector tiles aren't saved) and says "Offline — showing saved data from <date>". Saved tours stay per device (local storage): no accounts or sync.
 - ~~Elevation in GPX~~ done: `edge.elevation` holds the swissTLM3D height of each route point (from `build_edges`); used for `<ele>` in GPX and a height profile per day in the tour view.

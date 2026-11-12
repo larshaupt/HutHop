@@ -123,6 +123,7 @@ export function renderTourDetail(t, { kept = false, booking = false, people = 2,
         <button class="btn" id="tourBook" aria-pressed="${booking}">Book this tour</button>
         <button class="btn" id="tourKeep" aria-pressed="${kept}">${kept ? "★ In my tours" : "☆ Add to my tours"}</button>
         <a class="btn" href="/api/tours/${encodeURIComponent(t.id)}/gpx" download>Download GPX</a>
+        <button class="btn" id="tourShare">Share</button>
       </div>
       ${kept ? `<p class="hint" id="offlineStatus" data-tour="${esc(t.id)}">${esc(offlineStatus(t.id))}</p>` : ""}
     </div>

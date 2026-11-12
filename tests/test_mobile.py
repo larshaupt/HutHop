@@ -193,3 +193,14 @@ def test_offline_map_tiles_are_capped(phone: Page, server):
     }""")
     assert 0 < tiles["count"] <= tiles["max"] and tiles["unique"] == tiles["count"]
     assert 10 <= tiles["zoom"] < 15
+
+
+def test_flexible_search_from_link(phone: Page, server):
+    """A shared flexible search: the window comes from the link, and each card names its start date."""
+    phone.goto(server + "#v=tours&tf=3")
+    phone.locator("#sheetHandle").click()
+    expect(phone.locator("#tFlex")).to_have_value("3")
+    phone.locator("#tFind").click()
+    expect(phone.locator(".tour-card").first).to_be_visible()
+    expect(phone.locator(".tour-head").first).to_contain_text(re.compile(r"(Mon|Tue|Wed|Thu|Fri|Sat|Sun) \d+ \w+ · "))
+    no_sideways_scroll(phone)
