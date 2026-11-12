@@ -1,4 +1,5 @@
-"""GPX 1.1 export of a tour: one track per day, waypoints for start, huts and end.
+"""GPX 1.1 export of a tour: one track per day, waypoints for start, huts and end; or a single day (Komoot imports
+one tour per file).
 
 Works on the tour JSON produced by the API (`tour_json`), so the file matches what the user sees. Route lines
 are the simplified edge geometries (10 m tolerance) with swissTLM3D heights, so Komoot and the swisstopo app show
@@ -25,10 +26,12 @@ def _wpt(lat: float, lon: float, name: str, desc: str, sym: str) -> str:
             f"<desc>{escape(desc)}</desc><sym>{sym}</sym></wpt>")
 
 
-def to_gpx(tour: dict) -> str:
-    days = tour["days"]
+def to_gpx(tour: dict, day: int | None = None) -> str:
+    """The whole tour, or only day `day` (1-based) with its start and end as waypoints."""
+    days = tour["days"] if day is None else [tour["days"][day - 1]]
     start, end = days[0]["from"], days[-1]["to"]
-    title = f"{start['name']} → {end['name']} ({tour['nights']} nights)"
+    title = (f"{start['name']} → {end['name']} ({tour['nights']} nights)" if day is None
+             else f"Day {day}: {start['name']} → {end['name']}")
     out = [
         '<?xml version="1.0" encoding="UTF-8"?>',
         '<gpx version="1.1" creator="HutHop" xmlns="http://www.topografix.com/GPX/1/1">',
@@ -38,7 +41,7 @@ def to_gpx(tour: dict) -> str:
         f"    <time>{date.fromisoformat(days[0]['date']).isoformat()}T00:00:00Z</time></metadata>",
         _wpt(start["lat"], start["lon"], start["name"], "Start", "Flag, Green"),
     ]
-    for d in days[:-1]:
+    for d in days[:-1]:  # nights between the days (none for a single day)
         hut = d["to"]
         out.append(_wpt(hut["lat"], hut["lon"], hut["name"], f"Night {d['day']} ({d['date']})", "Lodging"))
     out.append(_wpt(end["lat"], end["lon"], end["name"], "End", "Flag, Red"))
@@ -58,9 +61,9 @@ def to_gpx(tour: dict) -> str:
     return "\n".join(out) + "\n"
 
 
-def filename(tour: dict) -> str:
-    """Safe file name like 'huthop-2027-07-17-kandersteg-3n.gpx'."""
+def filename(tour: dict, day: int | None = None) -> str:
+    """Safe file name like 'huthop-2027-07-17-kandersteg-3n.gpx', or '…-3n-day2.gpx' for one day."""
     ascii_name = unicodedata.normalize("NFKD", tour["days"][0]["from"]["name"]).encode("ascii", "ignore").decode()
     start = re.sub(r"[^a-z0-9]+", "-", ascii_name.lower()).strip("-")
-    return f"huthop-{tour['days'][0]['date']}-{start[:30].rstrip('-')}-{tour['nights']}n.gpx"
+    return f"huthop-{tour['days'][0]['date']}-{start[:30].rstrip('-')}-{tour['nights']}n{f'-day{day}' if day else ''}.gpx"
 
