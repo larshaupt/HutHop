@@ -175,6 +175,22 @@ def test_tour_by_id_and_gpx(client):
     assert c.get(f"/api/tours/2027-07-10_{ids['stop']}-{ids['b']}-{ids['stop']}_1-1").status_code == 404
 
 
+def test_share_page(client):
+    c, ids = client
+    c.app.dependency_overrides[get_db]().execute("UPDATE place SET name = '<b>\"Hut\"' WHERE id = ?", (ids["a"],))
+    body = {"start_date": "2027-07-10", "nights": 1, "min_hours": 1, "max_hours": 2, "check_availability": False}
+    tour = c.post("/api/tours/suggest", json=body).json()["tours"][0]
+    res = c.get(f"/t/{tour['id']}")
+    assert res.status_code == 200 and res.headers["content-type"].startswith("text/html")
+    page = res.text
+    assert '<meta property="og:title" content="2-day hut tour: &lt;b&gt;&quot;Hut&quot;">' in page  # escaped
+    assert "10 Jul 2027 – 11 Jul 2027 · Valley Station to Valley Station · 2.0 km · 200 m ascent" in page
+    assert f'url=/#v=tours&amp;tid={tour["id"]}"' in page
+    assert c.get("/t/not-a-tour").status_code == 400
+    gone = c.get(f"/t/2027-07-10_{ids['stop']}-{ids['b']}-{ids['stop']}_1-1")
+    assert gone.status_code == 200 and "HutHop hut tour" in gone.text and "url=/#v=tours" in gone.text
+
+
 def test_editor_options_and_tour_from_hut(client):
     c, ids = client
     params = {"start_date": "2027-07-10", "min_hours": 1, "max_hours": 2, "limit": 2}

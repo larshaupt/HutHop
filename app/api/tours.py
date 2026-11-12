@@ -1,14 +1,16 @@
-"""Tour suggestions, single tours by id (JSON and GPX), the tour editor's options, a tour from a hut, and the
-stop search used to pick a start point."""
+"""Tour suggestions, single tours by id (JSON and GPX), the tour editor's options, a tour from a hut, the stop
+search used to pick a start point, and the share page of a tour (link previews)."""
 
+import html
 import json
 import sqlite3
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, date, datetime, timedelta
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import Response
+from fastapi.responses import HTMLResponse, Response
 from pydantic import BaseModel, Field, model_validator
 
 from app import config
@@ -20,6 +22,7 @@ from app.planner.graph import Graph, cached_graph
 from app.planner.tours import Catering, Night, Tour, TourRequest, build_tour, is_lift, parse_tour_id
 
 router = APIRouter(prefix="/api", tags=["tours"])
+pages = APIRouter(tags=["tours"])  # outside /api: links people share
 AVAILABILITY_STATES = ("available", "not_released", "no_booking", "not_checked", "error")
 
 
@@ -181,6 +184,42 @@ def tour_warnings(tour_id: str, conn: sqlite3.Connection = Depends(get_db)) -> d
             return {"days": list(pool.map(day, range(len(tour.legs)))), "error": False}
     except Exception:  # network and HTTP errors, unexpected JSON
         return {"days": [], "error": True}
+
+
+@pages.get("/t/{tour_id}", response_class=HTMLResponse)
+def share_page(tour_id: str, conn: sqlite3.Connection = Depends(get_db)) -> HTMLResponse:
+    """The link the app's Share button shares: Open Graph meta tags for a preview in messengers (the URL hash never
+    reaches the server), then straight on to the tour in the app."""
+    try:
+        graph, tour = planning.rebuild_tour(conn, tour_id, 1, False, config.ranking_weights())
+    except ValueError:  # malformed (parse_tour_id): nothing to put into the page
+        raise HTTPException(400, "malformed tour id") from None
+    except LookupError:  # gone meanwhile: no preview, the app says so
+        title, desc = "HutHop hut tour", "A hut-to-hut tour in the Swiss Alps, planned with HutHop."
+    else:
+        huts = [graph.huts[n.hut].name for n in tour.nights]
+        days, end = len(tour.legs), tour.start_date + timedelta(days=len(tour.legs) - 1)
+        title = f"{days}-day hut tour: {huts[0]}" + (f" → {huts[-1]}" if len(huts) > 1 else "")
+        desc = (f"{tour.start_date.day} {tour.start_date:%b %Y} – {end.day} {end:%b %Y} · "
+                f"{graph.stops[tour.legs[0].frm].name} to {graph.stops[tour.legs[-1].to].name} · "
+                f"{sum(leg.distance_m for leg in tour.legs) / 1000:.1f} km · "
+                f"{sum(leg.ascent_m for leg in tour.legs):,} m ascent · "
+                f"up to {gpx.CATEGORY_NAME[max(leg.max_category for leg in tour.legs)]}")
+    target = "/#" + urlencode({"v": "tours", "tid": tour_id})
+    title, desc, target = html.escape(title), html.escape(desc), html.escape(target)
+    return HTMLResponse(f"""<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<title>{title}</title>
+<meta name="description" content="{desc}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="HutHop">
+<meta property="og:title" content="{title}">
+<meta property="og:description" content="{desc}">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="{title}">
+<meta name="twitter:description" content="{desc}">
+<meta http-equiv="refresh" content="0; url={target}">
+</head><body><p><a href="{target}">Open the tour in HutHop</a></p></body></html>""")
 
 
 def rebuild(conn: sqlite3.Connection, tour_id: str, people: int, check_availability: bool,
