@@ -220,10 +220,13 @@ input[type="range"] { width: 100%; min-height: 24px; accent-color: var(--text); 
 .hut .noimg { display: grid; place-items: center; color: var(--text-faint); }
 .hut-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hut-meta { color: var(--text-soft); font-size: 12.5px; }
-.mini-season { display: grid; grid-template-columns: repeat(12, 1fr); gap: 2px; width: 120px; margin-top: 4px; }
-.mini-season i { height: 4px; border-radius: 1px; background: var(--line); }
-.mini-season i.catered { background: var(--catered); }
-.mini-season i.self_service { background: var(--self-service); }
+/* padding: a taller hover area for the tooltip than the 4px bars */
+.mini-season { display: grid; grid-template-columns: repeat(12, 1fr); gap: 2px; width: 120px; padding: 4px 0; }
+.mini-season i, .season-key .key { height: 4px; border-radius: 1px; background: var(--line); }
+.mini-season i.catered, .season-key .key.catered { background: var(--catered); }
+.mini-season i.self_service, .season-key .key.self_service { background: var(--self-service); }
+.season-key { margin: 0; padding: 0 var(--gutter) 8px; }
+.season-key .key { width: 12px; }
 .mini-season i.unknown { background: repeating-linear-gradient(90deg, var(--line) 0 2px, transparent 2px 4px); }
 .mini-season i.sel { box-shadow: 0 0 0 1.5px var(--bg), 0 0 0 2.5px var(--text); }
 .hut > div { min-width: 0; }
