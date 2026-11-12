@@ -4,6 +4,7 @@ import { $, CATEGORY, categoryName, costTitle, decodePolyline, decodeValues, dis
 import { state } from "./state.js";
 import { bookingPanel, isBooked } from "./booking.js";
 import { hutForecast, weatherLine } from "./weather.js";
+import { offlineStatus } from "./offline.js";
 import { distanceUnit, distanceValue, formatDistance, formatHeight, heightUnit, heightValue, settings } from "./settings.js";
 
 const NIGHT_LABEL = { catered: "Catered", self_service: "Self-service", unknown: "No opening data", closed: "Closed" };
@@ -124,6 +125,7 @@ export function renderTourDetail(t, { kept = false, booking = false, people = 2,
         <a class="btn" href="/api/tours/${encodeURIComponent(t.id)}/gpx" download>Download GPX</a>
         <button class="btn" id="tourShare">Share</button>
       </div>
+      ${kept ? `<p class="hint" id="offlineStatus" data-tour="${esc(t.id)}">${esc(offlineStatus(t.id))}</p>` : ""}
     </div>
     <div class="detail-body">
       ${booking ? bookingPanel(t, people) : ""}

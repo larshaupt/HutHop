@@ -7,7 +7,8 @@ corrections; walking connections on swisstopo's trail network; multi-day tour su
 score (new trail, shape, free beds, opening data, …), sortable in the browser; height profiles; GPX export (whole tour or per day, for Komoot and the swisstopo app); a Share button with link previews; weather forecast, trail closures and
 military shooting notices per day; prices, season dates and booking details read from the hut websites, with a cost
 estimate per tour and a "Cheapest" sort; a tour editor, "Your tours" and favourite huts (kept in the browser);
-shareable links (the open view is in the URL); a "Book this tour" checklist; About dialog. See [`hut-tour-planner.md`](hut-tour-planner.md) for the project brief (requirements,
+shareable links (the open view is in the URL); a "Book this tour" checklist; About dialog; installable as an app, with the tours in "My tours"
+saved for use without a connection. See [`hut-tour-planner.md`](hut-tour-planner.md) for the project brief (requirements,
 design, APIs, plan) and [`spikes/`](spikes/) for the Phase 0 findings.
 
 ![Map of all huts with a line for each pair connected by trail within 10 hours, coloured by the hardest trail category](docs/hut-graph.svg)
@@ -99,7 +100,8 @@ web/         static frontend (MapLibre, vendored in web/vendor/, + swisstopo til
              connections, tours (form, results, sorting, opening a tour), tour-detail (timeline, profiles),
              tour-editor (editing a tour), booking (book-this-tour checklist), your-tours and favourites (kept in the browser), settings (general
              settings and units, kept in the browser), editor (hut data),
-             info (About dialog), feedback (dialog), util
+             info (About dialog), feedback (dialog), offline (saving "My tours" for offline use), util;
+             sw.js: the service worker (app shell and saved tours offline), manifest.json and icons: the installable app
 server/      compose.yaml, update.sh (deploy) and refresh.sh (data refresh and graph build) for the server
 docs/        deployment plan, route graph figure
 spikes/      Phase 0 experiments and findings (historical)

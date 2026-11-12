@@ -1,5 +1,6 @@
 // "My tours": tours kept in this browser (local storage, per device), each entry as its tour id plus a label for
-// the list. Saving on the server comes later. Storage can be unavailable (private windows): then the list is empty.
+// the list. Per device by design (no accounts or sync); offline.js also saves them for use without a connection.
+// Storage can be unavailable (private windows): then the list is empty.
 const KEY = "huthop.yourTours";
 const listeners = [];
 

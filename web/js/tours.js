@@ -12,6 +12,7 @@ import { formatDay, renderTourDetail } from "./tour-detail.js";
 import { setBooked } from "./booking.js";
 import { findEntry, keepTour, onYourToursChange, removeEntry, yourTours } from "./your-tours.js";
 import { closeEditor, isEditing, openEditor, refreshEditor } from "./tour-editor.js";
+import { noteSaved, saveTourOffline } from "./offline.js";
 
 const SORTS = { best: "Best", time: "Shortest", ascent: "Least ascent", altitude: "Highest huts",
   beds: "Most free beds", cost: "Cheapest" };
@@ -144,6 +145,7 @@ export function bindTourForm() {
       const entry = findEntry(current.id);
       entry ? removeEntry(entry.key) : keepTour(current);
       renderTourDetail(current, detailOptions());
+      if (!entry) saveTourOffline(current);
       return;
     }
     const hut = e.target.closest("[data-hut]");
@@ -441,6 +443,7 @@ export async function openTourById(id, { edit = false } = {}) {
       This tour is no longer available (a connection was removed or excluded).</p>`);
     return null;
   }
+  noteSaved(res);
   current = await res.json();
   setState({ tour: 0, tid: id, tEdit: edit });
   if (edit) openEditor(current);
@@ -461,6 +464,7 @@ export function showTour(t) {
   drawTour(t);
   revealPanel();
   checkTourBeds(t);
+  if (findEntry(t.id)) saveTourOffline(t);
 }
 
 /** Free beds of a tour's nights not checked yet (beyond a search's first candidates, or edited / opened by id):

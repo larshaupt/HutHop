@@ -162,6 +162,39 @@ def test_search_everywhere_unless_limited_to_the_map(phone: Page, server):
     expect(phone).to_have_url(re.compile(r"tb=[-\d.]+%2C"))
 
 
+def test_saved_tour_works_offline(phone: Page, server):
+    phone.context.route(re.compile(r"^https://wmts\.geo\.admin\.ch/"), lambda route: route.abort())  # no map downloads
+    phone.goto(server + SEARCH + "&tour=1")
+    phone.wait_for_function("navigator.serviceWorker.controller")  # sw.js installed and in charge
+    phone.locator("#tourKeep").click()
+    expect(phone.locator("#offlineStatus")).to_contain_text("Saved for offline use", timeout=15000)
+    expect(phone.locator("#offlineNote")).to_be_hidden()
+
+    phone.context.set_offline(True)
+    phone.goto(server + "#v=mine")
+    phone.reload()  # a new page load, from the service worker's cache
+    phone.locator("#sheetHandle").click()
+    phone.locator("#yoursList .your-tour").click()
+    expect(phone.locator("#tourDetail h2")).to_be_visible()
+    expect(phone.locator("#offlineNote")).to_contain_text("Offline — showing saved data from")
+    phone.locator("#tourDetail [data-hut]").first.click()  # the huts' details are saved too
+    expect(phone.locator("#detail h2")).to_have_text(re.compile("Hut"))
+    no_sideways_scroll(phone)
+    phone.context.set_offline(False)
+
+
+def test_offline_map_tiles_are_capped(phone: Page, server):
+    phone.goto(server)
+    # one straight day of 115 km: the gap between its two points is filled, and the cap keeps high zoom levels out
+    tiles = phone.evaluate("""async () => {
+        const { tourTiles, MAX_TILES } = await import('/js/offline.js');
+        const { urls, zoom } = tourTiles({ days: [{ geometry: '_`yzG_ptf@?_~cH' }] });
+        return { count: urls.length, unique: new Set(urls).size, zoom, max: MAX_TILES };
+    }""")
+    assert 0 < tiles["count"] <= tiles["max"] and tiles["unique"] == tiles["count"]
+    assert 10 <= tiles["zoom"] < 15
+
+
 def test_flexible_search_from_link(phone: Page, server):
     """A shared flexible search: the window comes from the link, and each card names its start date."""
     phone.goto(server + "#v=tours&tf=3")
