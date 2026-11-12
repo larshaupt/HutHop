@@ -11,7 +11,9 @@ the search's hours: a tour you design yourself needn't follow them.
   insert K      a new night before night K (K = number of nights: after the last); at an end the new hut gets the
                 closest usable stop, and a night added at the start moves the start a day earlier (if not past)
   remove N      without night N, if its neighbours connect (removing the first night starts a day later)
-  limit D       another trail-limit variant of day D's edge
+  limit D       another trail-limit variant of day D's edge (on a day with a ride: walking the whole way instead)
+
+Days with a public transport ride (TourKey.rides) are kept as they are wherever their huts stay.
 """
 
 from dataclasses import dataclass
@@ -96,7 +98,8 @@ def edits(graph: Graph, key: TourKey, rules: Rules = Rules(), today: date | None
             if lim is None:
                 return None
             new_limits.append(lim)
-        return Edit(kind, slot, place, TourKey(start, new_places, new_limits, key.hours))
+        rides = {d: key.rides[old] for d, old in (keep or {}).items() if old in key.rides}  # unchanged days keep theirs
+        return Edit(kind, slot, place, TourKey(start, new_places, new_limits, key.hours, rides))
 
     def first_stop(h: int, day: date) -> int | None:
         """The current start stop if it connects to `h`, else the closest usable one (else the closest at all)."""
@@ -202,7 +205,8 @@ def edits(graph: Graph, key: TourKey, rules: Rules = Rules(), today: date | None
             if lim != used and (frm, to, lim) in graph.legs and rules.allows(graph.legs[(frm, to, lim)]):
                 new_limits = list(limits)
                 new_limits[d] = lim
-                found.append(Edit("limit", d, None, TourKey(key.start_date, list(places), new_limits, key.hours)))
+                rides = {k: v for k, v in key.rides.items() if k != d}
+                found.append(Edit("limit", d, None, TourKey(key.start_date, list(places), new_limits, key.hours, rides)))
     return [e for e in found if e is not None]
 
 

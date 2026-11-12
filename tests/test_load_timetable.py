@@ -140,6 +140,29 @@ def test_stop_served_on_a_date(feed, tmp_path):
     assert transit.hhmm(1510) == "01:10"
 
 
+def test_trips_for_rides_and_stop_timetables(feed, tmp_path):
+    from app.planner import transit
+
+    f = load_timetable.read(feed, SINCE, keep={8500001, 8500002})
+    patterns = {(label, calls): (lift, services) for label, _, lift, services, calls in f.patterns}
+    assert patterns[("B 121", ((8500001, 480), (8500002, 510)))] == (False, {"daily"})
+    gondola = [calls for label, calls in patterns if label == "GB 2440"]
+    assert len(gondola) == 18 and ((8500002, 990),) in gondola  # every 30 min 08:00–16:30, one pattern per run
+    assert patterns[("GB 2440", ((8500002, 480),))][0]  # a lift (route type 1300)
+    assert load_timetable.read(feed, SINCE).patterns == []  # trips only for the stops asked for
+
+    conn = connect(tmp_path / "test.db")
+    valley, pass_ = stops_and_hut(conn)
+    assert load_timetable.ride_stops(conn) == {8500001, 8500002}
+    load_timetable.load(conn, [load_timetable.read(feed, SINCE, keep=load_timetable.ride_stops(conn))])
+    timetable = transit.load(conn)
+    saturday = date(2027, 7, 31)
+    assert [(t, p.label) for t, p, _ in timetable.departures(valley, saturday)] == [(480, "B 121"), (540, "B 121")]
+    assert len(timetable.departures(pass_, date(2027, 7, 17))) == 19  # like the stop's service summary
+    assert timetable.rides_from(valley, saturday, 0, 1440) == {pass_: transit.Ride(valley, pass_, 480, 510, "B 121", "")}
+    assert timetable.departures(valley, date(2027, 8, 1)) == []  # no daily bus on 1 August
+
+
 def test_download_this_and_next_year(tmp_path, monkeypatch):
     requests = []
 

@@ -1,5 +1,5 @@
 """Tour suggestions, single tours by id (JSON and GPX), the tour editor's options, a tour from a hut, the stop
-search used to pick a start point, and the share page of a tour (link previews)."""
+search used to pick a start point, and a stop's departures on a day, and the share page of a tour (link previews)."""
 
 import html
 import json
@@ -18,7 +18,7 @@ from app.api.deps import get_db
 from app.clients import geoadmin, hut_reservation
 from app.ingest import osm_access
 from app.planner import costs, editing, gpx, planning, polyline, ranking, transit
-from app.planner.graph import Graph, cached_graph
+from app.planner.graph import Graph, Leg, RideLeg, cached_graph
 from app.planner.tours import Catering, Night, Tour, TourRequest, build_tour, is_lift, parse_tour_id
 
 router = APIRouter(prefix="/api", tags=["tours"])
@@ -53,6 +53,7 @@ class TourQuery(BaseModel):
                                                  "funiculars")
     max_altitude: int | None = Field(None, ge=500, le=5000, description="highest point of a route (m)")
     pace: float = Field(1.0, ge=0.5, le=2.0, description="walking time / Swiss standard time")
+    transit: bool = Field(False, description="a day between huts may include one bus, train or cable car ride")
     people: int = Field(2, ge=1, le=30)
     check_availability: bool = True
 
@@ -172,13 +173,13 @@ def tour_warnings(tour_id: str, conn: sqlite3.Connection = Depends(get_db)) -> d
     """Official trail closures and military danger zones along each day's route, with shooting times on that day
     (clients/geoadmin.py). Separate from the tour, so a slow or failing geoportal never holds the tour up."""
     _, tour = rebuild(conn, tour_id, people=1, check_availability=False)
-    edge_ids = [leg.edge_id for leg in tour.legs]
+    edge_ids = [w.edge_id for leg in tour.legs for w in leg.walks]
     lines = {r["id"]: r["geometry"] for r in conn.execute(
         f"SELECT id, geometry FROM edge WHERE id IN ({','.join('?' * len(edge_ids))})", edge_ids)}
 
     def day(i: int) -> dict:
-        line = lines.get(edge_ids[i])
-        found = geoadmin.identify(polyline.decode(line), line) if line else []
+        found = [f for w in tour.legs[i].walks if (line := lines.get(w.edge_id))
+                 for f in geoadmin.identify(polyline.decode(line), line)]
         return {"day": i + 1, "closures": geoadmin.closures(found),
                 "shooting": geoadmin.shooting(found, tour.start_date + timedelta(days=i))}
 
@@ -242,7 +243,7 @@ def tour_json(conn: sqlite3.Connection, graph: Graph, tours: list[Tour],
     """The one serialisation of tours for the frontend (and for GPX export). Walking times are at the settings'
     pace; `outside_settings` lists what of a tour (made earlier, or shared) the settings wouldn't offer."""
     pace = rules.pace
-    edge_ids = sorted({leg.edge_id for t in tours for leg in t.legs})
+    edge_ids = sorted({w.edge_id for t in tours for leg in t.legs for w in leg.walks})
     lines = {r["id"]: r for r in conn.execute(
         f"SELECT id, geometry, elevation FROM edge WHERE id IN ({','.join('?' * len(edge_ids))})", edge_ids)}
     prices = costs.load_prices(conn, {n.hut for t in tours for n in t.nights})
@@ -281,6 +282,7 @@ def tour_json(conn: sqlite3.Connection, graph: Graph, tours: list[Tour],
             "time_min": round(leg.time_min * pace),
             "geometry": lines[leg.edge_id]["geometry"] if leg.edge_id in lines else None,
             "elevation": lines[leg.edge_id]["elevation"] if leg.edge_id in lines else None,  # heights per point
+            **(ride_json(graph, leg, lines, pace) if isinstance(leg, RideLeg) else {}),
             "night": night_json(t.nights[i], graph.huts[leg.to].hrs_id)
             | {"cost": cost["nights"][i], "contact": contacts.get(leg.to)}
             if i < len(t.nights) else None,
@@ -310,9 +312,26 @@ def outside_settings(graph: Graph, t: Tour, rules: editing.Rules) -> list[str]:
         out.append("trail")
     if rules.max_altitude is not None and any((leg.max_altitude_m or 0) > rules.max_altitude for leg in t.legs):
         out.append("altitude")
-    if rules.avoid_lifts and (is_lift(graph.stops[t.legs[0].frm].mode) or is_lift(graph.stops[t.legs[-1].to].mode)):
+    if rules.avoid_lifts and (is_lift(graph.stops[t.legs[0].frm].mode) or is_lift(graph.stops[t.legs[-1].to].mode)
+                              or any(isinstance(leg, RideLeg) and leg.ride.lift for leg in t.legs)):
         out.append("lift")
     return out
+
+
+def ride_json(graph: Graph, leg: RideLeg, lines: dict, pace: float) -> dict:
+    """A day with a ride: the ride (line, stops, times) and its two walks, each with its own route line (the day
+    itself has none)."""
+    r = leg.ride
+
+    def walk(w: Leg) -> dict:
+        line = lines.get(w.edge_id)
+        return {"from": place_json(graph, w.frm), "to": place_json(graph, w.to), "time_min": round(w.time_min * pace),
+                **{k: getattr(w, k) for k in ("distance_m", "ascent_m", "descent_m", "max_category")},
+                "geometry": line["geometry"] if line else None, "elevation": line["elevation"] if line else None}
+    return {"ride": {"from": place_json(graph, r.frm), "to": place_json(graph, r.to), "line": r.label,
+                     "headsign": r.headsign, "departure": transit.hhmm(r.departure),
+                     "arrival": transit.hhmm(r.arrival), "lift": r.lift},
+            "walks": [walk(leg.walk_to), walk(leg.walk_from)], "edge_id": None}
 
 
 def service_json(graph: Graph, stop_id: int, day: date, walk_min: int, role: str) -> dict:
@@ -364,3 +383,21 @@ def search_stops(q: str = Query(..., min_length=2), conn: sqlite3.Connection = D
         {"any": f"%{q}%", "prefix": f"{q}%"},
     ).fetchall()
     return [dict(r) for r in rows]
+
+
+@router.get("/stops/{stop_id}/departures")
+def stop_departures(stop_id: int, day: date = Query(..., alias="date"),
+                    conn: sqlite3.Connection = Depends(get_db)) -> dict:
+    """A stop's timetable on a day: the times per line and direction (headsign). Only stops with walking
+    connections have their trips loaded; `known` is False when no loaded timetable covers the date."""
+    graph = cached_graph(conn, 4)
+    if stop_id not in graph.stops:
+        raise HTTPException(404, "stop not found")
+    lines: dict[tuple[str, str], list[str]] = {}
+    # shortcut: lists every call, also where a trip ends; GTFS pickup types aren't loaded
+    for t, p, _ in graph.timetable.departures(stop_id, day):
+        lines.setdefault((p.label, p.headsign), []).append(transit.hhmm(t))
+    return {"stop": place_json(graph, stop_id), "date": day.isoformat(),
+            "known": graph.timetable.day(stop_id, day).known,
+            "lines": [{"line": label, "headsign": headsign, "times": times}
+                      for (label, headsign), times in sorted(lines.items())]}

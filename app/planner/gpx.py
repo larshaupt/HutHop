@@ -48,15 +48,21 @@ def to_gpx(tour: dict, day: int | None = None) -> str:
     for d in days:
         desc = (f"{_minutes(d['time_min'])}, {d['distance_m'] / 1000:.1f} km, ↑ {d['ascent_m']} m, ↓ {d['descent_m']} m, "
                 f"hardest: {CATEGORY_NAME[d['max_category']]}")
+        if r := d.get("ride"):
+            desc += (f"; {r['line']} {r['departure']} {r['from']['name']} → {r['arrival']} {r['to']['name']} "
+                     f"(public transport, not in the track)")
         name = f"Day {d['day']}: {d['from']['name']} → {d['to']['name']}"
-        points = polyline.decode(d["geometry"] or "")
-        heights = polyline.decode_values(d.get("elevation") or "")
-        if len(heights) != len(points):  # no profile (edges built before profiles, or drawn by hand)
-            heights = [None] * len(points)
-        out.append(f"  <trk><name>{escape(name)}</name><desc>{escape(desc)}</desc><type>hiking</type><trkseg>")
-        out.extend(f'    <trkpt lat="{lat:.5f}" lon="{lon:.5f}"><ele>{z}</ele></trkpt>' if z is not None
-                   else f'    <trkpt lat="{lat:.5f}" lon="{lon:.5f}"/>' for (lat, lon), z in zip(points, heights))
-        out.append("  </trkseg></trk>")
+        out.append(f"  <trk><name>{escape(name)}</name><desc>{escape(desc)}</desc><type>hiking</type>")
+        for part in d.get("walks") or [d]:  # a day with a ride: one segment per walk
+            points = polyline.decode(part["geometry"] or "")
+            heights = polyline.decode_values(part.get("elevation") or "")
+            if len(heights) != len(points):  # no profile (edges built before profiles, or drawn by hand)
+                heights = [None] * len(points)
+            out.append("  <trkseg>")
+            out.extend(f'    <trkpt lat="{lat:.5f}" lon="{lon:.5f}"><ele>{z}</ele></trkpt>' if z is not None
+                       else f'    <trkpt lat="{lat:.5f}" lon="{lon:.5f}"/>' for (lat, lon), z in zip(points, heights))
+            out.append("  </trkseg>")
+        out.append("  </trk>")
     out.append("</gpx>")
     return "\n".join(out) + "\n"
 

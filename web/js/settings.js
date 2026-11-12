@@ -1,12 +1,12 @@
 // General settings, kept in this browser (local storage, per device) and sent with every request that offers or
 // shows routes: the hardest trail and the highest point a route may reach, whether to avoid start and end stops
-// served only by mountain lifts, your walking pace (times scale with it), Alpine Club member prices, whether
+// served only by mountain lifts, whether a day between huts may include a bus or train ride, your walking pace (times scale with it), Alpine Club member prices, whether
 // searches check free beds, and metric or imperial units. Anything outside them is never offered.
 import { $, esc } from "./util.js";
 
 const KEY = "huthop.settings";
 export const SETTING_DEFAULTS = {
-  limit: 4, maxAltitude: null, avoidLifts: false, pace: 1, member: true, checkBeds: true, units: "metric", v: 2,
+  limit: 4, maxAltitude: null, avoidLifts: false, transit: false, pace: 1, member: true, checkBeds: true, units: "metric", v: 2,
 };
 const ALTITUDES = [2000, 2250, 2500, 2750, 3000, 3250];
 const PACES = [0.7, 0.8, 0.9, 1, 1.1, 1.2, 1.3, 1.5];
@@ -99,6 +99,7 @@ function render() {
       <div class="field"><div class="field-label">Units</div>
         ${seg("units", [["metric", "Kilometres, metres"], ["imperial", "Miles, feet"]], s.units)}</div>
       ${check("avoidLifts", "Avoid mountain lifts (cable cars, chairlifts, funiculars) to and from the huts")}
+      ${check("transit", "Allow bus/train during a tour: a day between huts may walk to a stop, ride, and walk on to the next hut (only the walking counts towards your hours)")}
       ${check("member", "Alpine Club member (SAC, DAV, …): member prices in the cost estimate")}
       ${check("checkBeds", "Check free beds on hut-reservation.org when searching")}
       <button class="link inline" id="setReset">Back to the defaults</button>

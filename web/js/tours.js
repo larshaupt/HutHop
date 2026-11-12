@@ -8,7 +8,7 @@ import { fitCoords, map, visibleBox } from "./map.js";
 import { selectHut } from "./huts.js";
 import { clearConnections } from "./connections.js";
 import { loadInfo } from "./info.js";
-import { formatDay, renderTourDetail } from "./tour-detail.js";
+import { formatDay, renderTourDetail, toggleTimetable } from "./tour-detail.js";
 import { setBooked } from "./booking.js";
 import { findEntry, keepTour, onYourToursChange, removeEntry, yourTours } from "./your-tours.js";
 import { closeEditor, isEditing, openEditor, refreshEditor } from "./tour-editor.js";
@@ -148,6 +148,8 @@ export function bindTourForm() {
       if (!entry) saveTourOffline(current);
       return;
     }
+    const timetable = e.target.closest("[data-timetable]");
+    if (timetable) { toggleTimetable(timetable); return; }
     const hut = e.target.closest("[data-hut]");
     if (hut) { e.preventDefault(); selectHut(Number(hut.dataset.hut)); return; }
     const day = e.target.closest("[data-day]");
@@ -200,7 +202,7 @@ function bindStopPicker() {
 export async function runTourSearch() {
   const body = {
     start_date: state.tDate, flex_days: Math.min(MAX_FLEX, Math.max(0, state.tFlex)), nights: state.tNights, min_hours: state.tMin, max_hours: state.tMax,
-    ...settingsParams(), catering: state.tCat, loop: state.tLoop && !!state.tStart,
+    ...settingsParams(), transit: settings().transit, catering: state.tCat, loop: state.tLoop && !!state.tStart,
     include_unknown: state.tUnknown, start_stop: state.tStart || null,
     people: state.tPeople, check_availability: settings().checkBeds,
     bbox: state.tBox ? state.tBox.split(",").map(Number) : null,
@@ -288,7 +290,7 @@ function tourCard(t, i) {
   return `<article class="tour-card" data-n="${i + 1}" tabindex="0">
     <div class="tour-head">
       <div>${results?.query?.flex_days ? `<b>${formatDay(t.days[0].date)}</b> · ` : ""}<b>${t.nights} night${t.nights > 1 ? "s" : ""}</b> · ${distanceValue(t.distance_m, 0)} ${distanceUnit()} · ↑ ${formatHeight(t.ascent_m)}</div>
-      <div class="tour-flags">${unofficialBadge(t)}${transitBadge(t)}${availBadge(t)}${costBadge(t)}${scoreBadge(t)}</div>
+      <div class="tour-flags">${unofficialBadge(t)}${rideBadge(t)}${transitBadge(t)}${availBadge(t)}${costBadge(t)}${scoreBadge(t)}</div>
     </div>
     <div class="tour-body">
       <ol class="chain">${chainItems(chain)}</ol>
@@ -311,6 +313,14 @@ function unofficialBadge(t) {
   const grade = days.map((d) => d.osm_grade).filter(Boolean).sort().pop();
   return `<span class="flag" title="Not signposted: a path from OpenStreetMap, often glacier or alpine terrain">` +
     `Unofficial path${grade ? ` ${grade}` : ""}</span>`;
+}
+
+/** Card badge: days with a bus, train or cable car ride between huts. */
+function rideBadge(t) {
+  const rides = t.days.filter((d) => d.ride);
+  if (!rides.length) return "";
+  return `<span class="flag" title="${esc(rides.map((d) => `Day ${d.day}: ${d.ride.line} ${d.ride.from.name} → ${d.ride.to.name}`).join("; "))}">` +
+    `${rides.length > 1 ? `${rides.length} rides` : "Ride"} between huts</span>`;
 }
 
 /** Card badge when the first connection reaches the first hut late, or the last one leaves early. */
@@ -518,7 +528,7 @@ export function drawTour(t, { fit = true } = {}) {
   if (!map.getSource("tour") || !t) return;
   const lines = t.days.map((d) => ({
     type: "Feature", id: d.day,
-    geometry: { type: "LineString", coordinates: decodePolyline(d.geometry || "") },
+    geometry: { type: "MultiLineString", coordinates: (d.walks || [d]).map((w) => decodePolyline(w.geometry || "")) },
     properties: { day: d.day, category: d.max_category },
   }));
   const points = [
@@ -529,13 +539,16 @@ export function drawTour(t, { fit = true } = {}) {
     properties: { label: p.label, role: p.role, name: p.name } }));
   map.getSource("tour").setData({ type: "FeatureCollection", features: lines });
   map.getSource("tour-points").setData({ type: "FeatureCollection", features: points });
-  if (fit) fitCoords(lines.flatMap((l) => l.geometry.coordinates));
+  if (fit) fitCoords(t.days.flatMap(dayCoords));
 }
 
 function focusDay(day) {
   const t = current;
-  if (t) fitCoords(decodePolyline(t.days[day - 1].geometry || ""), 14);
+  if (t) fitCoords(dayCoords(t.days[day - 1]), 14);
 }
+
+/** A day's route points; a day with a ride has two walks. */
+const dayCoords = (d) => (d.walks || [d]).flatMap((w) => decodePolyline(w.geometry || ""));
 
 /** Remove a hovered preview; keeps the selected tour drawn while its detail is open. */
 export function clearTour() {
