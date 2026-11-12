@@ -202,7 +202,11 @@ function renderList() {
 /** Twelve small bars, one per month: open (catered, self-service), closed or no data; the chosen month stands out. */
 function seasonStrip(h) {
   const bars = h.months.map((s, i) => `<i class="${s}${i === state.month - 1 ? " sel" : ""}"></i>`).join("");
-  return `<span class="mini-season" title="Open months, January to December" aria-hidden="true">${bars}</span>`;
+  // Runs of the same status, e.g. "Jun–Sep Catered · Oct–May Closed"
+  const runs = [];
+  h.months.forEach((s, i) => (runs.at(-1)?.s === s ? (runs.at(-1).to = i) : runs.push({ s, from: i, to: i })));
+  const label = runs.map((r) => `${MONTHS[r.from]}${r.to > r.from ? `–${MONTHS[r.to]}` : ""} ${STATUS_LABEL[r.s]}`).join(" · ");
+  return `<span class="mini-season" role="img" title="Months, Jan to Dec: ${label}" aria-label="${label}">${bars}</span>`;
 }
 
 function hutsGeoJSON() {
