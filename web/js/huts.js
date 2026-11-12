@@ -1,5 +1,5 @@
 // Hut browser: filters, list, hut layers on the map and the hut detail view.
-import { $, BOOKING_LABEL, COLORS, MONTHS, STATUS_LABEL, esc, formatDuration, revealPanel, telHref } from "./util.js";
+import { $, BOOKING_LABEL, COLORS, MONTHS, STATUS_LABEL, esc, formatDuration, revealPanel, shareLink, telHref } from "./util.js";
 import { ALT_MAX, DEFAULTS, setState, state } from "./state.js";
 import { map, mapPadding } from "./map.js";
 import { clearConnections, connectionsSection, showConnections } from "./connections.js";
@@ -121,7 +121,17 @@ export function bindHutEvents() {
     setState({ [b.dataset.toggle]: !state[b.dataset.toggle] });
     update();
   }));
-  $("#q").addEventListener("input", (e) => { setState({ q: e.target.value }); update(); });
+  $("#q").addEventListener("input", (e) => { setState({ q: e.target.value }); update(); suggestHuts(); });
+  $("#q").addEventListener("focus", suggestHuts);
+  $("#q").addEventListener("blur", () => { $("#qList").hidden = true; });
+  $("#qList").addEventListener("mousedown", (e) => {
+    const li = e.target.closest("li[data-id]");
+    if (!li) return;
+    e.preventDefault();  // keep the focus, so the blur doesn't hide the list before the click
+    $("#qList").hidden = true;
+    $("#q").blur();
+    selectHut(Number(li.dataset.id));
+  });
   $("#sort").addEventListener("change", (e) => { setState({ sort: e.target.value }); update(); });
   $("#altMin").addEventListener("input", (e) => { setState({ altMin: Math.min(Number(e.target.value), state.altMax - 100) }); update(); });
   $("#altMax").addEventListener("input", (e) => { setState({ altMax: Math.max(Number(e.target.value), state.altMin + 100) }); update(); });
@@ -149,6 +159,18 @@ export function bindHutEvents() {
   list.addEventListener("mouseleave", () => setHover(null));
 }
 
+/** Outside the hut list (tour planner, my tours, an open hut or tour), the search shows matching huts below it;
+ * one opens like a hut on the map, and "back" returns to where you were. In the hut list, the list itself filters. */
+function suggestHuts() {
+  const q = state.q.trim().toLocaleLowerCase();
+  const inList = state.view === "huts" && !$("#browse").hidden;
+  const found = q && !inList ? huts.filter((h) => h.name.toLocaleLowerCase().includes(q)).slice(0, 8) : [];
+  $("#qList").innerHTML = found.map((h) => `<li role="option" data-id="${h.id}">${esc(h.name)}` +
+    `<small>${h.altitude ? formatHeight(h.altitude) : ""}</small></li>`).join("") ||
+    (q && !inList ? `<li class="none">No hut found</li>` : "");
+  $("#qList").hidden = !$("#qList").innerHTML;
+}
+
 // ---------- List and map ----------
 export function update() {
   syncControls();
@@ -162,7 +184,7 @@ export function update() {
 function renderList() {
   if (!visible.length) {
     $("#list").innerHTML = `<li class="empty">${state.fav && !huts.some((h) => isFavourite(h.id))
-      ? "No favourite huts yet: open a hut and tap ☆ Favourite." : "No huts match these filters."}</li>`;
+      ? "No favourite huts yet: open a hut and tap the ☆ on its photo." : "No huts match these filters."}</li>`;
     return;
   }
   $("#list").innerHTML = visible.map((h) => {
@@ -173,8 +195,14 @@ function renderList() {
       : `<span class="noimg">▲</span>`;
     const meta = [h.altitude && formatHeight(h.altitude), h.beds && `${h.beds} beds`].filter(Boolean).join(" · ");
     return `<li class="hut" data-id="${h.id}">${img}<div><div class="hut-name">${isFavourite(h.id) ? `<span class="fav" title="Favourite">★</span> ` : ""}${esc(h.name)}</div>` +
-      `<div class="hut-meta">${meta}</div></div>${badge}</li>`;
+      `<div class="hut-meta">${meta}</div>${seasonStrip(h)}</div>${badge}</li>`;
   }).join("");
+}
+
+/** Twelve small bars, one per month: open (catered, self-service), closed or no data; the chosen month stands out. */
+function seasonStrip(h) {
+  const bars = h.months.map((s, i) => `<i class="${s}${i === state.month - 1 ? " sel" : ""}"></i>`).join("");
+  return `<span class="mini-season" title="Open months, January to December" aria-hidden="true">${bars}</span>`;
 }
 
 function hutsGeoJSON() {
@@ -295,9 +323,9 @@ export async function selectHut(id, { fly = true } = {}) {
   renderDetail(d);
   showConnections(id);
   $("#tourDetail").hidden = true;
-  clearTour();
   $("#browse").hidden = true;
   $("#detail").hidden = false;
+  clearTour();  // after the views switch: the listed tours' lines hide while a hut is open
   $("#detail").scrollTop = 0;
   revealPanel();
 }
@@ -308,10 +336,14 @@ export function closeDetail() {
   clearConnections();
   $("#detail").hidden = true;
   if (!(state.view === "tours" && state.tour && returnToTour())) $("#browse").hidden = false;
+  clearTour();  // the listed tours' lines come back with the list
 }
 
 const PRICE_LABEL = { overnight: "Night", half_board: "Half board", breakfast: "Breakfast", dinner: "Dinner",
   tax: "Tourist tax", winter_room: "Winter room", self_catering_fee: "Kitchen use" };
+// Lucide "share" (ISC licence)
+const SHARE_ICON = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/>` +
+  `<path d="m16 6-4-4-4 4"/><path d="M12 2v13"/></svg>`;
 const UNVERIFIED = `<span class="unverified" title="Not found word for word on the website: check there">?</span>`;
 
 function formatMonthDay(md) {
@@ -372,12 +404,28 @@ function renderDetail(d) {
   const geoAdmin = `https://map.geo.admin.ch/#/map?lang=en&center=${e},${n}&z=9&bgLayer=ch.swisstopo.pixelkarte-farbe` +
     "&layers=ch.swisstopo.swisstlm3d-wanderwege&crosshair=marker";
   const long = (d.description || "").length > 320;
+  // Phone, email and pages as one calm list instead of a row of buttons: label, then what you get
+  const host = (url) => { try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return url; } };
+  const external = 'target="_blank" rel="noopener"';
+  const contacts = [
+    d.phone && ["Phone", telHref(d.phone), d.phone, ""],
+    d.email && ["Email", `mailto:${d.email}`, d.email, ""],
+    d.website && ["Website", d.website, host(d.website), external],
+    d.sac_url && ["SAC page", d.sac_url, host(d.sac_url), external],
+    ["Map", geoAdmin, "map.geo.admin.ch", external],
+  ].filter(Boolean).map(([label, href, text, attrs]) =>
+    `<li><a href="${esc(href)}" ${attrs}><span>${label}</span><b>${esc(text)}</b></a></li>`).join("");
 
   $("#detail").innerHTML = `
     <div class="hero">
       ${photo ? `<img src="${esc(photo.large || photo.medium)}" alt="${esc(photo.caption || d.name)}">` : ""}
-      <button class="back" id="back"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>${state.view === "tours" && state.tour ? "Tour" : "All huts"}</button>
+      <button class="back" id="back"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>${state.view === "tours" && state.tour ? "Tour" : state.view === "huts" ? "All huts" : "Back"}</button>
       ${photo ? `<span class="credit">© ${esc(photo.copyright)}</span>` : ""}
+      <div class="hero-tools">
+        <button class="hero-btn" id="hutShare" aria-label="Share this hut" title="Share this hut">${SHARE_ICON}</button>
+        <button class="hero-btn fav-toggle" id="favourite" aria-pressed="${isFavourite(d.id)}" aria-label="Favourite"
+          title="Favourite">${isFavourite(d.id) ? "★" : "☆"}</button>
+      </div>
     </div>
     <div class="detail-body">
       <h2>${esc(d.name)}</h2>
@@ -389,14 +437,9 @@ function renderDetail(d) {
       </div>
       <div class="actions">
         ${d.booking_url ? `<a class="btn primary" href="${esc(d.booking_url)}" target="_blank" rel="noopener">Check availability</a>` : ""}
-        ${d.website ? `<a class="btn" href="${esc(d.website)}" target="_blank" rel="noopener">Website</a>` : ""}
-        ${d.sac_url ? `<a class="btn" href="${esc(d.sac_url)}" target="_blank" rel="noopener">SAC page</a>` : ""}
-        ${d.email ? `<a class="btn" href="mailto:${esc(d.email)}">Email</a>` : ""}
-        ${d.phone ? `<a class="btn" href="${esc(telHref(d.phone))}">${esc(d.phone)}</a>` : ""}
-        <a class="btn" href="${geoAdmin}" target="_blank" rel="noopener">swisstopo map</a>
-        <button class="btn" id="favourite" aria-pressed="${isFavourite(d.id)}">${isFavourite(d.id) ? "★" : "☆"} Favourite</button>
-        <button class="btn" data-plan-tour="${d.id}">Plan a tour from here</button>
+        <button class="btn${d.booking_url ? "" : " primary"}" data-plan-tour="${d.id}">Plan a tour from here</button>
       </div>
+      <div class="section"><h3>Contact and links</h3><ul class="contact">${contacts}</ul></div>
       <div class="section">
         <h3>Season</h3>
         <div class="season">${d.months.map((s, i) =>
@@ -421,12 +464,19 @@ function renderDetail(d) {
         <a href="#" data-edit-hut="${d.id}">Edit hut data</a></p>
     </div>`;
   $("#back").addEventListener("click", closeDetail);
+  $("#hutShare").addEventListener("click", async (ev) => {
+    const button = ev.currentTarget;
+    if (!await shareLink(`${location.origin}/#hut=${d.id}`, d.name)) return;
+    button.textContent = "✓";
+    button.title = "Link copied";
+    setTimeout(() => { button.innerHTML = SHARE_ICON; button.title = "Share this hut"; }, 2000);
+  });
   if (d.booking_url) loadBeds(d.id);
   loadWeather(d.id, $("#weather"));
   $("#favourite").addEventListener("click", (ev) => {
     const fav = toggleFavourite(d.id);
     ev.currentTarget.setAttribute("aria-pressed", fav);
-    ev.currentTarget.textContent = `${fav ? "★" : "☆"} Favourite`;
+    ev.currentTarget.textContent = fav ? "★" : "☆";
     update();
   });
   $("#more")?.addEventListener("click", (ev) => {

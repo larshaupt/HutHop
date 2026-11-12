@@ -17,6 +17,7 @@
   --radius: 12px;
   --shadow: 0 1px 2px rgb(20 30 25 / 0.06), 0 8px 28px rgb(20 30 25 / 0.12);
   --panel-w: 400px;
+  --bar-bottom: 72px;  /* the panel starts below the top bar */
   /* Shared spacing: the panel's side gutter, and steps for gaps and margins */
   --gutter: 16px;
   --space-xs: 4px;
@@ -48,7 +49,7 @@ a { color: var(--accent); }
 /* ---------- Panel ---------- */
 .panel {
   position: fixed;
-  top: 12px; left: 12px; bottom: 12px;
+  top: var(--bar-bottom); left: 12px; bottom: 12px;
   width: var(--panel-w);
   background: var(--bg);
   border-radius: 16px;
@@ -60,14 +61,24 @@ a { color: var(--accent); }
 .view { display: flex; flex-direction: column; min-height: 0; flex: 1; }
 .sheet-handle { display: none; }
 
-.brand { display: flex; align-items: center; gap: var(--space-s); padding: 18px var(--gutter) var(--space-m); }
-.brand > div { margin: 0 auto 0 2px; }  /* the title pushes the header buttons to the right */
-.brand h1 { font-size: 19px; line-height: 1.1; margin: 0; letter-spacing: -0.01em; }
-.brand p { margin: 1px 0 0; color: var(--text-soft); font-size: 12.5px; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* ---------- Top bar over the map: home and search, hut filters, map tools ---------- */
+.topbar { position: fixed; top: 12px; left: 12px; right: 12px; z-index: 3; display: flex; align-items: flex-start; gap: 10px;
+  pointer-events: none; }  /* the map stays draggable between the controls */
+.topbar > * { pointer-events: auto; }
+.pill { flex: none; width: var(--panel-w); height: 48px; display: flex; align-items: center; gap: 4px; padding: 0 6px;
+  background: var(--bg); border-radius: 99px; box-shadow: var(--shadow); }
+.home { flex: none; width: 40px; height: 40px; border: 0; border-radius: 50%; background: none; display: grid; place-items: center; }
+.home:hover { background: var(--bg-soft); }
+.bar-row { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; pointer-events: none; }
+.bar-row > * { pointer-events: auto; }
+.quick { display: flex; flex-wrap: wrap; gap: 8px; }
+body:not([data-view="huts"]) #quick, body:not([data-view="tours"]) #tourQuick { display: none; }
 .logo { width: 30px; height: 30px; flex: none; }
 .logo path { fill: var(--accent); }
 .logo .logo-door { fill: #fff; }
-.about-btn { flex: none; width: 34px; height: 34px; border: 1px solid var(--line); border-radius: 50%; background: var(--bg); display: grid; place-items: center; }
+.about-btn { flex: none; width: 34px; height: 34px; border: 0; border-radius: 50%; background: var(--bg); display: grid; place-items: center; }
 .about-btn:hover { background: var(--bg-soft); border-color: var(--text-faint); }
 .about-btn svg { width: 20px; height: 20px; fill: none; stroke: var(--text); stroke-width: 2; stroke-linecap: round; }
 
@@ -98,12 +109,12 @@ a { color: var(--accent); }
   .about { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; }
 }
 
-.search { position: relative; margin: 0 var(--gutter) var(--space-xs); }
-.search svg { position: absolute; left: 12px; top: 50%; width: 17px; height: 17px; transform: translateY(-50%);
+.search { position: relative; flex: 1; min-width: 0; }
+.search svg { position: absolute; left: 11px; top: 50%; width: 17px; height: 17px; transform: translateY(-50%);
   fill: none; stroke: var(--text-faint); stroke-width: 2; stroke-linecap: round; }
 .search input {
-  width: 100%; height: 40px; padding: 0 40px 0 38px;
-  border: 1px solid var(--line); border-radius: 10px; background: var(--bg-soft);
+  width: 100%; height: 38px; padding: 0 40px 0 34px;
+  border: 1px solid transparent; border-radius: 99px; background: var(--bg-soft);
   transition: border-color .15s, background .15s;
 }
 .search input:focus { outline: none; border-color: var(--text-soft); background: var(--bg); }
@@ -112,29 +123,30 @@ a { color: var(--accent); }
   font: 11px var(--font); color: var(--text-faint); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; }
 
 /* ---------- Tabs ---------- */
-.tabs { display: flex; gap: var(--space-xs); margin: 0 var(--gutter) var(--space-m); border-bottom: 1px solid var(--line); }
+.tabs { display: flex; gap: 2px; margin: var(--space-m) var(--gutter) var(--space-xs); padding: 3px; background: var(--bg-soft);
+  border-radius: 99px; }
 .tabs button {
-  border: 0; background: none; padding: 8px 4px 10px; margin-right: 12px; font-weight: 600; color: var(--text-soft);
-  border-bottom: 2px solid transparent; margin-bottom: -1px;
+  flex: 1; height: 36px; border: 0; border-radius: 99px; background: none; font-weight: 600; color: var(--text-soft);
+  white-space: nowrap;
 }
 .tabs button:hover { color: var(--text); }
-.tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+.tabs button[aria-selected="true"] { background: var(--text); color: #fff; }
 .tab { display: flex; flex-direction: column; min-height: 0; flex: 1; }
 .tab.scroll, #hutsTab { overflow-y: auto; overscroll-behavior: contain; }
 
 /* ---------- Filters ---------- */
-.filters { margin: var(--space-xs) var(--gutter) 0; border-bottom: 1px solid var(--line); }
-.filters summary {
-  display: flex; align-items: center; gap: 8px;
-  list-style: none; cursor: pointer; padding: 10px 0; font-weight: 600; user-select: none;
-}
+/* A chip in the top bar that opens the remaining filters as a popover below it */
+.filters { position: relative; }
+.filters summary { display: inline-flex; align-items: center; gap: 6px; list-style: none; user-select: none; color: var(--text); }
 .filters summary::-webkit-details-marker { display: none; }
 .filters summary::after {
-  content: ""; margin-left: auto; width: 8px; height: 8px; order: 3;
-  border-right: 2px solid var(--text-faint); border-bottom: 2px solid var(--text-faint);
-  transform: rotate(45deg); transition: transform .2s;
+  content: ""; width: 6px; height: 6px; margin: -3px 0 0 2px;
+  border-right: 2px solid var(--text-faint); border-bottom: 2px solid var(--text-faint); transform: rotate(45deg);
 }
-.filters[open] summary::after { transform: rotate(-135deg); }
+.filters[open] summary::after { transform: rotate(-135deg); margin-top: 3px; }
+.filters-body { position: absolute; top: 44px; left: 0; width: 360px; max-height: calc(100dvh - 120px); overflow-y: auto;
+  padding: 14px 16px 2px; background: var(--bg); border-radius: 14px; box-shadow: var(--shadow); }
+.filters-head { display: flex; align-items: center; margin-bottom: 12px; }
 .active-count { background: var(--accent); color: #fff; border-radius: 99px; font-size: 11px; padding: 0 7px; line-height: 18px; }
 .link { background: none; border: 0; padding: 0; min-height: 24px; color: var(--accent); font-weight: 500; font-size: 13px; order: 2; margin-left: auto; }
 .link + * { margin-left: 0; }
@@ -208,6 +220,12 @@ input[type="range"] { width: 100%; min-height: 24px; accent-color: var(--text); 
 .hut .noimg { display: grid; place-items: center; color: var(--text-faint); }
 .hut-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hut-meta { color: var(--text-soft); font-size: 12.5px; }
+.mini-season { display: grid; grid-template-columns: repeat(12, 1fr); gap: 2px; width: 120px; margin-top: 4px; }
+.mini-season i { height: 4px; border-radius: 1px; background: var(--line); }
+.mini-season i.catered { background: var(--catered); }
+.mini-season i.self_service { background: var(--self-service); }
+.mini-season i.unknown { background: repeating-linear-gradient(90deg, var(--line) 0 2px, transparent 2px 4px); }
+.mini-season i.sel { box-shadow: 0 0 0 1.5px var(--bg), 0 0 0 2.5px var(--text); }
 .hut > div { min-width: 0; }
 .empty { padding: 32px 20px; text-align: center; color: var(--text-soft); }
 
@@ -223,6 +241,18 @@ input[type="range"] { width: 100%; min-height: 24px; accent-color: var(--text); 
 .hero { position: relative; aspect-ratio: 16 / 9; background: linear-gradient(135deg, #3b4a42, #1d2521); flex: none; }
 .hero img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .hero::after { content: ""; position: absolute; inset: 0; background: linear-gradient(to bottom, rgb(0 0 0 / .35), transparent 30%, transparent 70%, rgb(0 0 0 / .25)); pointer-events: none; }
+.hero-btn svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.hero-tools { position: absolute; top: 12px; right: 12px; z-index: 1; display: flex; gap: 8px; }
+.hero-btn { display: grid; place-items: center; width: 36px; height: 36px; border: 0; border-radius: 50%;
+  background: rgb(255 255 255 / .92); box-shadow: 0 1px 4px rgb(0 0 0 / .2); font-size: 19px; line-height: 1; color: var(--text); }
+.fav-toggle[aria-pressed="true"] { color: #e0a800; }
+.contact { list-style: none; margin: 0; padding: 0; }
+.contact a { display: flex; justify-content: space-between; gap: 12px; padding: 9px 0; border-top: 1px solid var(--line);
+  color: var(--text); text-decoration: none; }
+.contact li:first-child a { border-top: 0; padding-top: 0; }
+.contact span { color: var(--text-soft); flex: none; }
+.contact b { font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.contact a:hover b { text-decoration: underline; }
 .hero .credit { position: absolute; right: 10px; bottom: 6px; z-index: 1; color: rgb(255 255 255 / .85); font-size: 10.5px; }
 .back {
   position: absolute; top: 12px; left: 12px; z-index: 1;
@@ -235,15 +265,17 @@ input[type="range"] { width: 100%; min-height: 24px; accent-color: var(--text); 
 .detail-body { padding: var(--space-l) var(--gutter) var(--space-xl); }
 .detail-body h2 { margin: 0; font-size: 22px; line-height: 1.2; letter-spacing: -0.01em; }
 .subtitle { color: var(--text-soft); margin-top: 3px; }
-.facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 16px 0; }
-.fact { background: var(--bg-soft); border-radius: 10px; padding: 8px 10px; }
+/* Numbers (hut and tour) as one light row */
+.facts { display: grid; grid-template-columns: repeat(3, 1fr); margin: var(--space-m) 0; }
+.fact { padding: 0 var(--space-m); border-left: 1px solid var(--line); }
+.fact:first-child { padding-left: 0; border-left: 0; }
 .fact b { display: block; font-size: 16px; }
 .fact span { color: var(--text-soft); font-size: 12px; }
 
 .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 20px; }
 .btn {
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
-  height: 36px; padding: 0 14px; border-radius: 10px; font-weight: 600; font-size: 13.5px;
+  height: 36px; padding: 0 14px; border-radius: 99px; font-weight: 600; font-size: 13.5px;
   text-decoration: none; border: 1px solid var(--line); color: var(--text); background: var(--bg);
 }
 .btn:hover { background: var(--bg-soft); }
@@ -324,6 +356,22 @@ input[type="range"] { width: 100%; min-height: 24px; accent-color: var(--text); 
 
 /* ---------- Tour planner ---------- */
 .tour-form { padding: var(--space-xs) var(--gutter) var(--space-s); }
+/* The trip in short lines: a word on the left, its controls on the right */
+.sentence { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 10px 12px;
+  font-size: 15px; margin: 8px 0 18px; }
+.sentence > span { color: var(--text-soft); }
+.s-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.sentence .input, .sentence .stepper { height: 38px; font-size: 14px; }
+.sentence input[type="date"] { flex: 1 1 140px; width: auto; }
+.sentence select.input { flex: 1 1 150px; width: auto; }
+.sentence .stepper { display: inline-flex; flex: none; }
+.sentence .chip-picked { height: 38px; font-size: 14px; }
+.sentence .stepper output { min-width: 24px; }
+.sentence .stepper button { width: 32px; line-height: 1; }
+.sentence select.input { padding-right: 4px; }
+.sparkline { display: block; width: 100%; height: 40px; margin-top: 10px; }
+.sparkline .area { fill: var(--text); opacity: .08; }
+.sparkline .line { fill: none; stroke: var(--text); stroke-width: 1.5; }
 .input {
   width: 100%; height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg);
 }
@@ -351,6 +399,8 @@ label.field-label { display: flex; }
 .suggest li { padding: 7px 8px; border-radius: 7px; cursor: pointer; }
 .suggest li:hover { background: var(--bg-soft); }
 .suggest li.none { color: var(--text-faint); cursor: default; }
+.suggest small { margin-left: 6px; color: var(--text-faint); }
+.search .suggest { top: 44px; }
 
 #tAreaHint { margin-top: 6px; }
 #tourResults { padding: 0 var(--gutter) var(--space-l); }
@@ -360,7 +410,7 @@ label.field-label { display: flex; }
   border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-bottom: 8px; cursor: pointer;
   transition: border-color .12s, box-shadow .12s;
 }
-.tour-card:hover, .tour-card:focus-visible { border-color: var(--text-soft); box-shadow: 0 2px 10px rgb(0 0 0 / .07); outline: none; }
+.tour-card:hover, .tour-card.hover, .tour-card:focus-visible { border-color: var(--text-soft); box-shadow: 0 2px 10px rgb(0 0 0 / .07); outline: none; }
 .tour-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--space-xs) var(--space-s);
   color: var(--text-soft); font-size: 13px; }
 .tour-head > div:first-child { white-space: nowrap; }  /* the badges wrap below rather than the numbers */
@@ -389,7 +439,17 @@ label.field-label { display: flex; }
 .daybar span { font-size: 10.5px; color: var(--text-soft); font-variant-numeric: tabular-nums; }
 
 .tour-top { padding: var(--space-l) var(--gutter) 0; }
-.tour-top .actions { margin-bottom: var(--space-xs); }
+#tourDetail > .tour-nav + .tour-top { padding-top: var(--space-xs); }
+.tour-top .sparkline { margin: 0 0 var(--space-l); height: 48px; }
+/* Tour detail: back and previous / next stay at the top while the tour scrolls */
+#tourDetail > .tour-nav + .tour-top h2 { margin-top: 0; }
+#tourDetail .tour-nav { position: sticky; top: 0; z-index: 2; background: var(--bg); padding: var(--space-m) var(--gutter); }
+.tour-top .actions { margin-bottom: var(--space-s); }
+/* Less important actions: smaller, borderless pills under the main ones */
+.actions.quiet { gap: 6px; }
+.actions.quiet .btn { height: 32px; padding: 0 12px; font-size: 13px; font-weight: 500; border-color: transparent; background: var(--bg-soft); }
+.actions.quiet .btn:hover { background: var(--bg-hover); }
+.actions.quiet .btn[aria-pressed="true"] { color: #8a6d00; background: #fff4c2; }
 .tour-top h2 { margin: 10px 0 0; font-size: 20px; line-height: 1.25; letter-spacing: -0.01em; }
 .back.flat { position: static; box-shadow: none; background: var(--bg-soft); }
 .tour-nav { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
@@ -493,9 +553,11 @@ code { font-size: 12px; background: var(--bg-soft); padding: 0 4px; border-radiu
 @media (hover: none) { .conn-x { opacity: 1; } }
 
 /* ---------- Map overlays ---------- */
-.map-tools { position: fixed; top: 12px; right: 12px; display: flex; gap: 8px; z-index: 1; }
+.map-tools { display: flex; gap: 8px; margin-left: auto; }
 .map-seg { background: var(--bg); box-shadow: var(--shadow); }
-.map-chip { box-shadow: var(--shadow); border-color: transparent; height: 36px; }
+.map-chip { box-shadow: var(--shadow); border-color: transparent; height: 36px; color: var(--text); }
+.map-chip[aria-pressed="true"] { background: var(--text); border-color: var(--text); color: #fff; }
+.empty .link { order: 0; margin: 8px 0 0; }
 .legend {
   position: fixed; left: calc(var(--panel-w) + 24px); bottom: 12px; z-index: 1;
   display: flex; gap: 12px; padding: 7px 12px; border-radius: 10px;
@@ -503,7 +565,7 @@ code { font-size: 12px; background: var(--bg-soft); padding: 0 4px; border-radiu
 }
 .legend span { display: inline-flex; align-items: center; gap: 5px; }
 .maplibregl-ctrl-bottom-right { z-index: 1; }
-.maplibregl-ctrl-top-right { top: 56px; }
+.maplibregl-ctrl-top-right { top: 64px; }
 .maplibregl-popup-content { padding: 6px 10px; border-radius: 8px; font: 600 13px var(--font); box-shadow: var(--shadow); }
 .maplibregl-popup-content small { display: block; font-weight: 400; color: var(--text-soft); }
 .maplibregl-popup-tip { display: none; }
@@ -527,13 +589,21 @@ code { font-size: 12px; background: var(--bg-soft); padding: 0 4px; border-radiu
   }
   .sheet-handle span { width: 40px; height: 5px; border-radius: 3px; background: var(--line); }
   /* Drag zones of the sheet (main.js): no browser panning there, so the drag reaches the page */
-  .sheet-handle, #browse .brand, #tabs { touch-action: none; }
-  .brand { padding: 2px var(--gutter) var(--space-s); }
-  .brand p { display: none; }
+  .sheet-handle, #tabs { touch-action: none; }
   .search kbd { display: none; }
   .hero { aspect-ratio: 2 / 1; }
-  .map-tools { top: 10px; right: 10px; }
-  .legend { top: 56px; bottom: auto; left: 10px; right: auto; flex-direction: column; gap: 3px; padding: 6px 10px; font-size: 11.5px; }
+  .tabs { margin-top: 0; }
+  /* Top bar: the search on its own row, then one row of chips and map tools that scrolls sideways */
+  .topbar { top: 10px; left: 10px; right: 10px; flex-direction: column; align-items: stretch; gap: 8px; }
+  .pill { width: auto; height: 46px; }
+  .bar-row { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; margin: -6px -10px; padding: 6px 10px; }
+  .quick { flex-wrap: nowrap; }
+  .bar-row > *, .quick > *, .map-tools > * { flex: none; }  /* nothing shrinks: the row scrolls instead */
+  .filters-body { position: fixed; top: 112px; left: 10px; right: 10px; width: auto; max-height: calc(100dvh - 280px); }
+  /* With the sheet fully open, only the search stays above it */
+  .topbar:has(~ #panel[data-sheet="full"]) .bar-row { display: none; }
+  .maplibregl-ctrl-top-right { top: 104px; }
+  .legend { top: 108px; bottom: auto; left: 10px; right: auto; flex-direction: column; gap: 3px; padding: 6px 10px; font-size: 11.5px; }
   .maplibregl-ctrl-bottom-right { bottom: var(--peek); }
 }
 
@@ -587,7 +657,7 @@ code { font-size: 12px; background: var(--bg-soft); padding: 0 4px; border-radiu
 
 /* Phones and tablets: icon buttons big enough to tap */
 @media (pointer: coarse) {
-  .about-btn, .about-close { width: 44px; height: 44px; }
+  .about-btn, .about-close, .hero-btn { width: 44px; height: 44px; }
 }
 
 /* Weather forecast (hut details) and favourite marks */

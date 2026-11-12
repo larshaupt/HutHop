@@ -51,6 +51,27 @@ function profileChart(profile, scale, color) {
     </div>`;
 }
 
+/** Height profile of the whole tour, its days end to end, without axis (tour cards and the tour's header);
+ * none if a day has no heights. */
+export function tourSparkline(t) {
+  const points = [];
+  let length = 0;
+  for (const d of t.days) {
+    const p = dayProfile(d);
+    if (!p) return "";
+    points.push(...p.map(([m, z]) => [m + length, z]));
+    length += p[p.length - 1][0];
+  }
+  const zs = points.map(([, z]) => z), lo = Math.min(...zs), hi = Math.max(...zs);
+  const W = 300, H = 40;
+  const x = (m) => ((m / length) * W).toFixed(1), y = (z) => (H - 1 - ((z - lo) / (hi - lo || 1)) * (H - 4)).toFixed(1);
+  const line = points.map(([m, z], i) => `${i ? "L" : "M"}${x(m)},${y(z)}`).join("");
+  const label = `Height profile: ${heightValue(lo)}–${formatHeight(hi)}`;
+  return `<svg class="sparkline" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img" aria-label="${label}">
+      <title>${label}</title><path class="area" d="${line}L${W},${H}L0,${H}Z"/>
+      <path class="line" d="${line}" vector-effect="non-scaling-stroke"/></svg>`;
+}
+
 /** First or last connection of the day at the tour's start or end stop, with a warning when it is tight. */
 function connectionLine(s, role) {
   if (!s) return "";
@@ -98,15 +119,15 @@ export function renderTourDetail(t, { kept = false, booking = false, people = 2,
         </div></li>${night}`;
   }).join("");
   $("#tourDetail").innerHTML = `
-    <div class="tour-top">
-      <div class="tour-nav">
+    <div class="tour-nav">
         <button class="back flat" id="tourBack"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>${state.view === "mine" ? "My tours" : "Tours"}</button>
         ${nav ? `<div class="tour-step">
           <button class="btn" data-step-tour="-1" aria-label="Previous tour"${nav.n > 1 ? "" : " disabled"}>‹</button>
           <span>${nav.n} / ${nav.total}</span>
           <button class="btn" data-step-tour="1" aria-label="Next tour"${nav.n < nav.total ? "" : " disabled"}>›</button>
         </div>` : ""}
-      </div>
+    </div>
+    <div class="tour-top">
       <h2>${esc(start.name)} → ${esc(end.name)}</h2>
       <div class="subtitle">${t.nights} night${t.nights > 1 ? "s" : ""}, ${t.days.length} days ·
         ${formatDay(t.days[0].date)} – ${formatDay(t.days[t.days.length - 1].date)}</div>
@@ -115,14 +136,17 @@ export function renderTourDetail(t, { kept = false, booking = false, people = 2,
         <div class="fact"><b>${distanceValue(t.distance_m)}</b><span>${distanceUnit()}</span></div>
         <div class="fact"><b>${heightValue(t.ascent_m)}</b><span>${heightUnit()} ascent</span></div>
       </div>
+      ${tourSparkline(t)}
       ${outsideSettings(t)}
       ${unofficialWarning(t)}
       ${tourCost(t)}
       <div class="actions">
-        <button class="btn primary" id="tourEdit">Edit tour</button>
-        <button class="btn" id="tourBook" aria-pressed="${booking}">Book this tour</button>
+        <button class="btn${booking ? "" : " primary"}" id="tourBook" aria-pressed="${booking}">${booking ? "Hide booking" : "Book this tour"}</button>
+        <button class="btn" id="tourEdit">Edit tour</button>
+      </div>
+      <div class="actions quiet">
         <button class="btn" id="tourKeep" aria-pressed="${kept}">${kept ? "★ In my tours" : "☆ Add to my tours"}</button>
-        <a class="btn" href="/api/tours/${encodeURIComponent(t.id)}/gpx" download>Download GPX</a>
+        <a class="btn" href="/api/tours/${encodeURIComponent(t.id)}/gpx" download>↓ GPX</a>
         <button class="btn" id="tourShare">Share</button>
       </div>
       ${kept ? `<p class="hint" id="offlineStatus" data-tour="${esc(t.id)}">${esc(offlineStatus(t.id))}</p>` : ""}
