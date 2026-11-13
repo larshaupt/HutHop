@@ -1,8 +1,8 @@
 # HutHop
 
-A private web app to browse Swiss mountain huts (SAC plus huts added by hand) and to suggest multi-day summer hut tours from your constraints, with live free-bed checks.
+A web app to browse Swiss mountain huts (SAC plus huts added by hand) and to suggest multi-day summer hut tours from your constraints, with live free-bed checks.
 
-**Status (Nov 2026):** deployed at huthop.larshauptmann.com (Oracle VM, Cloudflare Access login). Hut map with filters, free-beds calendar and hand
+**Status (Nov 2026):** the code is public; the running app is private, deployed at huthop.larshauptmann.com behind a login (Oracle VM, Cloudflare Access). Hut map with filters, free-beds calendar and hand
 corrections; walking connections on swisstopo's trail network; multi-day tour suggestions ranked by a fixed "best"
 score (new trail, shape, free beds, opening data, …), sortable in the browser; height profiles; GPX export (whole tour or per day, for Komoot and the swisstopo app); a Share button with link previews; weather forecast, trail closures and
 military shooting notices per day; prices, season dates and booking details read from the hut websites, with a cost
@@ -116,4 +116,6 @@ tests/
 
 ## Usage and data
 
-Private, non-commercial use only. Going public is planned, but only once SAC has given its written consent. Hut data comes from the SAC (© sac-cas.ch) and must not be redistributed. Maps and trail data © swisstopo. Unofficial paths © OpenStreetMap contributors (ODbL). Suggested tours are planning aids: always check difficulty, conditions, weather and official sources before you go.
+The code is open source under the [MIT licence](LICENSE). The licence covers the code only, not the data it loads.
+
+No data is in this repository: the app fetches it from its sources into a local database (`data/`, not in git). The hosted app is for private, non-commercial use, behind a login; opening it to the public is planned, but only once SAC has given its written consent. Hut data comes from the SAC (© sac-cas.ch) and must not be redistributed: if you run your own copy, keep it private too. Maps and trail data © swisstopo. Unofficial paths © OpenStreetMap contributors (ODbL). Suggested tours are planning aids: always check difficulty, conditions, weather and official sources before you go.
