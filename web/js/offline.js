@@ -3,6 +3,7 @@
 // swisstopo map along its route, in a cache of its own that sw.js answers from offline. Removing the tour from
 // "My tours" deletes it.
 import { $, decodePolyline } from "./util.js";
+import { LOCALE, t as tr } from "./i18n.js";  // t is a tour here
 import { TOPO_TILES } from "./map.js";
 import { onYourToursChange, yourTours } from "./your-tours.js";
 
@@ -22,8 +23,8 @@ export function bindOffline() {
 export function noteSaved(res) {
   const saved = res.headers.get("x-huthop-saved");
   if (saved == null) return;
-  const when = saved && new Date(saved).toLocaleString("en-GB", { dateStyle: "medium", timeStyle: "short" });
-  $("#offlineNote").textContent = `Offline — showing saved data${when ? ` from ${when}` : ""}`;
+  const when = saved && new Date(saved).toLocaleString(LOCALE, { dateStyle: "medium", timeStyle: "short" });
+  $("#offlineNote").textContent = when ? tr("Offline — showing saved data from {when}", { when }) : tr("Offline — showing saved data");
   $("#offlineNote").hidden = false;
 }
 
@@ -92,14 +93,14 @@ export async function saveTourOffline(t) {
         } catch {
           failed++;
         }
-        if (++done % 20 === 0) show(`Saving for offline use: map ${done} of ${urls.length} tiles…`);
+        if (++done % 20 === 0) show(tr("Saving for offline use: map {done} of {total} tiles…", { done, total: urls.length }));
       }
     }));
-    show(`Saved for offline use: the tour, its height profiles, huts and the map along the route up to zoom ${zoom}` +
-      ` (${urls.length - failed} tiles; at most ${MAX_TILES} per tour)${failed ? `. ${failed} tiles could not be loaded.` : "."}`);
+    show(tr("Saved for offline use: the tour, its height profiles, huts and the map along the route up to zoom {zoom} ({tiles} tiles; at most {max} per tour).",
+      { zoom, tiles: urls.length - failed, max: MAX_TILES }) + (failed ? ` ${tr("{n} tiles could not be loaded.", { n: failed })}` : ""));
   } catch (err) {
     console.warn("saving the tour for offline use failed:", err);
-    show("Could not save this tour for offline use.");
+    show(tr("Could not save this tour for offline use."));
   } finally {
     saving.delete(t.id);
   }

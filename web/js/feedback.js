@@ -1,18 +1,19 @@
 // Feedback dialog (💬 in the header): a message to the operator, saved on the server with the app's current URL.
 import { $, esc } from "./util.js";
+import { t } from "./i18n.js";
 
 function render(status = "") {
   $("#feedback").innerHTML = `
     <div class="about-head">
-      <h2>Feedback</h2>
-      <button class="about-close" data-close aria-label="Close">×</button>
+      <h2>${t("Feedback")}</h2>
+      <button class="about-close" data-close aria-label="${t("Close")}">×</button>
     </div>
     <form class="about-body" id="feedbackForm">
-      <p>Found a mistake, missing a hut or a feature? Tell me. The view you're on (hut, tour) is sent along.</p>
+      <p>${t("Found a mistake, missing a hut or a feature? Tell me. The view you're on (hut, tour) is sent along.")}</p>
       <textarea class="input" id="feedbackText" rows="6" maxlength="5000" required autofocus
-        aria-label="Your feedback" placeholder="Your feedback"></textarea>
+        aria-label="${t("Your feedback")}" placeholder="${t("Your feedback")}"></textarea>
       <p class="hint" role="status">${esc(status)}</p>
-      <button class="btn primary" type="submit">Send</button>
+      <button class="btn primary" type="submit">${t("Send")}</button>
     </form>`;
 }
 
@@ -31,9 +32,9 @@ async function send(e) {
     console.error(err);
   }
   if (ok) {
-    $("#feedbackForm").innerHTML = `<p>Thanks, your feedback was sent.</p>`;
+    $("#feedbackForm").innerHTML = `<p>${t("Thanks, your feedback was sent.")}</p>`;
   } else {
-    $("#feedbackForm [role=status]").textContent = "Could not send it right now. Please try again later.";
+    $("#feedbackForm [role=status]").textContent = t("Could not send it right now. Please try again later.");
     button.disabled = false;
   }
 }

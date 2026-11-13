@@ -3,12 +3,13 @@ import { $, MONTHS, esc, revealPanel } from "./util.js";
 import { map } from "./map.js";
 import { closeDetail, invalidateHut, reloadHuts, selectHut } from "./huts.js";
 import { errorText } from "./connections.js";
+import { t as tr } from "./i18n.js";  // `t` is the clicked element in bindEditorEvents
 
-const FIELD_LABELS = { name: "Name", altitude: "Altitude (m)", beds: "Beds", shelter_beds: "Winter room places",
-  website: "Website", phone: "Phone", email: "Email", hrs_id: "hut-reservation.org id" };
+const FIELD_LABELS = { name: tr("Name"), altitude: tr("Altitude (m)"), beds: tr("Beds"), shelter_beds: tr("Winter room places"),
+  website: tr("Website"), phone: tr("Phone"), email: tr("Email"), hrs_id: tr("hut-reservation.org id") };
 const NUMERIC = new Set(["altitude", "beds", "shelter_beds", "hrs_id"]);
 const CODE_LABEL = { 0: "✓", 1: "½", 2: "–" };
-const CODE_TITLE = { 0: "whole month", 1: "part of the month", 2: "no" };
+const CODE_TITLE = { 0: tr("whole month"), 1: tr("part of the month"), 2: tr("no") };
 let editing = null; // { hutId, data } while the edit form is open
 
 // ---------- Season editor (shared by edit and add) ----------
@@ -19,9 +20,9 @@ function seasonEditor(months) {
       ${CODE_LABEL[m.value]}</button>`).join("")}</div>`;
   return `<div class="season-edit">
       <div class="season-edit-row head"><span></span>${MONTHS.map((m) => `<b>${m.charAt(0)}</b>`).join("")}</div>
-      ${row("catering", "Catered")}${row("self_service", "Self-service")}
+      ${row("catering", tr("Catered"))}${row("self_service", tr("Self-service"))}
     </div>
-    <p class="hint">Click a month to cycle: ✓ whole month · ½ part of the month · – no.</p>`;
+    <p class="hint">${tr("Click a month to cycle: ✓ whole month · ½ part of the month · – no.")}</p>`;
 }
 
 function cycleCode(button) {
@@ -39,27 +40,27 @@ export async function editHut(hutId) {
   const { fields, months, source } = editing.data;
   const inputs = Object.entries(FIELD_LABELS).map(([key, label]) => {
     const f = fields[key];
-    const sourceText = f.source === null || f.source === undefined || f.source === "" ? "empty" : esc(f.source);
+    const sourceText = f.source === null || f.source === undefined || f.source === "" ? tr("empty") : esc(f.source);
     return `<label class="edit-field">
-        <span>${label}${f.overridden ? ` <button type="button" class="chip-edited" data-reset="${key}" title="Back to the SAC value">edited ×</button>` : ""}</span>
+        <span>${label}${f.overridden ? ` <button type="button" class="chip-edited" data-reset="${key}" title="${tr("Back to the SAC value")}">${tr("edited")} ×</button>` : ""}</span>
         <input class="input" name="${key}" ${NUMERIC.has(key) ? 'type="number" min="0"' : ""} value="${esc(f.value ?? "")}">
         ${source === "sac_api" ? `<small>SAC: ${sourceText}</small>` : ""}
       </label>`;
   }).join("");
   $("#detail").innerHTML = `
     <div class="tour-top">
-      <button class="back flat" data-editor-cancel><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>Cancel</button>
-      <h2>Edit ${esc(fields.name.value)}</h2>
-      <p class="subtitle">${source === "sac_api" ? "Your changes override the SAC data and survive future updates." : "Hut added by hand."}</p>
+      <button class="back flat" data-editor-cancel><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>${tr("Cancel")}</button>
+      <h2>${tr("Edit {name}", { name: esc(fields.name.value) })}</h2>
+      <p class="subtitle">${source === "sac_api" ? tr("Your changes override the SAC data and survive future updates.") : tr("Hut added by hand.")}</p>
     </div>
     <form class="detail-body editor" id="editForm">
       ${inputs}
-      <div class="section"><h3>Season</h3>${seasonEditor(months)}</div>
-      <label class="edit-field"><span>Note (optional, e.g. where the information comes from)</span>
+      <div class="section"><h3>${tr("Season")}</h3>${seasonEditor(months)}</div>
+      <label class="edit-field"><span>${tr("Note (optional, e.g. where the information comes from)")}</span>
         <input class="input" name="note" maxlength="500"></label>
       <p class="warn" id="editError" hidden></p>
-      <button class="btn primary wide" type="submit">Save</button>
-      ${source === "manual" ? `<button class="btn wide danger" type="button" data-delete-hut>Delete this hut</button>` : ""}
+      <button class="btn primary wide" type="submit">${tr("Save")}</button>
+      ${source === "manual" ? `<button class="btn wide danger" type="button" data-delete-hut>${tr("Delete this hut")}</button>` : ""}
     </form>`;
   $("#detail").scrollTop = 0;
 }
@@ -115,26 +116,26 @@ export function addHut() {
   $("#detail").hidden = false;
   $("#detail").innerHTML = `
     <div class="tour-top">
-      <button class="back flat" data-editor-close><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>Cancel</button>
-      <h2>Add a hut</h2>
-      <p class="subtitle">For huts that aren't in the SAC data. Walking connections are added at the next
-        <code>refresh --rebuild</code>.</p>
+      <button class="back flat" data-editor-close><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>${tr("Cancel")}</button>
+      <h2>${tr("Add a hut")}</h2>
+      <p class="subtitle">${tr("For huts that aren't in the SAC data. Walking connections are added at the next {command}.", {
+        command: "<code>refresh --rebuild</code>" })}</p>
     </div>
     <form class="detail-body editor" id="addForm">
-      <label class="edit-field"><span>Name</span><input class="input" name="name" required minlength="2" maxlength="120"></label>
+      <label class="edit-field"><span>${tr("Name")}</span><input class="input" name="name" required minlength="2" maxlength="120"></label>
       <div class="field two">
-        <label class="edit-field"><span>Latitude</span><input class="input" name="lat" type="number" step="any" required value="${center.lat.toFixed(5)}"></label>
-        <label class="edit-field"><span>Longitude</span><input class="input" name="lon" type="number" step="any" required value="${center.lng.toFixed(5)}"></label>
+        <label class="edit-field"><span>${tr("Latitude")}</span><input class="input" name="lat" type="number" step="any" required value="${center.lat.toFixed(5)}"></label>
+        <label class="edit-field"><span>${tr("Longitude")}</span><input class="input" name="lon" type="number" step="any" required value="${center.lng.toFixed(5)}"></label>
       </div>
-      <button class="btn" type="button" data-pick>Pick the position on the map</button>
+      <button class="btn" type="button" data-pick>${tr("Pick the position on the map")}</button>
       <div class="field two">
-        <label class="edit-field"><span>Altitude (m)</span><input class="input" name="altitude" type="number" min="0"></label>
-        <label class="edit-field"><span>Beds</span><input class="input" name="beds" type="number" min="0"></label>
+        <label class="edit-field"><span>${tr("Altitude (m)")}</span><input class="input" name="altitude" type="number" min="0"></label>
+        <label class="edit-field"><span>${tr("Beds")}</span><input class="input" name="beds" type="number" min="0"></label>
       </div>
-      <label class="edit-field"><span>Website</span><input class="input" name="website" placeholder="https://"></label>
-      <div class="section"><h3>Season</h3>${seasonEditor(months)}</div>
+      <label class="edit-field"><span>${tr("Website")}</span><input class="input" name="website" placeholder="https://"></label>
+      <div class="section"><h3>${tr("Season")}</h3>${seasonEditor(months)}</div>
       <p class="warn" id="editError" hidden></p>
-      <button class="btn primary wide" type="submit">Add hut</button>
+      <button class="btn primary wide" type="submit">${tr("Add hut")}</button>
     </form>`;
   revealPanel();
 }
@@ -151,7 +152,7 @@ async function submitAdd(form) {
     $("#editError").hidden = false;
     if (res.status === 422) {
       const detail = (await res.json()).detail;
-      $("#editError").textContent = Array.isArray(detail) ? detail.map((d) => `${d.loc.at(-1)}: ${d.msg}`).join("; ") : detail;
+      $("#editError").textContent = Array.isArray(detail) ? detail.map((d) => `${d.loc.at(-1)}: ${d.msg}`).join("; ") : tr(detail);
     } else {
       $("#editError").textContent = await errorText(res);
     }
@@ -174,7 +175,7 @@ function pickOnMap(form) {
 async function deleteHut(button) {
   if (button.dataset.armed !== "1") {  // two clicks instead of a browser confirm dialog
     button.dataset.armed = "1";
-    button.textContent = "Click again to delete permanently";
+    button.textContent = tr("Click again to delete permanently");
     return;
   }
   const { hutId } = editing;

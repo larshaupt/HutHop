@@ -211,6 +211,60 @@ def test_search_everywhere_unless_limited_to_the_map(phone: Page, server):
     expect(phone).to_have_url(re.compile(r"tb=[-\d.]+%2C"))
 
 
+def no_clipped_text(page: Page):
+    """Buttons, tabs, labels and badges show their whole text (a longer translation can overflow them)."""
+    clipped = page.evaluate("""() => [...document.querySelectorAll(
+            'button, .tabs button, .chip, .flag, .fact span, .field-label, .badge, .subtitle, .btn')]
+        .filter((el) => el.offsetParent && el.scrollWidth > el.clientWidth + 1)
+        .map((el) => el.textContent.trim())""")
+    assert not clipped, clipped
+
+
+def test_german_fits(phone: Page, server):
+    phone.add_init_script("localStorage.setItem('huthop.settings', JSON.stringify({ lang: 'de' }))")
+    phone.goto(server)
+    expect(phone.locator("html")).to_have_attribute("lang", "de")
+    expect(phone.locator("#tabs")).to_contain_text("Hütten")
+    phone.locator("#sheetHandle").click()
+    phone.locator("#sheetHandle").click()  # full height: all filters on screen
+    no_sideways_scroll(phone)
+    no_clipped_text(phone)
+    phone.locator("#settingsBtn").click()
+    expect(phone.locator("#settings h2")).to_have_text("Einstellungen")
+    no_clipped_text(phone)
+    phone.keyboard.press("Escape")
+    phone.locator("#list .hut").first.click()
+    expect(phone.locator("#detail h2")).to_have_text("Hut A")
+    no_sideways_scroll(phone)
+    no_clipped_text(phone)
+
+    phone.goto(server + SEARCH)
+    phone.reload()  # only the hash changed: load the page again, without the hut
+    phone.locator("#sheetHandle").click()
+    phone.locator("#tFind").click()
+    expect(phone.locator(".tour-card").first).to_be_visible()
+    no_sideways_scroll(phone)
+    no_clipped_text(phone)
+    phone.locator(".tour-card").first.click()
+    expect(phone.locator("#tourDetail")).to_contain_text("Tag 1")
+    no_sideways_scroll(phone)
+    no_clipped_text(phone)
+    phone.locator("#tourEdit").click()
+    no_sideways_scroll(phone)
+    no_clipped_text(phone)
+
+
+def test_language_from_browser_and_switcher(browser, server):
+    context = browser.new_context(locale="fr-CH")  # French and Italian get German until they have their own
+    page = context.new_page()
+    page.goto(server)
+    expect(page.locator("html")).to_have_attribute("lang", "de")
+    page.locator("#lang").select_option("en")  # kept, and the page reloads in English
+    expect(page.locator("html")).to_have_attribute("lang", "en")
+    expect(page.locator("#tabs")).to_contain_text("Huts")
+    page.reload()
+    expect(page.locator("html")).to_have_attribute("lang", "en")
+    context.close()
 def test_saved_tour_works_offline(phone: Page, server):
     phone.context.route(re.compile(r"^https://wmts\.geo\.admin\.ch/"), lambda route: route.abort())  # no map downloads
     phone.goto(server + SEARCH + "&tour=1")

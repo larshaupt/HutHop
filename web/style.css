@@ -80,6 +80,7 @@ body:not([data-view="huts"]) #quick, body:not([data-view="tours"]) #tourQuick { 
 .logo .logo-door { fill: #fff; }
 .about-btn { flex: none; width: 34px; height: 34px; border: 0; border-radius: 50%; background: var(--bg); display: grid; place-items: center; }
 .about-btn:hover { background: var(--bg-soft); border-color: var(--text-faint); }
+.lang { appearance: none; padding: 0; font-size: 12px; font-weight: 600; text-align: center; text-align-last: center; cursor: pointer; }
 .about-btn svg { width: 20px; height: 20px; fill: none; stroke: var(--text); stroke-width: 2; stroke-linecap: round; }
 
 /* ---------- About dialog ---------- */
@@ -520,6 +521,9 @@ label.field-label { display: flex; }
 .code.edited { box-shadow: 0 0 0 2px var(--accent); }
 .btn.danger { color: var(--accent); border-color: var(--accent); background: var(--bg); }
 .results-head .add-hut { margin-left: auto; font-size: 13px; }
+.results-head > span, .results-head .add-hut { white-space: nowrap; }  /* longer translations: shrink the sort, not these */
+.results-head .sort { min-width: 0; }
+.results-head .sort select { min-width: 0; max-width: 100%; }
 code { font-size: 12px; background: var(--bg-soft); padding: 0 4px; border-radius: 4px; }
 
 /* ---------- Connections ---------- */

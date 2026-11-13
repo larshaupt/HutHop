@@ -1,8 +1,10 @@
 // General settings, kept in this browser (local storage, per device) and sent with every request that offers or
 // shows routes: the hardest trail and the highest point a route may reach, whether to avoid start and end stops
-// served only by mountain lifts, whether a day between huts may include a bus or train ride, your walking pace (times scale with it), Alpine Club member prices, whether
-// searches check free beds, and metric or imperial units. Anything outside them is never offered.
+// served only by mountain lifts, whether a day between huts may include a bus or train ride, your walking pace (times
+// scale with it), Alpine Club member prices, whether searches check free beds, and metric or imperial units. Anything
+// outside them is never offered. The language ("lang", chosen in the header) is kept here too, but read by i18n.js.
 import { $, esc } from "./util.js";
+import { t } from "./i18n.js";
 
 const KEY = "huthop.settings";
 export const SETTING_DEFAULTS = {
@@ -72,37 +74,35 @@ function check(name, label) {
 
 function render() {
   const s = current;
-  const pace = (p) => (p === 1 ? "100 % (Swiss hiking times)" : `${Math.round(p * 100)} %${p < 1 ? " (faster)" : " (slower)"}`);
+  const pace = (p) => (p === 1 ? t("100 % (Swiss hiking times)") : `${Math.round(p * 100)} % ${p < 1 ? t("(faster)") : t("(slower)")}`);
   $("#settings").innerHTML = `
     <div class="about-head">
-      <h2>Settings</h2>
-      <button class="about-close" data-close aria-label="Close">×</button>
+      <h2>${t("Settings")}</h2>
+      <button class="about-close" data-close aria-label="${t("Close")}">×</button>
     </div>
     <div class="about-body settings-body">
-      <p class="hint">Saved in this browser. Routes outside these settings are never offered: not in tour
-        suggestions, the tour editor or a hut's connections.</p>
-      <div class="field"><div class="field-label">Hardest trail</div>
-        ${seg("limit", [[1, '<i class="trail-swatch c1"></i>Yellow'], [2, '<i class="trail-swatch c2"></i>Red-white'],
-          [3, '<i class="trail-swatch c3"></i>Blue-white'], [4, '<i class="trail-swatch c4"></i>Unofficial']], s.limit)}
-        <p class="hint">Unofficial: also OpenStreetMap paths to huts away from the signposted trails, often alpine or
-          glacier routes (T4–T6). Not checked by anyone: judge them yourself.</p></div>
-      <div class="field"><label class="field-label" for="setAltitude">Highest point of a route</label>
+      <p class="hint">${t("Saved in this browser. Routes outside these settings are never offered: not in tour suggestions, the tour editor or a hut's connections.")}</p>
+      <div class="field"><div class="field-label">${t("Hardest trail")}</div>
+        ${seg("limit", [[1, `<i class="trail-swatch c1"></i>${t("Yellow")}`], [2, `<i class="trail-swatch c2"></i>${t("Red-white")}`],
+          [3, `<i class="trail-swatch c3"></i>${t("Blue-white")}`], [4, `<i class="trail-swatch c4"></i>${t("Unofficial")}`]], s.limit)}
+        <p class="hint">${t("Unofficial: also OpenStreetMap paths to huts away from the signposted trails, often alpine or glacier routes (T4–T6). Not checked by anyone: judge them yourself.")}</p></div>
+      <div class="field"><label class="field-label" for="setAltitude">${t("Highest point of a route")}</label>
         <select class="input" id="setAltitude" data-setting="maxAltitude">
-          <option value=""${s.maxAltitude ? "" : " selected"}>No limit</option>
-          ${ALTITUDES.map((a) => `<option value="${a}"${a === s.maxAltitude ? " selected" : ""}>Up to ${esc(formatHeight(a))}</option>`).join("")}
+          <option value=""${s.maxAltitude ? "" : " selected"}>${t("No limit")}</option>
+          ${ALTITUDES.map((a) => `<option value="${a}"${a === s.maxAltitude ? " selected" : ""}>${t("Up to {height}", { height: esc(formatHeight(a)) })}</option>`).join("")}
         </select></div>
-      <div class="field"><label class="field-label" for="setPace">Walking pace</label>
+      <div class="field"><label class="field-label" for="setPace">${t("Walking pace")}</label>
         <select class="input" id="setPace" data-setting="pace">
           ${PACES.map((p) => `<option value="${p}"${p === s.pace ? " selected" : ""}>${pace(p)}</option>`).join("")}
         </select>
-        <p class="hint">Times are shown at your pace, and days must fit your hours at it.</p></div>
-      <div class="field"><div class="field-label">Units</div>
-        ${seg("units", [["metric", "Kilometres, metres"], ["imperial", "Miles, feet"]], s.units)}</div>
-      ${check("avoidLifts", "Avoid mountain lifts (cable cars, chairlifts, funiculars) to and from the huts")}
-      ${check("transit", "Allow bus/train during a tour: a day between huts may walk to a stop, ride, and walk on to the next hut (only the walking counts towards your hours)")}
-      ${check("member", "Alpine Club member (SAC, DAV, …): member prices in the cost estimate")}
-      ${check("checkBeds", "Check free beds on hut-reservation.org when searching")}
-      <button class="link inline" id="setReset">Back to the defaults</button>
+        <p class="hint">${t("Times are shown at your pace, and days must fit your hours at it.")}</p></div>
+      <div class="field"><div class="field-label">${t("Units")}</div>
+        ${seg("units", [["metric", t("Kilometres, metres")], ["imperial", t("Miles, feet")]], s.units)}</div>
+      ${check("avoidLifts", t("Avoid mountain lifts (cable cars, chairlifts, funiculars) to and from the huts"))}
+      ${check("transit", t("Allow bus/train during a tour: a day between huts may walk to a stop, ride, and walk on to the next hut (only the walking counts towards your hours)"))}
+      ${check("member", t("Alpine Club member (SAC, DAV, …): member prices in the cost estimate"))}
+      ${check("checkBeds", t("Check free beds on hut-reservation.org when searching"))}
+      <button class="link inline" id="setReset">${t("Back to the defaults")}</button>
     </div>`;
 }
 

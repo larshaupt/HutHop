@@ -75,6 +75,11 @@ every pull request (including the mobile browser tests, with screenshots of fail
 run both before pushing. A merge into `main` builds the Docker image and deploys it to the live
 server, so `main` only changes through reviewed pull requests.
 
+The interface is in English and German (French and Italian to come). Texts in `web/` go through `t("English
+text")` (`web/js/i18n.js`): the English wording is the key, and `web/js/i18n/de.js` has the German for it
+(Swiss usage: "ss", informal "du"); `web/js/i18n/en.js` only has English plurals. Static text in
+`web/index.html` is translated by its wording at start-up. `tests/test_i18n.py` fails when a text has no German.
+
 ## Layout
 
 ```
@@ -100,8 +105,9 @@ web/         static frontend (MapLibre, vendored in web/vendor/, + swisstopo til
              connections, tours (form, results, sorting, opening a tour), tour-detail (timeline, profiles),
              tour-editor (editing a tour), booking (book-this-tour checklist), your-tours and favourites (kept in the browser), settings (general
              settings and units, kept in the browser), editor (hut data),
-             info (About dialog), feedback (dialog), offline (saving "My tours" for offline use), util;
-             sw.js: the service worker (app shell and saved tours offline), manifest.json and icons: the installable app
+             info (About dialog), feedback (dialog), offline (saving "My tours" for offline use), i18n (translations;
+             dictionaries in web/js/i18n/), util; sw.js: the service worker (app shell and saved tours offline),
+             manifest.json and icons: the installable app
 server/      compose.yaml, update.sh (deploy) and refresh.sh (data refresh and graph build) for the server
 docs/        deployment plan, route graph figure
 spikes/      Phase 0 experiments and findings (historical)

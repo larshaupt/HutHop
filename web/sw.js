@@ -4,13 +4,13 @@
 // - swisstopo map tiles: from the cache when a saved tour stored them, else the network.
 // Only 200 responses of our own origin with the expected content type are kept, so a Cloudflare Access login
 // redirect is never cached.
-const VERSION = 1; // bump when this file's caching changes: old shell caches are deleted when it activates
+const VERSION = 2; // bump when this file's caching changes: old shell caches are deleted when it activates
 const SHELL = `huthop-shell-v${VERSION}`;
 const FILES = [
   "/", "/style.css", "/manifest.json", "/icon-192.png", "/icon-512.png",
   "/vendor/maplibre-gl/maplibre-gl.js", "/vendor/maplibre-gl/maplibre-gl.css",
   "/js/beds.js", "/js/booking.js", "/js/connections.js", "/js/editor.js", "/js/favourites.js", "/js/feedback.js",
-  "/js/huts.js", "/js/info.js", "/js/main.js", "/js/map.js", "/js/offline.js", "/js/settings.js", "/js/state.js",
+  "/js/huts.js", "/js/i18n.js", "/js/i18n/de.js", "/js/i18n/en.js", "/js/info.js", "/js/main.js", "/js/map.js", "/js/offline.js", "/js/settings.js", "/js/state.js",
   "/js/tour-detail.js", "/js/tour-editor.js", "/js/tours.js", "/js/util.js", "/js/weather.js", "/js/your-tours.js",
 ];
 const API = ["/api/huts", "/api/osm-paths", "/api/info"]; // what the app needs to start, kept with the shell

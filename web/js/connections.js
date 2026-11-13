@@ -4,6 +4,7 @@ import { state } from "./state.js";
 import { formatDistance, formatHeight, settingsQuery } from "./settings.js";
 import { map, mapPadding } from "./map.js";
 import { selectHut } from "./huts.js";
+import { t } from "./i18n.js";
 
 const STOPS_SHOWN = 8;
 const LINES_SHOWN = 4;
@@ -13,8 +14,8 @@ const cache = new Map(); // "hutId:settings" → API response (the settings deci
 function linesMeta(place) {
   if (!place.lines) return "";
   const more = place.lines.length > LINES_SHOWN ? ` +${place.lines.length - LINES_SHOWN}` : "";
-  return `<div class="conn-meta" title="Lines and departures per day in July and August (official timetable)">` +
-    `${esc(place.lines.slice(0, LINES_SHOWN).join(", "))}${more} · ${place.departures}/day</div>`;
+  return `<div class="conn-meta" title="${t("Lines and departures per day in July and August (official timetable)")}">` +
+    `${esc(place.lines.slice(0, LINES_SHOWN).join(", "))}${more} · ${t("{n}/day", { n: place.departures })}</div>`;
 }
 
 const allEdges = (data) => [...data.huts, ...data.stops.flatMap((s) => [s.to_hut, s.from_hut].filter(Boolean))];
@@ -22,21 +23,19 @@ const allEdges = (data) => [...data.huts, ...data.stops.flatMap((s) => [s.to_hut
 /** The "Connections" section of the hut detail view; filled by showConnections(). */
 export function connectionsSection(d) {
   const warning = d.snap_m > 500 && d.osm_access
-    ? `<p class="warn">This hut is ${formatDistance(d.snap_m)} from the nearest signposted hiking trail. It is reached by an
-       unofficial path from OpenStreetMap${d.osm_grade ? ` (${d.osm_grade})` : ""}, often across glaciers or alpine terrain;
-       its connections are offered when the hardest trail (⚙) is "Unofficial".</p>`
+    ? `<p class="warn">${t("This hut is {distance} from the nearest signposted hiking trail. It is reached by an unofficial path from OpenStreetMap{grade}, often across glaciers or alpine terrain; its connections are offered when the hardest trail (⚙) is “Unofficial”.", {
+       distance: formatDistance(d.snap_m), grade: d.osm_grade ? ` (${d.osm_grade})` : "" })}</p>`
     : d.snap_m > 500
-    ? `<p class="warn">This hut is ${formatDistance(d.snap_m)} from the nearest signposted hiking trail. It is reached
-       by alpine routes or across glaciers, so no walking connections are computed.</p>`
+    ? `<p class="warn">${t("This hut is {distance} from the nearest signposted hiking trail. It is reached by alpine routes or across glaciers, so no walking connections are computed.", {
+       distance: formatDistance(d.snap_m) })}</p>`
     : d.snap_m > 200
-      ? `<p class="warn">This hut is ${formatHeight(d.snap_m)} from the nearest signposted trail, so connection times may be
-         inaccurate.</p>` : "";
+      ? `<p class="warn">${t("This hut is {distance} from the nearest signposted trail, so connection times may be inaccurate.", {
+         distance: formatHeight(d.snap_m) })}</p>` : "";
   return `<div class="section" id="connections">
-      <h3>Connections</h3>
-      <p class="hint">Within your settings (⚙: hardest trail, highest point, lifts). Walking times use the Swiss
-        hiking-time formula at your pace, without breaks.</p>
+      <h3>${t("Connections")}</h3>
+      <p class="hint">${t("Within your settings (⚙: hardest trail, highest point, lifts). Walking times use the Swiss hiking-time formula at your pace, without breaks.")}</p>
       ${warning}
-      <div id="connList"><p class="hint">Loading…</p></div>
+      <div id="connList"><p class="hint">${t("Loading…")}</p></div>
     </div>`;
 }
 
@@ -59,7 +58,7 @@ export async function showConnections(hutId) {
     data = await load(hutId, query);
   } catch (err) {
     console.error(err);
-    if ($("#connList")) $("#connList").innerHTML = `<p class="hint">Could not load connections.</p>`;
+    if ($("#connList")) $("#connList").innerHTML = `<p class="hint">${t("Could not load connections.")}</p>`;
     return;
   }
   if (state.hut !== hutId || settingsQuery() !== query || !$("#connList")) return;
@@ -70,16 +69,16 @@ export async function showConnections(hutId) {
 function edgeRow(e, label, kind, extra = "") {
   const cat = CATEGORY[e.max_category];
   const meta = [formatDistance(e.distance_m), `↑ ${formatHeight(e.ascent_m)}`, `↓ ${formatHeight(e.descent_m)}`];
-  if (e.max_category === 4) meta.push(`<span style="color:${cat.color}">Unofficial path${e.osm_grade ? ` ${e.osm_grade}` : ""}</span>`);
-  const sac = e.sac_time_min ? `<span class="sac" title="Time given by the SAC for this route">SAC ${formatMinutes(e.sac_time_min)}` +
+  if (e.max_category === 4) meta.push(`<span style="color:${cat.color}">${t("Unofficial path")}${e.osm_grade ? ` ${e.osm_grade}` : ""}</span>`);
+  const sac = e.sac_time_min ? `<span class="sac" title="${t("Time given by the SAC for this route")}">SAC ${formatMinutes(e.sac_time_min)}` +
     `${e.sac_grade ? ` · ${esc(e.sac_grade)}` : ""}</span>` : "";
   return `<li class="conn${e.excluded ? " excluded" : ""}" data-edge="${e.id}" data-place="${e.place.id}" data-kind="${kind}">
     <i class="cat-bar" style="background:${cat.color}" title="${categoryName(e.max_category, e.osm_grade)}"></i>
     <div class="conn-main"><div class="conn-name">${label}</div>
       <div class="conn-meta">${meta.join(" · ")} ${sac}</div>${extra}</div>
     <div class="conn-time">${formatMinutes(e.time_min)}</div>
-    <button class="conn-x" data-exclude="${e.id}" title="${e.excluded ? "Include this connection again" : "Exclude this connection (bad route)"}"
-      aria-label="${e.excluded ? "Include" : "Exclude"}">${e.excluded ? "↺" : "×"}</button>
+    <button class="conn-x" data-exclude="${e.id}" title="${e.excluded ? t("Include this connection again") : t("Exclude this connection (bad route)")}"
+      aria-label="${e.excluded ? t("Include") : t("Exclude")}">${e.excluded ? "↺" : "×"}</button>
   </li>`;
 }
 
@@ -87,7 +86,7 @@ function render(data, showAllStops = false) {
   const hutRows = data.huts.map((e) => edgeRow(e, esc(e.place.name), "hut"));
   const stopRows = [];
   for (const s of showAllStops ? data.stops : data.stops.slice(0, STOPS_SHOWN)) {
-    for (const [dir, arrow] of [["to_hut", "from"], ["from_hut", "to"]]) {
+    for (const [dir, arrow] of [["to_hut", t("from")], ["from_hut", t("to")]]) {
       const e = s[dir];
       if (e) stopRows.push(edgeRow({ ...e, place: s.place },
         `<span class="mode">${modeLabel(s.place.mode)}</span> ${arrow} ${esc(s.place.name)}`, "stop",
@@ -95,11 +94,11 @@ function render(data, showAllStops = false) {
     }
   }
   $("#connList").innerHTML = `
-    <h4>Huts within a day <span>${data.huts.length}</span></h4>
-    ${hutRows.length ? `<ul class="conns">${hutRows.join("")}</ul>` : `<p class="hint">No huts within 10 hours on these trails.</p>`}
-    <h4>Public transport <span>${data.stops.length}</span></h4>
-    ${stopRows.length ? `<ul class="conns">${stopRows.join("")}</ul>` : `<p class="hint">No stops within 10 hours on these trails.</p>`}
-    ${!showAllStops && data.stops.length > STOPS_SHOWN ? `<button class="link" id="allStops">Show all ${data.stops.length} stops</button>` : ""}`;
+    <h4>${t("Huts within a day")} <span>${data.huts.length}</span></h4>
+    ${hutRows.length ? `<ul class="conns">${hutRows.join("")}</ul>` : `<p class="hint">${t("No huts within 10 hours on these trails.")}</p>`}
+    <h4>${t("Public transport")} <span>${data.stops.length}</span></h4>
+    ${stopRows.length ? `<ul class="conns">${stopRows.join("")}</ul>` : `<p class="hint">${t("No stops within 10 hours on these trails.")}</p>`}
+    ${!showAllStops && data.stops.length > STOPS_SHOWN ? `<button class="link" id="allStops">${t("Show all {n} stops", { n: data.stops.length })}</button>` : ""}`;
   $("#allStops")?.addEventListener("click", () => render(data, true));
 }
 
@@ -152,11 +151,11 @@ async function toggleExcluded(edgeId) {
 
 /** Readable message for a refused change (401: password prompt cancelled or wrong, 403: no password set). */
 export async function errorText(res) {
-  if (res.status === 401) return "Changing data needs the admin password.";
+  if (res.status === 401) return t("Changing data needs the admin password.");
   try {
-    return (await res.json()).detail || `Could not save (${res.status}).`;
+    return t(String((await res.json()).detail || "")) || t("Could not save ({status}).", { status: res.status });
   } catch {
-    return `Could not save (${res.status}).`;
+    return t("Could not save ({status}).", { status: res.status });
   }
 }
 
