@@ -25,6 +25,7 @@ export default {
 "Any": "Alle",
 "Catered": "Bewartet",
 "Self-service": "Unbewartet",
+"Choose a month first": "Zuerst einen Monat wählen",
 "Features": "Merkmale",
 "Half board": "Halbpension",
 "Guest kitchen": "Selbstkocherraum",
