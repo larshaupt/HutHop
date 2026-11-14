@@ -14,6 +14,6 @@ approach = 1   # short first and last day (to the first hut, back to public tran
 
 [impressum]
 # Shown at the bottom of the About dialog (ⓘ next to the app name). Empty fields are left out.
-name = "[Name of the operator]"
-contact = "[Contact, e.g. an email address]"
+name = "Lars Hauptmann"
+contact = "huthop@larshauptmann.com"
 note = "Private, non-commercial project for planning hut tours. No guarantee for correctness of the data."
