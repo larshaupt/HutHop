@@ -87,6 +87,8 @@ export function syncControls() {
   $("#trails").setAttribute("aria-pressed", state.trails);
   // Only meaningful for a chosen month
   document.querySelectorAll("#openAs button").forEach((b) => { b.disabled = !state.month; });
+  // On the group: some browsers show no tooltip over a disabled button
+  $("#openAs").title = state.month ? "" : t("Choose a month first");
   $("#q").value = state.q;
   $("#sort").value = state.sort;
   $("#altMin").value = state.altMin;
