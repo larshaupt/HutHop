@@ -172,7 +172,9 @@ body:not([data-view="huts"]) #quick, body:not([data-view="tours"]) #tourQuick { 
   font-size: 13px; font-weight: 500; color: var(--text-soft); white-space: nowrap; padding: 0 8px;
 }
 .seg button:hover { color: var(--text); }
-.seg button:disabled { color: var(--text-faint); cursor: not-allowed; }
+/* Pointer passes through to the group, whose title explains why (disabled buttons show no tooltip) */
+.seg button:disabled { color: var(--text-faint); pointer-events: none; }
+.seg:has(button:disabled) { cursor: not-allowed; }
 .seg button[aria-pressed="true"] { background: var(--bg); color: var(--text); box-shadow: 0 1px 3px rgb(0 0 0 / 0.12); }
 .seg.small button { font-size: 12.5px; padding: 0 4px; }
 
