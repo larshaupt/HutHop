@@ -574,6 +574,8 @@ code { font-size: 12px; background: var(--bg-soft); padding: 0 4px; border-radiu
 }
 .legend span { display: inline-flex; align-items: center; gap: 5px; }
 .maplibregl-ctrl-bottom-right { z-index: 1; }
+/* the map's sources wrap beside the panel instead of running under it */
+@media (min-width: 721px) { .maplibregl-ctrl-attrib { max-width: calc(100vw - var(--panel-w) - 80px); } }
 .maplibregl-ctrl-top-right { top: 64px; }
 .maplibregl-popup-content { padding: 6px 10px; border-radius: 8px; font: 600 13px var(--font); box-shadow: var(--shadow); }
 .maplibregl-popup-content small { display: block; font-weight: 400; color: var(--text-soft); }

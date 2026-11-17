@@ -192,7 +192,7 @@ export function renderTourDetail(t, { kept = false, booking = false, people = 2,
       ${booking ? bookingPanel(t, people) : ""}
       <ol class="timeline">${rows}</ol>
       ${exportPanel(t)}
-      <p class="source">${tr("Walking times use the Swiss hiking-time formula without breaks. Opening data from the SAC; free beds from hut-reservation.org (cached up to 10 minutes; not a reservation). Weather: MeteoSwiss forecast (via Open-Meteo) at the day's hut, for the next 5 days. Trail closures (Swiss Hiking Federation) and military shooting notices from map.geo.admin.ch. Check conditions, weather and official sources before you go.")}</p>
+      <p class="source">${tr("Trails from swisstopo, in Austria from OpenStreetMap; walking times use the Swiss hiking-time formula without breaks. Opening data from the SAC, for huts abroad from their booking calendar; free beds from hut-reservation.org (cached up to 10 minutes; not a reservation). Weather: MeteoSwiss forecast (via Open-Meteo; DWD's on Austria's eastern edge, which MeteoSwiss's model doesn't cover) at the day's hut, for the next 5 days. Trail closures (Swiss Hiking Federation) and military shooting notices from map.geo.admin.ch, for Switzerland only. Check conditions, weather and official sources before you go.")}</p>
     </div>`;
   dayNotes(t);
 }

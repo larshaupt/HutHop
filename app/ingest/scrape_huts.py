@@ -5,9 +5,10 @@
     uv run python -m app.ingest.scrape_huts load
 
 fetch:   the hut's website from the SAC data, plus the linked pages most likely to hold prices, opening times or
-         booking details (and price-list PDFs). Raw pages go to data/raw/web/<sac_id>.json (+ pdf/).
+         booking details (and price-list PDFs). Raw pages go to data/raw/web/<key>.json (+ pdf/); the key is the
+         SAC id, or hrs-<id> for huts from hut-reservation.org (sync_hrs).
 extract: Gemini reads the pages and returns a fixed JSON format (prompt and schema below), saved as
-         data/raw/web/<sac_id>.extract.json. Uses Vertex AI through the gcloud login (app/clients/gemini.py).
+         data/raw/web/<key>.extract.json. Uses Vertex AI through the gcloud login (app/clients/gemini.py).
 load:    extracted values into hut_web, hut_season and hut_price (source 'scraped'). Manual overrides win.
 
 Run once or twice per season; hut websites change rarely.
@@ -26,6 +27,8 @@ from app.clients import gemini, web
 from app.db import ROOT, connect
 
 RAW_DIR = ROOT / "data/raw/web"
+# A hut's file key: its SAC id, or hrs-<id> for huts imported from hut-reservation.org (no SAC id)
+KEY_SQL = "CASE WHEN h.sac_id IS NOT NULL THEN CAST(h.sac_id AS TEXT) ELSE 'hrs-' || h.hrs_id END"
 PDF_DIR = RAW_DIR / "pdf"
 MAX_SUBPAGES = 6
 MAX_PDFS = 3
@@ -69,7 +72,7 @@ def is_pdf_link(url: str) -> bool:
 def fetch_hut(fetcher: web.Fetcher, hut: dict) -> dict:
     """Start page, then best-first the most promising linked pages of the same site (MAX_SUBPAGES) and PDFs
     (MAX_PDFS). Contact links (tel:, mailto:) and links to known booking systems are kept separately."""
-    out = {"sac_id": hut["sac_id"], "name": hut["name"], "website": hut["website"], "fetched_at": _now(),
+    out = {"key": hut["key"], "name": hut["name"], "website": hut["website"], "fetched_at": _now(),
            "pages": [], "pdfs": [], "contacts": [], "booking_links": [], "errors": []}
     candidates: dict[str, int] = {}
     seen: set[str] = set()
@@ -132,26 +135,27 @@ def fetch_hut(fetcher: web.Fetcher, hut: dict) -> dict:
 
 
 def huts_to_scrape(conn: sqlite3.Connection, ids: list[int] | None, limit: int | None) -> list[dict]:
-    """Huts with a website, by SAC id. Huts without online booking first: they gain the most."""
-    rows = conn.execute("SELECT sac_id, name, website, hrs_id FROM hut_effective "
-                        "WHERE website IS NOT NULL AND sac_id IS NOT NULL ORDER BY hrs_id IS NOT NULL, name")
-    huts = [dict(r) for r in rows if not ids or r["sac_id"] in ids]
+    """Huts with a website, by key (see KEY_SQL). Huts without online booking first: they gain the most."""
+    rows = conn.execute(f"SELECT {KEY_SQL} AS key, e.name, e.website, e.hrs_id FROM hut_effective e "
+                        "JOIN hut h ON h.place_id = e.id WHERE e.website IS NOT NULL "
+                        "AND (h.sac_id IS NOT NULL OR h.source = 'hrs_api') ORDER BY e.hrs_id IS NOT NULL, e.name")
+    huts = [dict(r) for r in rows if not ids or r["key"] in ids]
     return huts[:limit] if limit else huts
 
 
 def fetch(huts: list[dict], refetch: bool = False) -> None:
     RAW_DIR.mkdir(parents=True, exist_ok=True)
-    todo = [h for h in huts if refetch or not (RAW_DIR / f"{h['sac_id']}.json").exists()]
+    todo = [h for h in huts if refetch or not (RAW_DIR / f"{h['key']}.json").exists()]
     fetcher = web.Fetcher()
 
     def one(hut: dict) -> str:
         try:
             result = fetch_hut(fetcher, hut)
         except Exception as e:  # one broken site must not stop the run
-            result = {"sac_id": hut["sac_id"], "name": hut["name"], "website": hut["website"], "fetched_at": _now(),
+            result = {"key": hut["key"], "name": hut["name"], "website": hut["website"], "fetched_at": _now(),
                       "pages": [], "pdfs": [], "contacts": [], "booking_links": [],
                       "errors": [{"url": hut["website"], "error": f"{type(e).__name__}: {e}"[:300]}]}
-        (RAW_DIR / f"{hut['sac_id']}.json").write_text(json.dumps(result, ensure_ascii=False, indent=1))
+        (RAW_DIR / f"{hut['key']}.json").write_text(json.dumps(result, ensure_ascii=False, indent=1))
         chars = sum(len(p["text"]) for p in result["pages"])
         return (f"{hut['name'][:40]:40} pages {len(result['pages'])}  pdfs {len(result['pdfs'])}  "
                 f"text {chars:>6}  errors {len(result['errors'])}")
@@ -202,7 +206,7 @@ PROMPT = """You extract facts about one mountain hut from its website, for a hut
 Use only what the pages below (and attached PDFs) say. Never guess; use null or an empty list when not stated.
 Today is {today}.
 
-Hut: {name} (SAC hut portal id {sac_id}), {altitude} m. Website: {website}
+Hut: {name} ({ident}), {altitude} m. Website: {website}
 
 Fields:
 - about_this_hut: false if the pages are not about this hut (dead page, generic tourism or club site without
@@ -258,7 +262,9 @@ def extract_hut(raw: dict, altitude: int | None, model: str) -> dict:
         parts.append("--- booking system links on the site\n" + "\n".join(raw["booking_links"][:10]))
     for pdf in raw["pdfs"]:
         parts.append(f"--- attached PDF: {pdf['url']}")
-    prompt = PROMPT.format(today=datetime.now(UTC).date().isoformat(), name=raw["name"], sac_id=raw["sac_id"],
+    key = str(raw.get("key", raw.get("sac_id")))  # files fetched before HRS huts have only sac_id
+    ident = f"hut-reservation.org id {key[4:]}" if key.startswith("hrs-") else f"SAC hut portal id {key}"
+    prompt = PROMPT.format(today=datetime.now(UTC).date().isoformat(), name=raw["name"], ident=ident,
                            altitude=altitude or "?", website=raw["website"], pages="\n\n".join(parts))
     pdfs = [(RAW_DIR / p["file"]).read_bytes() for p in raw["pdfs"]]
     result, info = gemini.generate_json(prompt, EXTRACT_SCHEMA, pdfs, model=model)
@@ -266,10 +272,11 @@ def extract_hut(raw: dict, altitude: int | None, model: str) -> dict:
 
 
 def extract(conn: sqlite3.Connection, huts: list[dict], model: str, again: bool = False) -> None:
-    altitudes = {r["sac_id"]: r["altitude_m"] for r in conn.execute("SELECT sac_id, altitude_m FROM hut_effective")}
+    altitudes = {r["key"]: r["altitude_m"] for r in conn.execute(
+        f"SELECT {KEY_SQL} AS key, e.altitude_m FROM hut_effective e JOIN hut h ON h.place_id = e.id")}
     todo = []
     for h in huts:
-        raw_file, out_file = RAW_DIR / f"{h['sac_id']}.json", RAW_DIR / f"{h['sac_id']}.extract.json"
+        raw_file, out_file = RAW_DIR / f"{h['key']}.json", RAW_DIR / f"{h['key']}.extract.json"
         if raw_file.exists() and (again or not out_file.exists()):
             todo.append((h, json.loads(raw_file.read_text()), out_file))
     print(f"extracting {len(todo)} of {len(huts)} huts with {model}")
@@ -280,7 +287,7 @@ def extract(conn: sqlite3.Connection, huts: list[dict], model: str, again: bool 
             out = {"result": None, "info": {}, "extracted_at": _now(), "error": "website unreachable"}
         else:
             try:
-                out = extract_hut(raw, altitudes.get(hut["sac_id"]), model)
+                out = extract_hut(raw, altitudes.get(hut["key"]), model)
             except Exception as e:  # keep going; the hut is retried on the next run
                 return f"{hut['name'][:40]:40} ERROR {e}"[:300]
         out_file.write_text(json.dumps(out, ensure_ascii=False, indent=1))
@@ -323,16 +330,16 @@ def _price(value) -> float | None:
 
 def load(conn: sqlite3.Connection) -> dict:
     """All saved extractions into hut_web, hut_season and hut_price (scraped rows of a hut are replaced)."""
-    place_ids = {r["sac_id"]: r["place_id"] for r in conn.execute("SELECT sac_id, place_id FROM hut")}
+    place_ids = {r["key"]: r["place_id"] for r in conn.execute(f"SELECT {KEY_SQL} AS key, place_id FROM hut h")}
     counts = {"huts": 0, "ok": 0, "seasons": 0, "prices": 0, "skipped_values": 0}
     now = _now()
     with conn:
         for out_file in sorted(RAW_DIR.glob("*.extract.json")):
-            sac_id = int(out_file.name.split(".")[0])
-            if sac_id not in place_ids:
+            key = out_file.name.split(".")[0]
+            if key not in place_ids:
                 continue
-            hut_id = place_ids[sac_id]
-            raw = json.loads((RAW_DIR / f"{sac_id}.json").read_text())
+            hut_id = place_ids[key]
+            raw = json.loads((RAW_DIR / f"{key}.json").read_text())
             out = json.loads(out_file.read_text())
             r = out["result"] or {}
             # Quotes found word for word in the fetched pages are "verified"; PDFs aren't searchable here.
@@ -388,13 +395,13 @@ def load(conn: sqlite3.Connection) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("stage", choices=["fetch", "extract", "load"])
-    parser.add_argument("--ids", help="comma-separated SAC ids")
+    parser.add_argument("--ids", help="comma-separated SAC ids (hrs-<id> for huts from hut-reservation.org)")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--refetch", action="store_true", help="fetch / extract again even if saved")
     parser.add_argument("--model", default=gemini.DEFAULT_MODEL)
     args = parser.parse_args()
     conn = connect()
-    ids = [int(i) for i in args.ids.split(",")] if args.ids else None
+    ids = [i.strip() for i in args.ids.split(",")] if args.ids else None
     huts = huts_to_scrape(conn, ids, args.limit)
     if args.stage == "fetch":
         fetch(huts, args.refetch)

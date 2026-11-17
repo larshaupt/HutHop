@@ -45,3 +45,14 @@ def test_route_leaving_switzerland():
     # 30 m past the border is within the tolerance, 2 km is not; then on into a country without border data
     assert countries.outside(swiss + [latlon(2_610_030, 1_205_000)]) == []
     assert countries.outside(swiss + [latlon(2_612_000, 1_205_000), latlon(2_630_000, 1_205_000)]) == ["LI", "abroad"]
+
+
+def test_region_border_from_osm_trails(tmp_path, monkeypatch):
+    """Austria's border (data/osm/border_at.json) tags places too; Switzerland and Liechtenstein win on the border."""
+    (tmp_path / "osm").mkdir()
+    at = shapely.box(2_620_000, 1_200_000, 2_640_000, 1_210_000)
+    (tmp_path / "osm/border_at.json").write_text(json.dumps({"countries": {"AT": shapely.to_geojson(at)}}))
+    countries.borders.cache_clear()
+    assert countries.country_at([2_630_000, 2_620_000, 2_650_000], [1_205_000] * 3) == ["AT", "LI", None]
+    swiss = [latlon(2_602_000, 1_205_000)]
+    assert countries.outside(swiss + [latlon(2_615_000, 1_205_000), latlon(2_630_000, 1_205_000)]) == ["LI", "AT"]

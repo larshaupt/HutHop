@@ -28,7 +28,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 import numpy as np
-import pyogrio.raw
 import shapely
 from pyproj import Transformer
 from scipy.sparse import csr_matrix
@@ -36,7 +35,7 @@ from scipy.sparse.csgraph import dijkstra
 from scipy.spatial import cKDTree
 
 from app.db import ROOT, connect
-from app.ingest import osm_access
+from app.ingest import osm_access, osm_trails
 from app.planner import geometry, hiking_time, polyline
 
 GPKG = ROOT / "data/tlm/SWISSTLM3D_WANDERWEGE.gpkg"
@@ -46,6 +45,10 @@ LIMITS = (1, 2, 3, 4)
 NODE_PRECISION_M = 1.0
 CUTOFF_MIN = 600.0
 STOP_MAX_SNAP_M = 300.0
+# OpenStreetMap trails abroad meet swissTLM3D at the Swiss and Liechtenstein border (stitch): nodes within BORDER_M
+# of it (countries.json is simplified to 5 m) are joined to the other network's nearest within STITCH_M.
+BORDER_M = 5.0
+STITCH_M = 50.0
 # Most stops kept per hut, direction and category limit (after keeping only the closest stop of each line).
 STOPS_PER_HUT = 40
 # Huts further than this from a signposted trail (glacier and high-alpine huts, huts abroad) get no computed
@@ -54,7 +57,7 @@ HUT_MAX_SNAP_M = 500.0
 HUT_REVIEW_SNAP_M = 200.0
 SIMPLIFY_M = 10.0
 SAME_EDGE_MIN = 1.0  # a higher category limit must save at least this much time to store a separate edge
-BATCH = 32
+BATCH = 8  # huts per Dijkstra call: each holds distances and predecessors for all ~1M trail nodes
 LV95_TO_WGS84 = Transformer.from_crs("EPSG:2056", "EPSG:4326", always_xy=True)
 WGS84_TO_LV95 = Transformer.from_crs("EPSG:4326", "EPSG:2056", always_xy=True)
 
@@ -90,31 +93,31 @@ class TrailNetwork:
 
 def network_from_lines(lines: list[np.ndarray], categories: list[int]) -> TrailNetwork:
     """Build the directed trail graph from 3D lines (LV95 metres) and their trail categories (1–3)."""
-    node_index: dict[tuple[int, int], int] = {}
-    node_xy, node_z = [], []
+    # Nodes: line ends merged to NODE_PRECISION_M, numbered in order of first appearance. Vectorised, and the edge
+    # rows kept in arrays: Python objects per line took ~1.7 GB for swissTLM3D alone.
+    ids = np.array([i for i, c in enumerate(lines) if len(c) >= 2])
+    ends = np.empty((2 * len(ids), 3))
+    for k, i in enumerate(ids):
+        ends[2 * k], ends[2 * k + 1] = lines[i][0], lines[i][-1]
+    keys = np.round(ends[:, :2] / NODE_PRECISION_M).astype(np.int64)
+    _, first, inverse = np.unique(keys, axis=0, return_index=True, return_inverse=True)
+    order = np.argsort(first)
+    rank = np.empty_like(order)
+    rank[order] = np.arange(len(order))
+    node_of = rank[inverse.ravel()]
+    node_xy, node_z = ends[first[order], :2], ends[first[order], 2]
+    a, b = node_of[0::2], node_of[1::2]
+    ids, a, b = ids[a != b], a[a != b], b[a != b]
 
-    def node(pt: np.ndarray) -> int:
-        key = (round(pt[0] / NODE_PRECISION_M), round(pt[1] / NODE_PRECISION_M))
-        if key not in node_index:
-            node_index[key] = len(node_xy)
-            node_xy.append(pt[:2])
-            node_z.append(pt[2])
-        return node_index[key]
-
-    rows = []
-    for i, (coords, category) in enumerate(zip(lines, categories)):
-        if len(coords) < 2:
-            continue
-        a, b = node(coords[0]), node(coords[-1])
-        if a == b:
-            continue
-        m = hiking_time.line_metrics(coords)
-        rows.append((a, b, m["t_fwd"], m["length"], m["up"], m["down"], category, i, False))
-        rows.append((b, a, m["t_back"], m["length"], m["down"], m["up"], category, i, True))
-
-    cols = list(zip(*rows))
-    arr = {name: np.array(col) for name, col in zip(
-        ("src", "dst", "time", "length", "up", "down", "category", "line", "reverse"), cols)}
+    m = np.empty((len(ids), 5))
+    for k, i in enumerate(ids):
+        mi = hiking_time.line_metrics(lines[i])
+        m[k] = mi["t_fwd"], mi["t_back"], mi["length"], mi["up"], mi["down"]
+    t_fwd, t_back, length, up, down = m.T
+    pair = lambda x, y: np.column_stack([x, y]).ravel()  # noqa: E731 (forward and reverse row of each line)
+    arr = {"src": pair(a, b), "dst": pair(b, a), "time": pair(t_fwd, t_back), "length": np.repeat(length, 2),
+           "up": pair(up, down), "down": pair(down, up), "category": np.repeat(np.asarray(categories)[ids], 2),
+           "line": np.repeat(ids, 2), "reverse": np.tile([False, True], len(ids))}
     n = len(node_xy)
     edges = {}
     for limit in LIMITS:
@@ -128,15 +131,78 @@ def network_from_lines(lines: list[np.ndarray], categories: list[int]) -> TrailN
         # csgraph treats explicit zeros as missing edges, so keep weights strictly positive.
         graph = csr_matrix((sub["time"] + 1e-6, (sub["src"], sub["dst"])), shape=(n, n))
         edges[limit] = EdgeSet(**sub, keys=keys[first], graph=graph)
-    return TrailNetwork(np.array(node_xy), np.array(node_z), lines, edges)
+    return TrailNetwork(node_xy, node_z, lines, edges)
 
 
 def load_network(gpkg=GPKG, access: list[np.ndarray] = ()) -> TrailNetwork:
-    """The trail graph, plus access paths (3D lines from a hut towards the trails) as category-4 lines."""
-    _, _, geoms, (categories,) = pyogrio.raw.read(gpkg, layer="tlm_strassen_strasse", columns=["wanderwege"])
-    shapes = shapely.from_wkb(geoms)
-    lines = [shapely.get_coordinates(g, include_z=True) for g in shapes]
-    return network_from_lines(*with_access(lines, [CATEGORY.get(c, 1) for c in categories], access))
+    """The trail graph: swissTLM3D, with OpenStreetMap's trails instead in the regions abroad when osm_trails has
+    extracted them, plus access paths (3D lines from a hut towards the trails) as category-4 lines."""
+    lines, categories = osm_trails.read_lines(gpkg, "wanderwege", layer="tlm_strassen_strasse")
+    categories = [CATEGORY.get(c, 1) for c in categories]
+    osm_lines, osm_categories, replaced = osm_trails.load()
+    if osm_lines:
+        lines, categories = merge_osm(lines, categories, osm_lines, osm_categories, replaced)
+    return network_from_lines(*with_access(lines, categories, access))
+
+
+def merge_osm(lines: list[np.ndarray], categories: list[int], osm_lines: list[np.ndarray], osm_categories: list[int],
+              replaced: shapely.Geometry) -> tuple[list[np.ndarray], list[int]]:
+    """swissTLM3D lines minus their parts in the replaced area (the regions abroad, where OpenStreetMap is used), plus
+    the OpenStreetMap lines and the connectors that join the two where they meet (stitch): on the Swiss and
+    Liechtenstein border, and where the region's extract ends next to swissTLM3D's coverage of Italy or Germany."""
+    # Only lines whose bounding box touches the replaced area are clipped; the rest stay as they are.
+    boxes = shapely.box(*np.array([(*c[:, :2].min(axis=0), *c[:, :2].max(axis=0)) if len(c) else (0, 0, 0, 0)
+                                   for c in lines]).T)
+    shapely.prepare(replaced)
+    near = shapely.intersects(replaced, boxes) & np.array([len(c) >= 2 for c in lines])
+    keep = np.flatnonzero(near)
+    geoms = shapely.linestrings(np.concatenate([lines[i] for i in keep]),
+                                indices=np.repeat(np.arange(len(keep)), [len(lines[i]) for i in keep]))
+    index, kept = osm_trails.clip(geoms, replaced, inside=False)
+    tlm_lines = [c for c, n in zip(lines, near) if not n] + osm_trails.split_coordinates(kept)
+    tlm_categories = [c for c, n in zip(categories, near) if not n] + [categories[keep[i]] for i in index]
+    connectors, connector_categories = stitch(tlm_lines, tlm_categories, osm_lines, osm_categories,
+                                              shapely.boundary(replaced))
+    print(f"trails: {len(tlm_lines):,} swissTLM3D lines (of {len(lines):,}), {len(osm_lines):,} OpenStreetMap lines "
+          f"abroad, {len(connectors)} connectors at the border")
+    return (tlm_lines + list(osm_lines) + connectors,
+            tlm_categories + list(osm_categories) + connector_categories)
+
+
+def border_nodes(lines: list[np.ndarray], categories: list[int],
+                 near: shapely.Geometry) -> tuple[np.ndarray, np.ndarray]:
+    """The graph nodes (line ends merged to NODE_PRECISION_M, N×3) within BORDER_M of `near`, and the easiest
+    category of the lines ending at each."""
+    if not len(lines):
+        return np.empty((0, 3)), np.empty(0, dtype=int)
+    ends = np.array([(c[0], c[-1]) for c in lines]).reshape(-1, 3)
+    keys = np.round(ends[:, :2] / NODE_PRECISION_M).astype(np.int64)
+    _, first, inverse = np.unique(keys, axis=0, return_index=True, return_inverse=True)
+    easiest = np.full(len(first), max(LIMITS))
+    np.minimum.at(easiest, inverse.ravel(), np.repeat(categories, 2))
+    near_border = shapely.dwithin(near, shapely.points(ends[first, :2]), BORDER_M)
+    return ends[first][near_border], easiest[near_border]
+
+
+def stitch(lines_a: list[np.ndarray], categories_a: list[int], lines_b: list[np.ndarray], categories_b: list[int],
+           border: shapely.Geometry) -> tuple[list[np.ndarray], list[int]]:
+    """Straight connectors between two trail networks at the border between them: each node of either network on
+    the border is joined to the nearest node of the other on it, within STITCH_M. Both are cut at the same border
+    line, but where a trail crosses it they rarely end at the same point (different mapping), and a junction on the
+    border (Pfälzerhütte on Bettlerjoch) is a junction in both networks a few metres apart, so without these the
+    two would not touch. A connector gets the harder of the easiest categories at its two nodes."""
+    shapely.prepare(border)
+    a_xyz, a_cat = border_nodes(lines_a, categories_a, border)
+    b_xyz, b_cat = border_nodes(lines_b, categories_b, border)
+    if not len(a_xyz) or not len(b_xyz):
+        return [], []
+    dist, nearest = cKDTree(b_xyz[:, :2]).query(a_xyz[:, :2], distance_upper_bound=STITCH_M)
+    pairs = {(i, j) for i, (d, j) in enumerate(zip(dist, nearest)) if np.isfinite(d)}
+    dist, nearest = cKDTree(a_xyz[:, :2]).query(b_xyz[:, :2], distance_upper_bound=STITCH_M)
+    pairs |= {(i, j) for j, (d, i) in enumerate(zip(dist, nearest)) if np.isfinite(d)}
+    a_key, b_key = (np.round(xyz[:, :2] / NODE_PRECISION_M) for xyz in (a_xyz, b_xyz))
+    pairs = sorted((i, j) for i, j in pairs if (a_key[i] != b_key[j]).any())  # else already one node
+    return [np.vstack([a_xyz[i], b_xyz[j]]) for i, j in pairs], [max(a_cat[i], b_cat[j]) for i, j in pairs]
 
 
 def with_access(lines: list[np.ndarray], categories: list[int], access) -> tuple[list[np.ndarray], list[int]]:
@@ -190,37 +256,23 @@ def path_nodes(pred: np.ndarray, source: int, target: int) -> list[int]:
     return nodes[::-1]
 
 
-def path_geometry(network: TrailNetwork, limit: int, nodes: list[int]) -> str:
-    """Encoded WGS84 polyline of a node path (original direction), simplified in LV95."""
+def path_geometry(network: TrailNetwork, limit: int, nodes: list[int]) -> tuple[str, str]:
+    """Encoded WGS84 polyline of a node path (original direction), simplified in LV95, and the encoded height of
+    each of its points. The simplified line keeps a subset of the trail vertices, with their heights: no lookup of
+    the nearest of all ~20M vertices (which took ~800 MB with Austria)."""
     es = network.edges[limit]
     if len(nodes) < 2:
         nodes = nodes * 2
     ids = network.lookup(limit, np.array(nodes[:-1]), np.array(nodes[1:])) if nodes[0] != nodes[1] else []
     parts = []
     for e in ids:
-        coords = network.lines[es.line[e]][:, :2]
+        coords = network.lines[es.line[e]]
         parts.append(coords[::-1] if es.reverse[e] else coords)
-    xy = np.concatenate([parts[0]] + [p[1:] for p in parts[1:]]) if parts else network.node_xy[nodes]
-    simple = shapely.simplify(shapely.linestrings(xy), SIMPLIFY_M)
-    lon, lat = LV95_TO_WGS84.transform(*shapely.get_coordinates(simple).T)
-    return polyline.encode(list(zip(lat, lon)))
-
-
-class Heights:
-    """Height (m) of route line points, from the nearest vertex of the 3D trail lines.
-
-    Route lines are simplified trail lines, so every point is a trail vertex (to within the polyline's ~1 m
-    rounding)."""
-
-    def __init__(self, network: TrailNetwork):
-        coords = np.concatenate([c for c in network.lines if len(c)])
-        self.tree, self.z = cKDTree(coords[:, :2]), coords[:, 2]
-
-    def profile(self, geometry: str) -> str:
-        """Encoded heights, one per point of the encoded route line."""
-        lat, lon = np.array(polyline.decode(geometry)).T
-        _, idx = self.tree.query(np.column_stack(WGS84_TO_LV95.transform(lon, lat)))
-        return polyline.encode_values([round(float(z)) for z in self.z[idx]])
+    xyz = (np.concatenate([parts[0]] + [p[1:] for p in parts[1:]]) if parts
+           else np.column_stack([network.node_xy[nodes], network.node_z[nodes]]))
+    e, n, z = shapely.get_coordinates(shapely.simplify(shapely.linestrings(xyz), SIMPLIFY_M), include_z=True).T
+    lon, lat = LV95_TO_WGS84.transform(e, n)
+    return polyline.encode(list(zip(lat, lon))), polyline.encode_values([round(float(h)) for h in z])
 
 
 def search(network: TrailNetwork, places: list[dict], cutoff: float = CUTOFF_MIN) -> list[dict]:
@@ -248,10 +300,8 @@ def search(network: TrailNetwork, places: list[dict], cutoff: float = CUTOFF_MIN
             print(f"  limit {limit} {'reverse' if reverse else 'forward'}: {len(found)} edges so far", flush=True)
 
     edges = []
-    heights = Heights(network)
     for (_, _, limit), e in found.items():
-        e["geometry"] = path_geometry(network, limit, e.pop("_nodes"))
-        e["elevation"] = heights.profile(e["geometry"])
+        e["geometry"], e["elevation"] = path_geometry(network, limit, e.pop("_nodes"))
         e["max_altitude_m"] = max(polyline.decode_values(e["elevation"]), default=None)
         e["footprint"], e["samples"] = geometry.pack(*geometry.footprint(e["geometry"]))
         edges.append(e)

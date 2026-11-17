@@ -40,6 +40,10 @@ export function invalidateHut(id) {
   details.delete(id);
 }
 
+/** The hut type filter: "club" covers SAC and other alpine club huts ("sac" is from older links). */
+const operatorFilter = () => (state.operator === "sac" ? "club" : state.operator);
+const isClub = (operator) => operator === "sac" || operator === "club";
+
 /** Opening status in the selected month (from the API's per-month list), or "any" without a month filter. */
 const hutStatus = (hut) => (state.month ? hut.months[state.month - 1] : "any");
 
@@ -55,7 +59,7 @@ function filterHuts() {
     (!state.minBeds || (h.beds || 0) >= state.minBeds) &&
     (h.altitude || 0) >= state.altMin &&
     (state.altMax >= ALT_MAX || (h.altitude || 0) <= state.altMax) &&
-    (state.operator === "all" || h.operator === state.operator) &&
+    (state.operator === "all" || (operatorFilter() === "club" ? isClub(h.operator) : h.operator === operatorFilter())) &&
     (!q || h.name.toLocaleLowerCase().includes(q)),
   );
 }
@@ -81,7 +85,7 @@ export function renderControls() {
 export function syncControls() {
   document.querySelectorAll("#months button").forEach((b) => b.setAttribute("aria-pressed", Number(b.dataset.m) === state.month));
   document.querySelectorAll("#openAs button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.v === state.openAs));
-  document.querySelectorAll("#operator button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.v === state.operator));
+  document.querySelectorAll("#operator button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.v === operatorFilter()));
   document.querySelectorAll("#base button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.v === state.base));
   document.querySelectorAll("[data-toggle]").forEach((b) => b.setAttribute("aria-pressed", state[b.dataset.toggle]));
   $("#trails").setAttribute("aria-pressed", state.trails);
@@ -398,7 +402,9 @@ function websiteSection(w) {
 function renderDetail(d) {
   const photo = d.photos[0];
   const currentMonth = new Date().getMonth();
-  const subtitle = [d.operator === "sac" ? t("SAC hut") : t("Hut"), d.owner && t("owned by {owner}", { owner: esc(d.owner) }),
+  // An alpine club hut's owner is the club itself (ÖAV, DAV, …); an SAC hut's is a section, a private hut's a person
+  const subtitle = [{ sac: t("SAC hut"), club: t("Alpine club hut") }[d.operator] || t("Hut"),
+    d.owner && (d.operator === "club" ? esc(d.owner) : t("owned by {owner}", { owner: esc(d.owner) })),
     d.country && d.country !== "CH" && countryName(d.country)].filter(Boolean).join(" · ");
   const services = Object.entries(SERVICE_LABELS).filter(([k]) => d.services[k]).map(([, label]) => `<span>${label}</span>`);
   const routes = d.routes.map((r) => {
@@ -412,6 +418,10 @@ function renderDetail(d) {
   const [e, n] = d.lv95.map(Math.round);
   const geoAdmin = `https://map.geo.admin.ch/#/map?lang=${LANG}&center=${e},${n}&z=9&bgLayer=ch.swisstopo.pixelkarte-farbe` +
     "&layers=ch.swisstopo.swisstlm3d-wanderwege&crosshair=marker";
+  // swisstopo's maps end a few kilometres past the border: huts further abroad link to OpenStreetMap
+  const swiss = d.source !== "hrs_api" && (!d.country || ["CH", "LI"].includes(d.country));
+  const mapLink = swiss ? [geoAdmin, "map.geo.admin.ch"]
+    : [`https://www.openstreetmap.org/?mlat=${d.lat}&mlon=${d.lon}#map=15/${d.lat}/${d.lon}`, "openstreetmap.org"];
   const long = (d.description || "").length > 320;
   // Phone, email and pages as one calm list instead of a row of buttons: label, then what you get
   const host = (url) => { try { return new URL(url).hostname.replace(/^www\./, ""); } catch { return url; } };
@@ -421,7 +431,7 @@ function renderDetail(d) {
     d.email && [t("Email"), `mailto:${d.email}`, d.email, ""],
     d.website && [t("Website"), d.website, host(d.website), external],
     d.sac_url && [t("SAC page"), d.sac_url, host(d.sac_url), external],
-    [t("Map"), geoAdmin, "map.geo.admin.ch", external],
+    [t("Map"), ...mapLink, external],
   ].filter(Boolean).map(([label, href, text, attrs]) =>
     `<li><a href="${esc(href)}" ${attrs}><span>${label}</span><b>${esc(text)}</b></a></li>`).join("");
 
@@ -459,6 +469,7 @@ function renderDetail(d) {
           <span><i class="dot closed"></i>${t("Closed")}</span>${d.months[0] === "unknown" ? `<span><i class="dot unknown"></i>${t("No data")}</span>` : ""}
           <span>${t("Half-filled: part of the month")}</span>
         </div>
+        ${d.source === "hrs_api" ? `<p class="hint">${t("From the hut's booking calendar on hut-reservation.org; months that can't be booked yet are estimated.")}</p>` : ""}
       </div>
       ${websiteSection(d.web)}
       <div class="section"><h3>${t("Weather")}</h3><div id="weather"><p class="hint">${t("Loading the forecast…")}</p></div></div>
@@ -468,7 +479,9 @@ function renderDetail(d) {
         ${long ? `<button class="link" id="more">${t("Show more")}</button>` : ""}</div>` : ""}
       ${routes.length ? `<div class="section"><h3>${t("Access routes")}</h3><ul class="routes">${routes.join("")}</ul></div>` : ""}
       ${services.length ? `<div class="section"><h3>${t("Services")}</h3><div class="services">${services.join("")}</div></div>` : ""}
-      <p class="source">${d.source === "manual" ? t("Hut added by hand") : `${t("Hut data")} © <a href="https://www.sac-cas.ch" target="_blank" rel="noopener">SAC-CAS</a>,
+      <p class="source">${d.source === "manual" ? t("Hut added by hand") : `${t("Hut data")} ${d.source === "hrs_api"
+        ? '<a href="https://www.hut-reservation.org" target="_blank" rel="noopener">hut-reservation.org</a>'
+        : '© <a href="https://www.sac-cas.ch" target="_blank" rel="noopener">SAC-CAS</a>'},
         ${t("synced {date}", { date: d.synced_at ? new Date(d.synced_at).toLocaleDateString("de-CH") : "–" })}`}. ${t("Check conditions and official sources before you go.")}
         <a href="#" data-edit-hut="${d.id}">${t("Edit hut data")}</a></p>
     </div>`;

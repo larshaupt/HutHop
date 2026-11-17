@@ -1,6 +1,6 @@
 """Read-only client for hut-reservation.org availability. See spikes/hut_reservation_findings.md.
 
-Only the public season calendar is used (no login, no booking endpoints).
+Only the public season calendar and hut info are used (no login, no booking endpoints).
 """
 
 from datetime import datetime
@@ -12,6 +12,7 @@ from app.clients import USER_AGENT
 BASE = "https://www.hut-reservation.org/api/v1"
 BOOKING_URL = "https://www.hut-reservation.org/reservation/book-hut/{}/wizard"  # page for users, by hrs id
 TIMEOUT_S = 20
+HUT_NOT_FOUND = 100  # messageId of the HTTP 400 for an unknown hut id
 
 
 def make_client() -> httpx.Client:
@@ -32,8 +33,21 @@ def parse_calendar(days: list[dict]) -> list[dict]:
     return rows
 
 
-def fetch_calendar(hrs_id: int, client: httpx.Client) -> list[dict]:
-    """The hut's whole booking window, from today (one request, 30–200 KB)."""
+def fetch_calendar_days(hrs_id: int, client: httpx.Client) -> list[dict]:
+    """The raw season calendar: the hut's whole booking window, from today (one request, 30–200 KB)."""
     r = client.get(f"{BASE}/reservation/getHutAvailability", params={"hutId": hrs_id, "step": "WIZARD"})
     r.raise_for_status()
-    return parse_calendar(r.json())
+    return r.json()
+
+
+def fetch_calendar(hrs_id: int, client: httpx.Client) -> list[dict]:
+    return parse_calendar(fetch_calendar_days(hrs_id, client))
+
+
+def fetch_hut_info(hrs_id: int, client: httpx.Client) -> dict | None:
+    """The hut's public info (name, club, coordinates, beds, …), or None if no hut has this id (3–5 KB)."""
+    r = client.get(f"{BASE}/reservation/hutInfo/{hrs_id}")
+    if r.status_code == 400 and r.json().get("messageId") == HUT_NOT_FOUND:
+        return None
+    r.raise_for_status()
+    return r.json()
