@@ -1,6 +1,6 @@
 # HutHop
 
-A web app to browse Swiss mountain huts (SAC plus huts added by hand) and to suggest multi-day summer hut tours from your constraints, with live free-bed checks.
+A web app to browse Swiss and Liechtenstein mountain huts (SAC plus huts added by hand) and to suggest multi-day summer hut tours from your constraints, with live free-bed checks.
 
 **Status (Nov 2026):** the code is public; the running app is private, deployed at huthop.larshauptmann.com behind a login (Oracle VM, Cloudflare Access). Hut map with filters, free-beds calendar and hand
 corrections; walking connections on swisstopo's trail network; multi-day tour suggestions ranked by a fixed "best"
@@ -30,7 +30,7 @@ uv run pytest                             # tests (use a throwaway database, see
 uv run playwright install chromium        # once: the browser for the mobile tests (tests/test_mobile.py)
 ```
 
-`refresh` runs the individual jobs (`sync_sac`, `load_stops`, `load_timetable`, `osm_access`, `build_edges`), downloads a new swissTLM3D edition
+`refresh` runs the individual jobs (`sync_sac`, `load_stops`, `countries`, `load_timetable`, `osm_access`, `build_edges`), downloads a new swissTLM3D edition
 only when swisstopo publishes one, and rebuilds the route graph only when hut/stop positions or trails changed
 (`--rebuild` forces it). Each run is logged to `data/refresh_log.json`. Run it weekly during the season.
 `sync_sac --from-file data/raw/sac/huts.json` re-imports the last saved API response without fetching.
@@ -49,6 +49,10 @@ and the official timetables (GTFS, opentransportdata.swiss, about 90 MB each: th
 year's) into `data/gtfs/` when a new edition is out. They give the lines and summer departures of each stop (a hut
 only gets a connection to the closest stop of each line) and on which days and from when to when each stop is
 served: tours start and end at the closest stop that runs on that day (cable car and lift stations included).
+Liechtenstein needs no sources of its own: the SAC portal lists its huts (Pfälzerhütte), and swissTLM3D, the
+federal stop list and the Swiss timetable cover it. `countries` tags every hut and stop with its country from
+swisstopo's swissBOUNDARIES3D (`data/countries.json`); trail closures and shooting notices are only published for
+Switzerland, so a tour day that leaves it says where they were not checked.
 Huts more than 500 m from a signposted trail (glacier and high-alpine huts, bivouacs) get the shortest
 OpenStreetMap path to one, fetched with the Overpass API by `osm_access` into `data/osm/access.json`, with heights from
 the Open-Meteo elevation API (Copernicus DEM, ~90 m; the free tier's rate limit makes a fetch take several minutes).
@@ -92,7 +96,8 @@ app/
              info (About dialog), feedback (sent from the app; reading it needs the admin password)
   db/        schema.sql (tables, views, change-counter triggers) and connect() (migrations, WAL)
   ingest/    offline jobs: refresh, sync_sac, load_stops, load_timetable, osm_access, build_edges, footprints,
-             scrape_huts (prices, season dates and booking from the hut websites)
+             countries (borders of Switzerland and Liechtenstein), scrape_huts (prices, season dates and booking
+             from the hut websites)
   planner/   graph (model, loading, cache), tours (beam search, scoring, rebuilding, diversity),
              planning (search with free-bed rounds, rebuild by id: what the API calls), ranking (sub-scores,
              "best"), geometry (retracing, shape), costs (price estimate), availability (cache, classification, calendar), opening,

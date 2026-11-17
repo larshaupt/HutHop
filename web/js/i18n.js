@@ -34,6 +34,12 @@ export function t(key, params = {}) {
   return text.replace(/\{(\w+)\}/g, (m, name) => (name in params ? params[name] : m));
 }
 
+const regions = new Intl.DisplayNames([LOCALE], { type: "region" });
+/** A country's name from its ISO code ("LI" → "Liechtenstein"), or "abroad" (other countries). */
+export function countryName(code) {
+  return code === "abroad" ? t("other countries") : regions.of(code);
+}
+
 /** The static text of index.html (text, aria-label, title, placeholder), translated by its English wording. */
 export function translatePage() {
   document.documentElement.lang = LANG;

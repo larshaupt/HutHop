@@ -8,7 +8,7 @@ import { loadBeds } from "./beds.js";
 import { isFavourite, toggleFavourite } from "./favourites.js";
 import { loadWeather } from "./weather.js";
 import { formatHeight, heightUnit, heightValue } from "./settings.js";
-import { LANG, LOCALE, t } from "./i18n.js";
+import { LANG, LOCALE, countryName, t } from "./i18n.js";
 import { noteSaved } from "./offline.js";
 
 const SERVICE_LABELS = {
@@ -398,7 +398,8 @@ function websiteSection(w) {
 function renderDetail(d) {
   const photo = d.photos[0];
   const currentMonth = new Date().getMonth();
-  const subtitle = [d.operator === "sac" ? t("SAC hut") : t("Hut"), d.owner && t("owned by {owner}", { owner: esc(d.owner) })].filter(Boolean).join(" · ");
+  const subtitle = [d.operator === "sac" ? t("SAC hut") : t("Hut"), d.owner && t("owned by {owner}", { owner: esc(d.owner) }),
+    d.country && d.country !== "CH" && countryName(d.country)].filter(Boolean).join(" · ");
   const services = Object.entries(SERVICE_LABELS).filter(([k]) => d.services[k]).map(([, label]) => `<span>${label}</span>`);
   const routes = d.routes.map((r) => {
     const grade = (r.main_difficulty || "").trim();
