@@ -1,4 +1,4 @@
-"""Load the official Swiss timetable (GTFS, opentransportdata.swiss), and the Austrian ones on disk (at_transit.py):
+"""Load the official Swiss timetable (GTFS, opentransportdata.swiss), and the foreign ones on disk (foreign_transit.py):
 which lines serve each stop, how often, and on which days from when to when.
 
     uv run python -m app.ingest.load_timetable                # download new editions (~90 MB each), then load
@@ -6,10 +6,12 @@ which lines serve each stop, how often, and on which days from when to when.
 
 Keeps this year's and (once published, in autumn) next year's timetable, so tours can be planned for any date
 from now to the end of next season. Reads each zip directly (stop_times.txt alone is 1.2 GB unpacked) in one
-streaming pass: ~25 s and ~600 MB RAM per year. The Austrian datasets of a year are merged into the Swiss
-timetable of that year (merge). Stores
-  - stop_line: lines per stop with summer departures (newest timetable), for build_edges (closest stop of each
-    line per hut) and the connection list;
+streaming pass: ~25 s and ~600 MB RAM per year. Merged into the Swiss timetable of a year (merge, read_all): the
+Austrian datasets of that year, and the days of the open feeds of Germany and Italy (transit_feeds.py) within it.
+On the days a foreign stop's feeds don't cover (Germany's 30 days, a year not published yet), its timetable is
+unknown (stop_service.calls UNKNOWN_CALLS), not "no service". Stores
+  - stop_line: lines per stop with summer departures (newest timetable; for an open feed that doesn't reach it, e.g.
+    Germany's, from the days it has), for build_edges (closest stop of each line per hut) and the connection list;
   - timetable, timetable_service, stop_service: per stop and service pattern the first and last time and number
     of calls, and the days each pattern runs, so the planner knows whether a stop is served on a date;
   - trip_pattern, trip_call: the trips through the stops that have walking connections (`ride_stops`, from the
@@ -24,9 +26,10 @@ import json
 import math
 import re
 import sqlite3
+import sys
 import zipfile
 from collections import defaultdict
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from pathlib import Path
@@ -34,12 +37,13 @@ from pathlib import Path
 import httpx
 
 from app.clients import USER_AGENT
-from app.db import ROOT, connect
+from app.db import connect
+from app.ingest import foreign_transit
+from app.ingest.foreign_transit import GTFS_DIR, Network
+from app.ingest.foreign_transit import rows as _rows
 
 PERMALINK = "https://data.opentransportdata.swiss/en/dataset/timetable-{year}-gtfs2020/permalink"
-GTFS_DIR = ROOT / "data/gtfs"
-AT_DIR = GTFS_DIR / "at"  # Austrian datasets, {dataset}_{year}.zip (at_transit.py downloads them)
-GLOBAL_ID = re.compile(r"[a-z]{2}:\d+:\d+")  # Austrian stop ids: at:47:1234 (station) + :area:quay; de:… abroad
+UNKNOWN_CALLS = -1  # stop_service.calls of the days a stop's timetable doesn't cover (transit.StopDay.known)
 SUMMER = ((7, 1), (8, 31))  # summer departures per line are averaged over the hut season of the timetable year
 LIFT_ROUTE_TYPES = {6, 7}  # aerial lift, funicular; extended types 1300–1499 (aerial lifts, funiculars) as well
 
@@ -103,33 +107,6 @@ def feed_files() -> list[Path]:
     return sorted(GTFS_DIR.glob("gtfs_*.zip"))
 
 
-def at_feed_files() -> dict[int, list[tuple[int, Path]]]:
-    """The Austrian datasets on disk: year → [(dataset id, path)]."""
-    out: dict[int, list[tuple[int, Path]]] = {}
-    for path in sorted(AT_DIR.glob("*_*.zip")):
-        dataset, year = map(int, path.stem.split("_"))
-        out.setdefault(year, []).append((dataset, path))
-    return out
-
-
-def at_stop_keys(z: zipfile.ZipFile, source: str) -> dict[str, str]:
-    """Stop id → stop key (stop.ref) in an Austrian feed: the station's global id (`at:47:1234` for the quay
-    `at:47:1234:1:2`, `de:09162:6` abroad), else its parent station's or its own id, prefixed with the dataset
-    (`at57:…`)."""
-    keys = {}
-    for r in _rows(z, "stops.txt"):
-        root = r.get("parent_station") or r["stop_id"]
-        match = GLOBAL_ID.match(root) or GLOBAL_ID.match(r["stop_id"])
-        keys[r["stop_id"]] = match[0] if match else f"{source}:{root}"
-    return keys
-
-
-def _rows(z: zipfile.ZipFile, name: str) -> Iterator[dict[str, str]]:
-    if name not in z.namelist():
-        return iter(())
-    return csv.DictReader(io.TextIOWrapper(z.open(name), encoding="utf-8-sig"))
-
-
 def _minutes(hms: str) -> int:
     """'25:10:00' → 1510 (times after midnight belong to the service day before)."""
     return int(hms[:-6]) * 60 + int(hms[-5:-3])
@@ -190,7 +167,7 @@ def _span(z: zipfile.ZipFile) -> tuple[str, date, date]:
 @dataclass
 class Feed:
     """One year's timetable, as read from its zip, or several merged (merge). Stops are keyed by their uic, or by
-    stop.ref for stops without one (Austria)."""
+    stop.ref for stops without one (abroad)."""
 
     year: int
     version: str
@@ -200,7 +177,7 @@ class Feed:
     services: dict[str, int] = field(default_factory=dict)  # service id → day bits (bit i = start + i days)
     stop_services: list[tuple] = field(default_factory=list)  # (stop key, service id, first min, last min, calls)
     patterns: list[tuple] = field(default_factory=list)  # (label, headsign, lift, service ids, ((stop key, min), …))
-    source: str = ""  # "" for the Swiss timetable, "at57" for Austrian dataset 57
+    source: str = ""  # "" for the Swiss timetable, else the foreign feed's source ("at57": Austrian dataset 57)
 
 
 def is_lift(route_type: str) -> bool:
@@ -209,14 +186,18 @@ def is_lift(route_type: str) -> bool:
 
 
 def read(path: Path, since: date | None = None, keep: set[int | str] | None = None, source: str = "",
-         year: int | None = None) -> Feed:
+         year: int | None = None, network: Network | None = None, within: tuple[date, date] | None = None) -> Feed:
     """One year's timetable from its zip. Days before `since` (default today) are dropped: tours are never planned
     in the past, and the current year's file holds many past service patterns (e.g. for construction work).
     Trips are kept with their calls at the stops `keep` (stop keys), if given. `source`: "" for the Swiss timetable
-    (stops keyed by uic), else an Austrian dataset (`at57`, stops keyed by at_stop_keys) of timetable `year`."""
+    (stops keyed by uic), else a foreign feed (`at57`, `gtfsde`; of timetable `year` if it has one), its stops
+    keyed by foreign_transit: as in `network` (its stops' keys; lines and calls counted only at the stops the feed
+    owns there), else by station_keys. `within`: the first and last day to read (an open feed cut to a year)."""
     since = since or date.today()
     with zipfile.ZipFile(path) as z:
         version, start, end = _span(z)
+        if within:
+            start, end = max(start, within[0]), min(end, within[1])
         feed = Feed(year or end.year, version, start, end, source=source)
         all_days = service_days(z, start, end)
         # Summer departures count the whole summer, even once it is past; only the served days stored drop the past
@@ -229,14 +210,19 @@ def read(path: Path, since: date | None = None, keep: set[int | str] | None = No
         summer_days = {s: (bits & summer_mask).bit_count() for s, bits in all_days.items()}
         n_summer = (last - first).days + 1
 
+        owned = None
         if source:
-            stop_keys = at_stop_keys(z, source)
+            stop_keys = foreign_transit.station_keys(z, source)
+            if network is not None:
+                to_stop = network.keys.get(source, {})
+                stop_keys = {stop_id: to_stop[key] for stop_id, key in stop_keys.items() if key in to_stop}
+                owned = network.owned(source)
         else:
             stop_keys = {r["stop_id"]: int(r["didok"]) for r in _rows(z, "stops.txt") if r.get("didok", "").isdigit()}
         lines, labels, lifts = {}, {}, set()
         for r in _rows(z, "routes.txt"):
             lines[r["route_id"]] = key = line_key(r["route_id"]) if not source else r["route_id"]
-            if source:  # Austrian route_desc is free text, not a category like B or IR
+            if source:  # route_desc abroad is free text (if any), not a category like B or IR
                 labels.setdefault(key, r.get("route_short_name") or r.get("route_long_name", ""))
             else:
                 labels.setdefault(key, line_label(r["route_desc"], r["route_short_name"]))
@@ -252,24 +238,24 @@ def read(path: Path, since: date | None = None, keep: set[int | str] | None = No
             f[0] += runs
             f[1] = min(f[1], begin)
             f[2] = max(f[2], round(begin + (runs - 1) * headway))
-        trips, headsigns = {}, {}
+        trips = {}  # trip → (line, service, frequency, headsign): one dict, Switzerland has a million trips
         for r in _rows(z, "trips.txt"):
             if all_days.get(r["service_id"]):
-                trips[r["trip_id"]] = (lines[r["route_id"]], r["service_id"], frequency.get(r["trip_id"]))
-                headsigns[r["trip_id"]] = r.get("trip_headsign", "")
+                trips[r["trip_id"]] = (lines[r["route_id"]], sys.intern(r["service_id"]), frequency.get(r["trip_id"]),
+                                       sys.intern(r.get("trip_headsign", "")))
 
         patterns: dict[tuple, set[str]] = {}  # (line, headsign, calls) → services
         kept: list[tuple[int, int]] = []  # the current trip's calls at `keep` stops
 
         def add_trip(trip_id: str, start: int) -> None:
             """The current trip's calls as a pattern; a trip given by frequency as one per run."""
-            line, service, freq = trips[trip_id]
+            line, service, freq, headsign = trips[trip_id]
             # shortcut: runs are spread evenly from the first to the last start, exact for one frequency row per trip
             shifts = [0] if freq is None else \
                 [freq[1] - start + (round(k * (freq[2] - freq[1]) / (freq[0] - 1)) if freq[0] > 1 else 0)
                  for k in range(freq[0])]
             for shift in shifts:
-                key = (line, headsigns[trip_id], tuple((s, t + shift) for s, t in kept))
+                key = (line, headsign, tuple((s, t + shift) for s, t in kept))
                 patterns.setdefault(key, set()).add(service)
 
         line_calls: dict[tuple[int, str], int] = defaultdict(int)
@@ -292,14 +278,18 @@ def read(path: Path, since: date | None = None, keep: set[int | str] | None = No
             stop = stop_keys.get(row[i_stop])
             if stop is None:
                 continue
-            line, service, freq = trip
+            line, service, freq, _ = trip
             runs, t_first, t_last = (1, t, t) if freq is None else \
                 (freq[0], freq[1] + (t or trip_start) - trip_start, freq[2] + (t or trip_start) - trip_start)
-            line_calls[(stop, line)] += summer_days[service] * runs
+            own = owned is None or stop in owned  # else another feed counts the stop's calls (foreign_transit)
+            if own:
+                line_calls[(stop, line)] += summer_days[service] * runs
             if not days[service]:  # no future days: counts towards the lines only
                 continue
             if keep is not None and stop in keep and t is not None:
                 kept.append((stop, t))
+            if not own:
+                continue
             agg = service_calls.get((stop, service))
             if agg is None:
                 service_calls[(stop, service)] = [t_first, t_last, runs]
@@ -324,16 +314,29 @@ def read(path: Path, since: date | None = None, keep: set[int | str] | None = No
     return feed
 
 
+def span(path: Path) -> tuple[date, date]:
+    """A feed's first and last day."""
+    with zipfile.ZipFile(path) as z:
+        return _span(z)[1:]
+
+
 def merge(feeds: list[Feed]) -> Feed:
     """One year's timetables as one (the year is the timetable's key): it runs from the earliest start to the latest
-    end, day bits are shifted to that start, and the service and line ids of each Austrian dataset get its source
-    as prefix (`at57:…`) so feeds don't collide. A lone Swiss timetable is returned as it is."""
+    end, day bits are shifted to that start, and the service and line ids of each foreign feed get its source as
+    prefix (`at57:…`, `gtfsde:…`) so feeds don't collide. A Swiss timetable that starts first is extended (a lone one
+    returned as it is)."""
     if len(feeds) == 1 and not feeds[0].source:
         return feeds[0]
     start, end = min(f.start for f in feeds), max(f.end for f in feeds)
-    merged = Feed(feeds[0].year, " ".join(f"{f.source}:{f.version}" if f.source else f.version for f in feeds),
-                  start, end)
+    version = " ".join(f"{f.source}:{f.version}" if f.source else f.version for f in feeds)
+    if not feeds[0].source and feeds[0].start == start:  # extended in place: the Swiss timetable is large
+        merged = feeds[0]
+        merged.version, merged.end = version, end
+    else:
+        merged = Feed(feeds[0].year, version, start, end)
     for f in feeds:
+        if f is merged:
+            continue
         prefix, shift = f"{f.source}:" if f.source else "", (f.start - start).days
         merged.lines += [r | {"line": prefix + r["line"]} for r in f.lines]
         merged.services |= {prefix + s: bits << shift for s, bits in f.services.items()}
@@ -343,16 +346,51 @@ def merge(feeds: list[Feed]) -> Feed:
     return merged
 
 
-def read_all(keep: set[int | str] | None = None) -> list[Feed]:
-    """Each year's timetable: the Swiss one merged with the Austrian datasets of that year on disk."""
+def read_all(keep: set[int | str] | None = None, since: date | None = None) -> Iterator[Feed]:
+    """Each year's timetable, oldest first: the Swiss one merged with the foreign feeds on disk (foreign_transit): the
+    Austrian datasets of that year, and the days of the open feeds within the Swiss timetable's (else the Austrian
+    ones'). One year at a time (~600 MB each): the next is read once the caller is done with the last."""
+    files = foreign_transit.feed_files()
+    net = foreign_transit.stop_keys()
     swiss = {int(path.stem.split("_")[1]): path for path in feed_files()}
-    austrian = at_feed_files()
-    feeds = []
-    for year in sorted(swiss.keys() | austrian.keys()):
-        parts = [read(swiss[year], keep=keep)] if year in swiss else []
-        parts += [read(path, keep=keep, source=f"at{dataset}", year=year) for dataset, path in austrian.get(year, [])]
-        feeds.append(merge(parts))
-    return feeds
+    open_feeds = [(f, span(f.path)) for f in files if f.year is None]
+    open_lines: dict[str, list[dict]] = {}
+    years = sorted(swiss.keys() | {f.year for f in files if f.year})
+    for year in years:
+        parts = [read(swiss[year], since, keep)] if year in swiss else []
+        parts += [read(f.path, since, keep, f.source, year, net) for f in files if f.year == year]
+        days = (parts[0].start, parts[0].end) if year in swiss else \
+            (min(p.start for p in parts), max(p.end for p in parts))
+        for f, (start, end) in open_feeds:
+            if start <= days[1] and end >= days[0]:
+                parts.append(read(f.path, since, keep, f.source, year, net, days))
+                open_lines[f.source] = parts[-1].lines
+        merged = merge(parts)
+        mark_unknown(merged, parts, net)
+        if year == years[-1]:  # the lines of open feeds that end before the newest year starts (Germany's 30 days)
+            merged.lines += [r | {"line": f"{source}:{r['line']}"} for source, rows in open_lines.items()
+                             if source not in {p.source for p in parts} for r in rows]
+        yield merged
+        del parts, merged
+
+
+def mark_unknown(feed: Feed, parts: list[Feed], net: Network) -> None:
+    """Add to a merged timetable, for each foreign stop, the days none of the feeds that own it (foreign_transit)
+    covers: a service with UNKNOWN_CALLS calls there, so the planner doesn't take these days for "no service"."""
+    covered = {p.source: ((1 << ((p.end - p.start).days + 1)) - 1) << (p.start - feed.start).days
+               for p in parts if p.source}
+    every_day = (1 << ((feed.end - feed.start).days + 1)) - 1
+    by_owners: dict[frozenset[str], list[str]] = {}
+    for key, stop in net.stops.items():
+        by_owners.setdefault(frozenset(stop["owners"]), []).append(key)
+    for owners, keys in by_owners.items():
+        days = every_day
+        for source in owners:
+            days &= ~covered.get(source, 0)
+        if days:
+            service = "unknown:" + ",".join(sorted(owners))
+            feed.services[service] = days
+            feed.stop_services += [(key, service, None, None, UNKNOWN_CALLS) for key in keys]
 
 
 def ride_stops(conn: sqlite3.Connection) -> set[int | str]:
@@ -363,9 +401,10 @@ def ride_stops(conn: sqlite3.Connection) -> set[int | str]:
         "WHERE place_id IN (SELECT from_place FROM edge UNION SELECT to_place FROM edge)")}
 
 
-def load(conn: sqlite3.Connection, feeds: list[Feed]) -> int:
-    """Replace the timetable data with these feeds (stop lines from the newest). Rows for stop keys not in the
-    stop table (e.g. abroad) are skipped. Returns the number of stop lines."""
+def load(conn: sqlite3.Connection, feeds: Iterable[Feed]) -> int:
+    """Replace the timetable data with these feeds (stop lines from the newest), taken one at a time: read_all
+    reads the next year once the last one is stored. Rows for stop keys not in the stop table are skipped. Returns
+    the number of stop lines."""
     places = dict(conn.execute("SELECT coalesce(uic, ref), place_id FROM stop").fetchall())
     with conn:
         conn.execute("DELETE FROM stop_line")
@@ -374,12 +413,10 @@ def load(conn: sqlite3.Connection, feeds: list[Feed]) -> int:
         conn.execute("DELETE FROM trip_pattern")
         conn.execute("DELETE FROM trip_call")
         conn.execute("DELETE FROM timetable")
-        if feeds:
-            newest = max(feeds, key=lambda f: f.year)
-            conn.executemany("INSERT INTO stop_line (stop_place, line, label, departures) VALUES (?, ?, ?, ?)",
-                             [(places[r["uic"]], r["line"], r["label"], r["departures"]) for r in newest.lines
-                              if r["uic"] in places])
+        newest_year, newest_lines = None, []
         for f in feeds:
+            if newest_year is None or f.year > newest_year:
+                newest_year, newest_lines = f.year, f.lines
             conn.execute("INSERT INTO timetable (feed, version, start_date, end_date) VALUES (?, ?, ?, ?)",
                          (f.year, f.version, f.start.isoformat(), f.end.isoformat()))
             number = {s: i for i, s in enumerate(sorted(f.services))}
@@ -389,19 +426,23 @@ def load(conn: sqlite3.Connection, feeds: list[Feed]) -> int:
             conn.executemany(
                 "INSERT INTO stop_service (feed, stop_place, service, first_min, last_min, calls) "
                 "VALUES (?, ?, ?, ?, ?, ?)",
-                [(f.year, places[uic], number[s], first, last, calls) for uic, s, first, last, calls in f.stop_services
-                 if uic in places and s in number])
-            patterns = [(label, headsign, lift, [number[s] for s in services if s in number],
+                ((f.year, places[uic], number[s], first, last, calls) for uic, s, first, last, calls in f.stop_services
+                 if uic in places and s in number))
+            patterns = ((label, headsign, lift, [number[s] for s in services if s in number],
                          [(places[uic], t) for uic, t in calls if uic in places])
-                        for label, headsign, lift, services, calls in f.patterns]
+                        for label, headsign, lift, services, calls in f.patterns)
             patterns = [p for p in patterns if p[3] and p[4]]
             conn.executemany("INSERT INTO trip_pattern (feed, pattern, label, headsign, lift, services) "
                              "VALUES (?, ?, ?, ?, ?, ?)",
-                             [(f.year, i, label, headsign, int(lift), ",".join(map(str, sorted(services))))
-                              for i, (label, headsign, lift, services, _) in enumerate(patterns)])
+                             ((f.year, i, label, headsign, int(lift), ",".join(map(str, sorted(services))))
+                              for i, (label, headsign, lift, services, _) in enumerate(patterns)))
             conn.executemany("INSERT INTO trip_call (feed, pattern, seq, stop_place, time_min) VALUES (?, ?, ?, ?, ?)",
-                             [(f.year, i, seq, place, t) for i, p in enumerate(patterns)
-                              for seq, (place, t) in enumerate(p[4])])
+                             ((f.year, i, seq, place, t) for i, p in enumerate(patterns)  # rows not kept: millions
+                              for seq, (place, t) in enumerate(p[4])))
+            del f, patterns  # before the next year is read
+        conn.executemany("INSERT INTO stop_line (stop_place, line, label, departures) VALUES (?, ?, ?, ?)",
+                         [(places[r["uic"]], r["line"], r["label"], r["departures"]) for r in newest_lines
+                          if r["uic"] in places])
         conn.execute("UPDATE data_version SET version = version + 1")  # the planner caches the timetable
     return conn.execute("SELECT COUNT(*) FROM stop_line").fetchone()[0]
 

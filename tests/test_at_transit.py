@@ -1,5 +1,5 @@
 """Austrian stops and timetables on a tiny synthetic feed: stop keys, modes, the merge with the Swiss timetable of the
-same year, and the download (skipped without credentials; no network)."""
+same year (foreign_transit, load_timetable), and the download (skipped without credentials; no network)."""
 
 import json
 import zipfile
@@ -10,7 +10,8 @@ import pytest
 import shapely
 
 from app.db import connect
-from app.ingest import at_transit, countries, load_stops, load_timetable, regions
+from app.ingest import at_transit, countries, foreign_transit, load_stops, load_timetable, regions
+from app.ingest.foreign_transit import FeedFile
 from app.planner import transit
 from tests.test_load_timetable import FEED, SINCE
 
@@ -58,7 +59,7 @@ def write_zip(path, files):
 
 
 def lv95(lat, lon):
-    e, n = at_transit.WGS84_TO_LV95.transform(lon, lat)
+    e, n = foreign_transit.WGS84_TO_LV95.transform(lon, lat)
     return float(e), float(n)
 
 
@@ -77,17 +78,17 @@ def area(monkeypatch):
 
 
 def test_route_modes():
-    assert [at_transit.route_mode(t) for t in ("3", "6", "7", "2", "1304", "116", "715", "1100", "")] == \
+    assert [foreign_transit.route_mode(t) for t in ("3", "6", "7", "2", "1304", "116", "715", "1100", "")] == \
         ["bus", "cableway", "funicular", "train", "chairlift", "rack_railway", "bus", None, "bus"]
 
 
 def test_stops_in_the_region_keyed_by_station(at_feed, area, tmp_path):
-    stops = {s["ref"]: s for s in at_transit.read_stops({57: at_feed})}
+    stops = {s["ref"]: s for s in foreign_transit.read_stops([FeedFile("at57", "AT", at_feed, 2027)])}
     # quays merged into their station; Switzerland, outside the region and unserved stops left out
     assert set(stops) == {"at:47:100", "at:47:200", "at57:x17"}
     assert stops["at:47:100"]["mode"] == "bus,train,cableway" and stops["at:47:100"]["lat"] == 47.2  # the station's
     assert stops["at:47:200"]["mode"] == "cableway"  # a lift station: "avoid lifts" leaves it out
-    assert stops["at:47:100"]["country"] == "AT" and stops["at57:x17"]["country"] is None
+    assert stops["at:47:100"]["country"] == "AT" and stops["at57:x17"]["country"] == "AT"  # in the region's area
 
     conn = connect(tmp_path / "test.db")
     swiss = {"uic": 8500001, "name": "Valley", "mode": "bus", "e_lv95": 2.6e6, "n_lv95": 1.2e6, "lat": 46.5, "lon": 7.9}
@@ -98,20 +99,20 @@ def test_stops_in_the_region_keyed_by_station(at_feed, area, tmp_path):
     assert [tuple(r) for r in rows] == [(8500001, None, "bus", "Valley", None),
                                         (None, "at:47:100", "bus,train,cableway", "Tal Bahnhof", "AT"),
                                         (None, "at:47:200", "cableway", "Bergstation Gipfel", "AT"),
-                                        (None, "at57:x17", "bus", "Dorfplatz", None)]
+                                        (None, "at57:x17", "bus", "Dorfplatz", "AT")]
 
 
 def test_stops_with_the_austrian_border_known(at_feed, area, monkeypatch):
     swiss = countries.borders()
     tyrol = shapely.Point(lv95(47.22, 10.03)).buffer(500)  # around Dorfplatz only
     monkeypatch.setattr(countries, "borders", lambda: swiss | {"AT": tyrol})
-    stops = {s["ref"]: s["country"] for s in at_transit.read_stops({57: at_feed})}
+    stops = {s["ref"]: s["country"] for s in foreign_transit.read_stops([FeedFile("at57", "AT", at_feed, 2027)])}
     assert stops == {"at:47:100": "AT", "at:47:200": "AT", "at57:x17": "AT"}  # in Austria's border, not dropped
 
 
 def test_no_stops_without_region_or_borders(at_feed, monkeypatch):
     monkeypatch.setattr(regions, "area", lambda code: None)
-    assert at_transit.read_stops({57: at_feed}) == []
+    assert foreign_transit.read_stops([FeedFile("at57", "AT", at_feed, 2027)]) == []
 
 
 def test_merge_with_the_swiss_timetable_of_the_year(at_feed, area, tmp_path, monkeypatch):
@@ -128,11 +129,12 @@ def test_merge_with_the_swiss_timetable_of_the_year(at_feed, area, tmp_path, mon
 
     # read_all finds both on disk and merges them into one timetable for the year
     monkeypatch.setattr(load_timetable, "GTFS_DIR", tmp_path)
-    monkeypatch.setattr(load_timetable, "AT_DIR", tmp_path / "at")
+    monkeypatch.setattr(foreign_transit, "GTFS_DIR", tmp_path)
+    monkeypatch.setattr(foreign_transit, "AT_DIR", tmp_path / "at")
     (tmp_path / "at").mkdir()
     at_feed.rename(tmp_path / "at" / "57_2027.zip")
     conn = connect(tmp_path / "test.db")
-    load_stops.load(conn, at_transit.read_stops())
+    load_stops.load(conn, foreign_transit.read_stops())
     hut = conn.execute("INSERT INTO place (kind, name, e_lv95, n_lv95, lat, lon) "
                        "VALUES ('hut', 'h', 2600000, 1200000, 46.5, 7.9)").lastrowid
     for uic in (8500001, 8500002):
@@ -193,7 +195,8 @@ def test_download_new_versions_only(tmp_path, monkeypatch):
     real_client = httpx.Client
     monkeypatch.setattr(at_transit.httpx, "Client", lambda **kw: real_client(**kw, transport=httpx.MockTransport(handler)))
     monkeypatch.setattr(at_transit, "AT_DIR", tmp_path)
-    monkeypatch.setattr(load_timetable, "AT_DIR", tmp_path)
+    monkeypatch.setattr(foreign_transit, "AT_DIR", tmp_path)
+    monkeypatch.setattr(foreign_transit, "GTFS_DIR", tmp_path)
     monkeypatch.setattr(at_transit, "DATASETS", {57: "Tyrol"})
     monkeypatch.setenv("MVO_USERNAME", "me@example.org")
     monkeypatch.setenv("MVO_PASSWORD", "secret")

@@ -158,9 +158,9 @@ def _number(text: str | None) -> int | None:
 
 
 def _description(info: dict) -> str | None:
-    """The general description in English, else German, as plain text."""
+    """The general description in English, else German, else Italian, as plain text."""
     texts = {d.get("language"): d.get("description") for d in info.get("hutGeneralDescriptions") or []}
-    text = next((texts[lang] for lang in ("EN", "DE_AT", "DE_DE", "DE_CH") if texts.get(lang)), None)
+    text = next((texts[lang] for lang in ("EN", "DE_AT", "DE_DE", "DE_CH", "DE", "IT") if texts.get(lang)), None)
     if not text:
         return None
     text = re.sub(r"<br\s*/?>|</p>", "\n", text, flags=re.I)
