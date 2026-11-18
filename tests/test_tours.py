@@ -4,6 +4,7 @@
                      └───5h── hut C (self-service only, closes in August) ──4h── stop S3 (next to S1)
 """
 
+from dataclasses import replace
 from datetime import date
 
 import pytest
@@ -79,6 +80,16 @@ def test_start_near_and_loop(graph):
 def test_bbox_limits_huts(graph):
     tours = suggest(graph, TourRequest(date(2027, 7, 10), 2, 3, 6, bbox=(7.5, 46.0, 8.0, 47.0)))
     assert routes(tours) == [[11, 1, 2, 12]]  # hut 3 lies at 8.5° E
+
+
+def test_countries_limit_huts_and_end_stops(graph):
+    graph.stops[12] = replace(graph.stops[12], country="AT")
+    graph.stops[13] = replace(graph.stops[13], country="LI")  # counts as Switzerland, like hut 1 (country unknown)
+    swiss = TourRequest(date(2027, 7, 10), 2, 3, 6, countries=frozenset({"CH"}))
+    assert routes(suggest(graph, swiss)) == [[11, 1, 3, 13]]  # S2 is in Austria
+    graph.huts[3] = replace(graph.huts[3], country="IT")
+    assert suggest(graph, swiss) == []
+    assert len(suggest(graph, replace(swiss, countries=frozenset({"CH", "AT", "IT"})))) == 2
 
 
 def test_night_status_unknown_and_partial():

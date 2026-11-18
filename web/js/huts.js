@@ -7,7 +7,7 @@ import { clearTour, returnToTour } from "./tours.js";
 import { loadBeds } from "./beds.js";
 import { isFavourite, toggleFavourite } from "./favourites.js";
 import { loadWeather } from "./weather.js";
-import { formatHeight, heightUnit, heightValue } from "./settings.js";
+import { COUNTRY_LABELS, countryChoice, formatHeight, heightUnit, heightValue, inChosenCountries, openSettings, settings } from "./settings.js";
 import { LANG, LOCALE, countryName, t } from "./i18n.js";
 import { noteSaved } from "./offline.js";
 
@@ -50,7 +50,7 @@ const hutStatus = (hut) => (state.month ? hut.months[state.month - 1] : "any");
 function filterHuts() {
   const q = state.q.trim().toLocaleLowerCase();
   const allowed = { any: ["catered", "self_service"], catered: ["catered"], self_service: ["self_service"] }[state.openAs];
-  return huts.filter((h) =>
+  return huts.filter((h) => inChosenCountries(h) &&
     (!state.month || allowed.includes(h.months[state.month - 1])) &&
     (!state.hb || h.half_board) &&
     (!state.kitchen || h.self_catering) &&
@@ -150,6 +150,10 @@ export function bindHutEvents() {
     update();
   });
 
+  $("#countriesNote").addEventListener("click", (e) => {
+    if (e.target.closest("#moreCountries")) openSettings("setCountries");
+  });
+
   const list = $("#list");
   list.addEventListener("click", (e) => {
     const li = e.target.closest(".hut");
@@ -171,7 +175,7 @@ export function bindHutEvents() {
 function suggestHuts() {
   const q = state.q.trim().toLocaleLowerCase();
   const inList = state.view === "huts" && !$("#browse").hidden;
-  const found = q && !inList ? huts.filter((h) => h.name.toLocaleLowerCase().includes(q)).slice(0, 8) : [];
+  const found = q && !inList ? huts.filter((h) => inChosenCountries(h) && h.name.toLocaleLowerCase().includes(q)).slice(0, 8) : [];
   $("#qList").innerHTML = found.map((h) => `<li role="option" data-id="${h.id}">${esc(h.name)}` +
     `<small>${h.altitude ? formatHeight(h.altitude) : ""}</small></li>`).join("") ||
     (q && !inList ? `<li class="none">${t("No hut found")}</li>` : "");
@@ -184,8 +188,18 @@ export function update() {
   visible = sortHuts(filterHuts());
   $("#count").textContent = visible.length;
   $("#countLabel").textContent = t("huts", { n: visible.length });
+  renderCountriesNote();
   renderList();
   map?.getSource("huts")?.setData(hutsGeoJSON());
+}
+
+/** Which countries the list and map show, when not all: a link to choose more. */
+function renderCountriesNote() {
+  const chosen = settings().countries;
+  const note = $("#countriesNote");
+  note.hidden = huts.every((h) => chosen.includes(countryChoice(h.country)));
+  note.innerHTML = `${esc(t("Huts in {countries}", { countries: chosen.map((c) => COUNTRY_LABELS[c]).join(", ") }))} · ` +
+    `<button type="button" class="link" id="moreCountries">${t("More countries")}</button>`;
 }
 
 function renderList() {

@@ -264,7 +264,7 @@ function tourCost(t) {
 /** A tour made earlier or shared by someone else can use what your settings wouldn't offer: say what. */
 export function outsideSettings(t) {
   const reasons = { trail: tr("a harder trail"), altitude: tr("a route higher than your altitude limit"),
-    lift: tr("a mountain lift at the start or end") };
+    lift: tr("a mountain lift at the start or end"), country: tr("a hut or stop in a country you haven't chosen") };
   const list = (t.outside_settings || []).map((r) => reasons[r]).filter(Boolean);
   return list.length ? `<p class="warn">${tr("Outside your settings (⚙): this tour uses {what}.", { what: list.join(` ${tr("and")} `) })}</p>` : "";
 }

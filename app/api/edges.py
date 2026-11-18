@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from app.admin import require_admin
 from app.api.deps import get_db
 from app.ingest import osm_access
-from app.planner.tours import is_lift
+from app.planner.tours import COUNTRIES_PATTERN, in_countries, is_lift, parse_countries
 
 router = APIRouter(prefix="/api", tags=["edges"])
 
@@ -32,18 +32,23 @@ def hut_edges(hut_id: int, limit: int = Query(3, ge=1, le=4, description="max tr
               max_altitude: int | None = Query(None, ge=500, le=5000, description="highest point of a route (m)"),
               avoid_lifts: bool = Query(False, description="no stops served only by mountain lifts"),
               pace: float = Query(1.0, ge=0.5, le=2.0, description="walking time / Swiss standard time"),
+              countries: str | None = Query(None, pattern=COUNTRIES_PATTERN, description="only huts and stops in "
+                                            "these, e.g. CH,AT (CH includes LI); all if not given"),
               conn: sqlite3.Connection = Depends(get_db)) -> dict:
-    """A hut's connections within the general settings (trail level, altitude, lifts), times at your pace."""
+    """A hut's connections within the general settings (trail level, altitude, lifts, countries), times at your
+    pace."""
     if not conn.execute("SELECT 1 FROM hut WHERE place_id = ?", (hut_id,)).fetchone():
         raise HTTPException(404, "hut not found")
     rows = conn.execute(
-        f"""SELECT b.*, p.name, p.kind, p.lat, p.lon, p.altitude_m, s.mode
+        f"""SELECT b.*, p.name, p.kind, p.lat, p.lon, p.altitude_m, p.country, s.mode
             FROM ({BEST_EDGES}) b
             JOIN place p ON p.id = CASE WHEN b.from_place = :hut THEN b.to_place ELSE b.from_place END
             LEFT JOIN stop s ON s.place_id = p.id
             ORDER BY b.time_min""",
         {"hut": hut_id, "limit": limit, "max_altitude": max_altitude},
     ).fetchall()
+    wanted = parse_countries(countries)
+    rows = [r for r in rows if in_countries(r["country"], wanted)]
 
     grades = osm_access.grades()
 
