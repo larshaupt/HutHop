@@ -9,6 +9,9 @@ ENV UV_COMPILE_BYTECODE=1 \
 
 WORKDIR /app
 
+# The osmium wheel (OpenStreetMap trails abroad, app/ingest/osm_trails.py) links against the system's libexpat
+RUN apt-get update && apt-get install -y --no-install-recommends libexpat1 && rm -rf /var/lib/apt/lists/*
+
 # Dependencies first, so code changes don't reinstall them
 COPY pyproject.toml uv.lock .python-version ./
 RUN --mount=type=cache,target=/root/.cache/uv \
