@@ -67,7 +67,8 @@ hiking network into `data/osm/trails_at.gpkg` (signposted: ways in hiking routes
 and tracks and minor roads within 1 km of a hut; other paths as category 4) and Austria's border into
 `data/osm/border_at.json`. Heights come from the Copernicus DEM GLO-30 (`dem`, tiles cached in `data/dem/`).
 `build_edges` uses them instead of swissTLM3D within the extract's area and joins both networks at the border.
-Without the trail file, it builds on swissTLM3D alone.
+Without the trail file, it builds on swissTLM3D alone. `trail_map` turns the trail file into the map's trail overlay
+there (`data/osm/trails_map_at.npz`, served as `/api/trail-tiles`); without it the map shows Waymarked Trails.
 On the server, `server/refresh.sh` does the same in a one-off container (see the deployment doc). Edges without a stored
 footprint (grid cells and shape samples for the tour search) get one with `python -m app.ingest.footprints`, which
 `refresh` also runs.
@@ -134,4 +135,4 @@ tests/
 
 The code is open source under the [MIT licence](LICENSE). The licence covers the code only, not the data it loads.
 
-No data is in this repository: the app fetches it from its sources into a local database (`data/`, not in git). The hosted app is for private, non-commercial use, behind a login; opening it to the public is planned, but only once SAC has given its written consent. Hut data comes from the SAC (© sac-cas.ch) and must not be redistributed: if you run your own copy, keep it private too. Maps and trail data © swisstopo; outside Switzerland and Liechtenstein the map shows basemap.at (CC BY 4.0) in Austria, OpenTopoMap (CC BY-SA) elsewhere and Waymarked Trails' hiking routes (CC BY-SA), cut at the border (`web/js/map.js`). Unofficial paths © OpenStreetMap contributors (ODbL). Suggested tours are planning aids: always check difficulty, conditions, weather and official sources before you go.
+No data is in this repository: the app fetches it from its sources into a local database (`data/`, not in git). The hosted app is for private, non-commercial use, behind a login; opening it to the public is planned, but only once SAC has given its written consent. Hut data comes from the SAC (© sac-cas.ch) and must not be redistributed: if you run your own copy, keep it private too. Maps and trail data © swisstopo; outside Switzerland and Liechtenstein the map shows basemap.at (CC BY 4.0) in Austria, OpenTopoMap (CC BY-SA) elsewhere, and the trails of our OpenStreetMap network in Austria and Waymarked Trails' hiking routes (CC BY-SA) beyond it, cut at the border (`web/js/map.js`). Unofficial paths © OpenStreetMap contributors (ODbL). Suggested tours are planning aids: always check difficulty, conditions, weather and official sources before you go.

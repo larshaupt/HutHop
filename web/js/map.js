@@ -24,10 +24,14 @@ const MAPS = {
   topo: { inside: swisstopo("ch.swisstopo.pixelkarte-farbe", "jpeg"), outside: [basemapAt("geolandbasemap"), OPENTOPOMAP] },
   // over swisstopo's light vector map, which shows little outside Switzerland: transparent inside the border
   light: { outside: [basemapAt("bmapgrau"), { ...OPENTOPOMAP, filter: "grayscale(1)" }] },
-  // swissTLM3D's trails end at the border; Waymarked Trails shows the signposted routes in OpenStreetMap
+  // swissTLM3D's trails end at the border. Past it, our own trails (ownTrails) where we have them, else Waymarked
+  // Trails, which only shows the ways in a hiking route in OpenStreetMap.
   trails: { inside: swisstopo("ch.swisstopo.swisstlm3d-wanderwege", "png"),
     outside: [{ url: "https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png", maxzoom: 18 }] },
 };
+// swisstopo's colours and line width for the trail categories
+const TRAIL_COLORS = { 1: "#fdc200", 2: "#ff0000", 3: "#0000ff" };
+const TRAIL_WIDTH = 2.5;
 /** The topographic map's tiles (also saved with tours for offline use, js/offline.js). */
 export const TOPO_TILES = "huthop://topo/{z}/{x}/{y}";
 const STYLES = {
@@ -90,10 +94,22 @@ async function tileImage(source, z, x, y, get) {
   return { bytes, image, sx: (x % over) * 256 / over, sy: (y % over) * 256 / over, size: 256 / over };
 }
 
+/** Our trails on a tile (/api/trail-tiles, the network the planner walks abroad): their lines, and where they
+ * replace the other sources: "all", null (nowhere: no lines either) or polygon rings. */
+async function ownTrails(z, x, y, get) {
+  const res = await get(`/api/trail-tiles/${z}/${x}/${y}`).catch(() => null);
+  return res?.ok ? res.json() : { area: null, lines: [] };
+}
+
+const EXTENT = 4096;  // of the trail tiles' coordinates
+const tracePath = (ctx, points) => {
+  for (let i = 0; i < points.length; i += 2) ctx[i ? "lineTo" : "moveTo"](points[i] * 256 / EXTENT, points[i + 1] * 256 / EXTENT);
+};
+
 /** One tile of a map (MAPS) as image data: swisstopo's inside the border, the other sources' outside. `get` fetches
  * a URL (offline.js stores what it fetches). */
 export async function mapTile(name, z, x, y, get = fetch) {
-  const { inside, outside } = MAPS[name];
+  const { inside } = MAPS[name];
   const rings = await borderRings();
   const side = rings ? tileSide(rings, z, x, y) : "inside";
   if (side === "inside") {
@@ -102,6 +118,8 @@ export async function mapTile(name, z, x, y, get = fetch) {
     if (!res.ok) throw new Error(`${res.status} ${res.url}`);
     return res.arrayBuffer();
   }
+  const own = name === "trails" && await ownTrails(z, x, y, get);
+  const outside = own?.area === "all" ? [] : MAPS[name].outside;
   const mask = side === "both" && borderMask(rings, z, x, y);
   const canvas = new OffscreenCanvas(256, 256), ctx = canvas.getContext("2d", { willReadFrequently: true });
   ctx.globalCompositeOperation = "destination-over";  // each next source only shows where the ones before are empty
@@ -115,10 +133,26 @@ export async function mapTile(name, z, x, y, get = fetch) {
     for (let p = 3; p < data.length && !gap; p += 4) gap = data[p] < 255 && !(mask && mask.data[p] === 255);
     if (gap) continue;
     // as it comes when this one source fills the whole tile
-    if (!mask && !i && tile.size === 256 && !source.filter) return tile.bytes;
+    if (!mask && !own?.area && !i && tile.size === 256 && !source.filter) return tile.bytes;
     break;
   }
   ctx.filter = "none";
+  if (own?.area) {
+    ctx.globalCompositeOperation = "destination-out";  // the other sources' trails, where ours replace them
+    if (own.area !== "all") {
+      ctx.beginPath();
+      for (const ring of own.area) tracePath(ctx, ring);
+      ctx.fill("evenodd");
+    }
+    ctx.globalCompositeOperation = "source-over";
+    Object.assign(ctx, { lineWidth: TRAIL_WIDTH, lineCap: "round", lineJoin: "round" });
+    for (const category of [1, 2, 3]) {  // the harder ones on top, as swisstopo's
+      ctx.beginPath();
+      for (const [c, ...points] of own.lines) if (c === category) tracePath(ctx, points);
+      ctx.strokeStyle = TRAIL_COLORS[category];
+      ctx.stroke();
+    }
+  }
   if (mask) {
     ctx.globalCompositeOperation = "destination-out";
     ctx.drawImage(mask.canvas, 0, 0);
