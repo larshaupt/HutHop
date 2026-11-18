@@ -1,7 +1,7 @@
-"""Austrian public transport (GTFS, Mobilitätsverbünde Österreich): the stops in the Austrian region, and the
-timetables that load_timetable merges into each year's Swiss one.
+"""Austrian public transport (GTFS, Mobilitätsverbünde Österreich): the timetables that load_timetable merges into
+each year's Swiss one, and foreign_transit reads the stops from.
 
-    uv run python -m app.ingest.at_transit                # download new editions (needs an account), load stops
+    uv run python -m app.ingest.at_transit                # download new editions (needs an account), load stops abroad
     uv run python -m app.ingest.at_transit --no-download
 
 The data is free (Datenlizenz Mobilitätsverbünde Österreich), but downloads need a registered account at
@@ -10,29 +10,21 @@ Swiss data loads as before, and Austrian files already on disk are still used. O
 ones leave out the trains of the railway dataset), this year's and next year's where published, kept as
 data/gtfs/at/{dataset}_{year}.zip and downloaded again only when the listing shows a new version.
 
-Stops: the stations (parent stations where the feed has them) inside the region's area and outside Switzerland and
-Liechtenstein (stops there come from the Swiss sources), keyed by stop.ref (e.g. at:47:1234), with the modes of
-the routes calling there.
+Stops: foreign_transit.py reads them from these and the other feeds abroad (keyed by stop.ref, e.g. at:47:1234).
 """
 
 import argparse
-import csv
-import io
 import json
 import os
-import zipfile
 from datetime import date
 from pathlib import Path
 
 import httpx
-import numpy as np
-import shapely
-from pyproj import Transformer
 
 from app.clients import USER_AGENT
 from app.db import connect
-from app.ingest import countries, load_stops, regions
-from app.ingest.load_timetable import AT_DIR, GLOBAL_ID, _rows, at_feed_files, at_stop_keys
+from app.ingest import foreign_transit, load_stops, regions
+from app.ingest.foreign_transit import AT_DIR
 
 TOKEN_URL = "https://user.mobilitaetsverbuende.at/auth/realms/dbp-public/protocol/openid-connect/token"
 # Public, no login. Without tagFilterModeInclusive the API answers 400 ("boolean string is expected").
@@ -45,14 +37,6 @@ FILE_URL = "https://data.mobilitaetsverbuende.at/api/public/v1/data-sets/{datase
 DATASETS = {66: "railway (ÖBB, Montafonerbahn, WESTbahn, …)", 75: "Vorarlberg", 76: "Tyrol", 73: "Salzburg",
             78: "Carinthia", 79: "Styria", 77: "Upper Austria",
             80: "Eastern region (Lower Austria, Vienna, Burgenland)"}
-WGS84_TO_LV95 = Transformer.from_crs("EPSG:4326", "EPSG:2056", always_xy=True)
-# GTFS route type → stop mode (the words of load_stops.MODES): basic types, extended ones by exact type, then by
-# hundreds (None: not a mode HutHop knows, e.g. air)
-ROUTE_MODES = {0: "tram", 1: "metro", 2: "train", 3: "bus", 4: "boat", 5: "tram", 6: "cableway", 7: "funicular",
-               11: "bus", 12: "train", 116: "rack_railway", 1303: "elevator", 1304: "chairlift", 1305: "chairlift"}
-ROUTE_MODES_BY_HUNDRED = {1: "train", 2: "bus", 4: "metro", 5: "metro", 6: "metro", 7: "bus", 8: "bus", 9: "tram",
-                          10: "boat", 12: "boat", 13: "cableway", 14: "funicular", 15: "bus"}
-MODE_ORDER = list(load_stops.MODES.values())
 
 
 def path(dataset: int, year: int) -> Path:
@@ -111,74 +95,13 @@ def download(force: bool = False, today: date | None = None) -> bool:
             partial.replace(path(dataset, y))
             edition.write_text(json.dumps({"version": version}, indent=1))
             updated = True
-    for y, files in at_feed_files().items():
-        for dataset, p in files:
-            if y < year or dataset not in DATASETS:
-                p.unlink()
-                _edition_path(dataset, y).unlink(missing_ok=True)
+    for f in foreign_transit.feed_files():
+        dataset = int(f.source[2:]) if f.country == "AT" else None
+        if dataset is not None and (f.year < year or dataset not in DATASETS):
+            f.path.unlink()
+            _edition_path(dataset, f.year).unlink(missing_ok=True)
+            f.path.with_suffix(".stations.json").unlink(missing_ok=True)
     return updated
-
-
-def route_mode(route_type: str) -> str | None:
-    t = int(route_type or 3)
-    return ROUTE_MODES.get(t) or ROUTE_MODES_BY_HUNDRED.get(t // 100)
-
-
-def _read_file(p: Path, source: str, stations: dict[str, dict], modes: dict[str, set[str]]) -> None:
-    """Add a feed's stations (by stop key: position and name, a parent station's before a quay's) and the modes of
-    the routes calling at them."""
-    with zipfile.ZipFile(p) as z:
-        keys = at_stop_keys(z, source)
-        for r in _rows(z, "stops.txt"):
-            if not r.get("stop_lat") or not r.get("stop_lon"):
-                continue
-            key, is_station = keys[r["stop_id"]], r.get("location_type") == "1"
-            if key not in stations or (is_station and not stations[key]["station"]):
-                stations[key] = {"name": r["stop_name"], "lat": float(r["stop_lat"]), "lon": float(r["stop_lon"]),
-                                 "station": is_station}
-        route = {r["route_id"]: route_mode(r.get("route_type", "")) for r in _rows(z, "routes.txt")}
-        trip = {r["trip_id"]: route.get(r["route_id"]) for r in _rows(z, "trips.txt")}
-        reader = csv.reader(io.TextIOWrapper(z.open("stop_times.txt"), encoding="utf-8-sig"))
-        header = next(reader)
-        i_trip, i_stop = header.index("trip_id"), header.index("stop_id")
-        for row in reader:
-            mode, key = trip.get(row[i_trip]), keys.get(row[i_stop])
-            if mode and key:
-                modes.setdefault(key, set()).add(mode)
-
-
-def read_stops(paths: dict[int, Path] | None = None) -> list[dict]:
-    """The stations of the Austrian datasets (default: the newest year of each on disk) with their modes, inside the
-    region's area and outside Switzerland and Liechtenstein, as load_stops.load takes them (with `ref`)."""
-    area, borders = regions.area("AT"), countries.borders()
-    if area is None or not borders:
-        print("austria: region polygon (regions) or borders (countries) missing, no Austrian stops loaded")
-        return []
-    if paths is None:
-        paths = {dataset: p for _, files in sorted(at_feed_files().items()) for dataset, p in files}
-    stations: dict[str, dict] = {}
-    modes: dict[str, set[str]] = {}
-    for dataset, p in paths.items():
-        _read_file(p, f"at{dataset}", stations, modes)
-    refs = [k for k in stations if modes.get(k)]
-    if not refs:
-        return []
-    lat = np.array([stations[k]["lat"] for k in refs])
-    lon = np.array([stations[k]["lon"] for k in refs])
-    e, n = WGS84_TO_LV95.transform(lon, lat)
-    inside = shapely.contains_xy(area, e, n)
-    country = countries.country_at(e, n)
-    stops = []
-    for i, ref in enumerate(refs):
-        if inside[i] and country[i] not in countries.COUNTRIES:  # None, or AT once its border is known
-            stops.append({
-                "ref": ref, "name": stations[ref]["name"],
-                "mode": ",".join(sorted(modes[ref], key=MODE_ORDER.index)),
-                "e_lv95": float(e[i]), "n_lv95": float(n[i]), "lat": round(lat[i], 6), "lon": round(lon[i], 6),
-                "country": country[i] or (ref[:2].upper() if GLOBAL_ID.fullmatch(ref) else None),
-            })
-    print(f"austria: {len(stops):,} stops in the region of {len(refs):,} served in {len(paths)} datasets")
-    return stops
 
 
 def main() -> None:
@@ -188,7 +111,7 @@ def main() -> None:
     if not args.no_download:
         regions.download_polygons()
         download()
-    print(f"loaded {load_stops.load(connect(), read_stops())} Austrian stops")
+    print(f"loaded {load_stops.load(connect(), foreign_transit.read_stops())} stops abroad")
 
 
 if __name__ == "__main__":

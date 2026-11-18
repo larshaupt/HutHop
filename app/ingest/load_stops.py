@@ -62,7 +62,7 @@ def read_stops() -> list[dict]:
 
 
 def load(conn: sqlite3.Connection, stops: list[dict]) -> int:
-    """Upsert stops by their key: `uic`, or `ref` for stops without one (Austria, at_transit.py, which also gives
+    """Upsert stops by their key: `uic`, or `ref` for stops without one (abroad, foreign_transit.py, which also gives
     their `country`)."""
     existing = dict(conn.execute("SELECT coalesce(uic, ref), place_id FROM stop").fetchall())
     with conn:

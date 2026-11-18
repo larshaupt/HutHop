@@ -1,13 +1,14 @@
-"""The hiking network outside Switzerland and Liechtenstein, from OpenStreetMap (Geofabrik extracts).
+"""The hiking network outside Switzerland and Liechtenstein, from OpenStreetMap (regional extracts, regions.py).
 
     uv run python -m app.ingest.osm_trails            # download each region's extract if older than 30 days, extract
     uv run python -m app.ingest.osm_trails --force    # download and extract again
 
 For each region in regions.REGIONS, the extract (data/osm/<name>-latest.osm.pbf, ~800 MB for Austria) is turned
 into data/osm/trails_<code>.gpkg: 3D lines (LV95) with a trail category like swissTLM3D's, split at junctions,
-clipped to the region's area outside Switzerland and Liechtenstein (swissTLM3D covers those). build_edges joins
+clipped to the region's own area (regions.own_area) outside Switzerland and Liechtenstein (swissTLM3D covers those). build_edges joins
 them to swissTLM3D at the border. Heights come from the Copernicus DEM (dem.py). The same pass saves the country's
-border (admin_level=2 boundary relation) as data/osm/border_<code>.json, which countries.borders() reads.
+border as data/osm/border_<code>.json, which countries.borders() reads: from its admin_level=2 boundary relation
+where the extract holds the whole country (Austria), else the region's area outside the other known countries.
 
 Selection, mirroring swissTLM3D's signposted network versus unofficial paths:
 - signposted: ways in a route=hiking|foot relation (any highway: routes also follow village roads, which link the
@@ -70,7 +71,7 @@ WGS84_TO_LV95 = Transformer.from_crs("EPSG:4326", "EPSG:2056", always_xy=True)
 
 
 def pbf_path(code: str):
-    return regions.DIR / f"{regions.REGIONS[code].rsplit('/', 1)[1]}-latest.osm.pbf"
+    return regions.DIR / regions.REGIONS[code].pbf.rsplit("/", 1)[1]
 
 
 def trails_path(code: str):
@@ -286,17 +287,24 @@ def border_polygon(border_ways: list[tuple[str, np.ndarray]], nodes: dict) -> sh
     return shapely.simplify(shapely.difference(rings("outer"), rings("inner")), SIMPLIFY_BORDER_M)
 
 
+def region_border(code: str) -> shapely.Geometry:
+    """The country's part of a region whose extract holds only part of it (so not the whole boundary relation): the
+    region's area outside Switzerland, Liechtenstein and the countries whose border is known (Austria)."""
+    known = [shape for c, shape in countries.borders().items() if c != code]
+    return shapely.simplify(shapely.difference(regions.area(code), shapely.union_all(known)), SIMPLIFY_BORDER_M)
+
+
 def extract(code: str) -> dict[int, float]:
     """Trail file and border of one region from its extract. Returns km of trail per category.
 
     The trails are clipped, given heights and written in chunks of CHUNK pieces, sorted by DEM tile so that each
     chunk reads few tiles: all of Austria at once would take over 1.5 GB."""
     started = time.time()
-    area, swiss = regions.area(code), swiss_area()
+    area, swiss = regions.own_area(code), swiss_area()
     if area is None or swiss is None:
         raise RuntimeError("osm_trails: needs the region polygon (regions.download_polygons) and data/countries.json")
     ways, nodes, border_ways = read_pbf(pbf_path(code), code)
-    border = border_polygon(border_ways, nodes)
+    border = border_polygon(border_ways, nodes) if regions.REGIONS[code].whole_country else region_border(code)
     refs = [w[3] for w in ways]
     osm_ids, cats, in_route = (np.array(col) for col in list(zip(*[w[:3] for w in ways])))
     del ways, border_ways
@@ -344,7 +352,7 @@ def extract(code: str) -> dict[int, float]:
 
 def download(code: str) -> dict:
     """Download the region's extract (to a temporary file, then renamed). Returns its edition."""
-    href = f"{regions.REGIONS[code]}-latest.osm.pbf"
+    href = regions.REGIONS[code].pbf
     path, part = pbf_path(code), pbf_path(code).with_suffix(".part")
     print(f"osm_trails {code}: downloading {href}", flush=True)
     with httpx.stream("GET", href, headers={"User-Agent": USER_AGENT}, timeout=300, follow_redirects=True) as r:
@@ -373,7 +381,7 @@ def refresh(force: bool = False) -> bool:
             edition = known
         else:  # downloaded by hand: identified by its file date and size
             modified = datetime.fromtimestamp(path.stat().st_mtime, UTC).isoformat(timespec="seconds")
-            edition = {"href": f"{regions.REGIONS[code]}-latest.osm.pbf", "last_modified": modified,
+            edition = {"href": regions.REGIONS[code].pbf, "last_modified": modified,
                        "size": str(path.stat().st_size)}
         missing = not trails_path(code).exists() or not countries.region_border_path(code).exists()
         if force or edition != known or missing:

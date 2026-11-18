@@ -26,6 +26,7 @@ def test_tiles_of_the_trail_file(tmp_path, monkeypatch):
                       geometry_type="LineString Z", crs="EPSG:2056")
     monkeypatch.setattr(trail_map.osm_trails, "trails_path", lambda code: tmp_path / "trails.gpkg")
     monkeypatch.setattr(trail_map, "map_path", lambda code: tmp_path / f"map_{code}.npz")
+    monkeypatch.setattr(trail_map.regions, "REGIONS", {"AT": trail_map.regions.REGIONS["AT"]})
     monkeypatch.setattr(trail_map.regions, "area", lambda code: shapely.box(2_790_000, 1_220_000, 2_810_000, 1_240_000))
     assert trail_map.refresh()
     assert not trail_map.refresh()  # up to date

@@ -93,6 +93,8 @@ class Timetable:
         calls, first, last = 0, None, None
         for service, f, la, n in stops.get(stop_id, ()):
             if services.get(service, 0) >> i & 1:
+                if n < 0:  # a day the stop's timetable doesn't cover (load_timetable.UNKNOWN_CALLS)
+                    return UNKNOWN
                 calls += n
                 first = f if first is None or (f is not None and f < first) else first
                 last = la if last is None or (la is not None and la > last) else last

@@ -28,6 +28,7 @@ from app.ingest import (
     build_edges,
     countries,
     footprints,
+    foreign_transit,
     load_stops,
     load_timetable,
     osm_access,
@@ -36,6 +37,7 @@ from app.ingest import (
     sync_hrs,
     sync_sac,
     trail_map,
+    transit_feeds,
 )
 
 TLM_STAC_ITEMS = "https://data.geo.admin.ch/api/stac/v1/collections/ch.swisstopo.swisstlm3d-wanderwege/items"
@@ -83,7 +85,7 @@ def run(skip_huts: bool = False, skip_stops: bool = False, skip_timetable: bool 
     regions.download_polygons()
     if not skip_huts:
         report["huts"] = sync_sac.sync(conn, sync_sac.fetch_and_save())
-        report["hrs_huts"] = sync_hrs.sync(conn)  # huts abroad (Austria) from hut-reservation.org
+        report["hrs_huts"] = sync_hrs.sync(conn)  # huts abroad (regions.py) from hut-reservation.org
     if not skip_timetable:
         # Austrian timetables need an account (MVO_USERNAME, MVO_PASSWORD); skipped without one. A failed login
         # must not stop the Swiss data from refreshing.
@@ -92,10 +94,18 @@ def run(skip_huts: bool = False, skip_stops: bool = False, skip_timetable: bool 
         except Exception as e:  # noqa: BLE001
             report["at_timetable_error"] = str(e)
             print(f"austrian timetables: {e}")
+        # Open timetables of Germany and Italy (no account), each on its own: one source down doesn't stop the others
+        transit_feeds.remove_stale()
+        for source in transit_feeds.SOURCES:
+            try:
+                report.setdefault("foreign_timetables_updated", {})[source] = transit_feeds.download(source)
+            except Exception as e:  # noqa: BLE001
+                report.setdefault("foreign_timetable_errors", {})[source] = str(e)
+                print(f"{source} timetable: {e}")
     if not skip_stops:
         load_stops.download()
         report["stops"] = load_stops.load(conn, load_stops.read_stops())
-        report["at_stops"] = load_stops.load(conn, at_transit.read_stops())
+        report["foreign_stops"] = load_stops.load(conn, foreign_transit.read_stops())  # Austria, Germany, Italy
     if not skip_trails:
         # OpenStreetMap trails of the regions abroad (Geofabrik, about monthly); also their country borders
         report["osm_trails_updated"] = osm_trails.refresh()

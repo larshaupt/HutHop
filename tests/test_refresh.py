@@ -33,7 +33,8 @@ def fake(tmp_path, monkeypatch, lines):
     monkeypatch.setattr(refresh.regions, "download_polygons", lambda: None)
     monkeypatch.setattr(refresh.sync_hrs, "sync", lambda conn: 0)
     monkeypatch.setattr(refresh.at_transit, "download", lambda: False)
-    monkeypatch.setattr(refresh.at_transit, "read_stops", lambda: [])
+    monkeypatch.setattr(refresh.foreign_transit, "read_stops", lambda: [])
+    monkeypatch.setattr(refresh.transit_feeds, "SOURCES", {})
     monkeypatch.setattr(refresh.osm_trails, "refresh", lambda: False)
     monkeypatch.setattr(refresh.osm_trails, "editions", lambda: {})
     monkeypatch.setattr(refresh.load_timetable, "read_all", lambda keep=None: [
