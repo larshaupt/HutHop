@@ -214,7 +214,7 @@ function bindStopPicker() {
     if (q.length < 2) { list.hidden = true; return; }
     stopSearch.timer = setTimeout(async () => {
       const seq = ++stopSearch.seq;
-      const res = await fetch(`/api/stops?q=${encodeURIComponent(q)}`);
+      const res = await fetch(`/api/stops?q=${encodeURIComponent(q)}&countries=${settings().countries}`);
       const stops = res.ok ? await res.json() : [];
       if (seq !== stopSearch.seq) return;
       list.innerHTML = stops.map((s) => `<li role="option" data-id="${s.id}" data-name="${esc(s.name)}">` +

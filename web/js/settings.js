@@ -1,15 +1,20 @@
 // General settings, kept in this browser (local storage, per device) and sent with every request that offers or
 // shows routes: the hardest trail and the highest point a route may reach, whether to avoid start and end stops
 // served only by mountain lifts, whether a day between huts may include a bus or train ride, your walking pace (times
-// scale with it), Alpine Club member prices, whether searches check free beds, and metric or imperial units. Anything
-// outside them is never offered. The language ("lang", chosen in the header) is kept here too, but read by i18n.js.
+// scale with it), Alpine Club member prices, whether searches check free beds, metric or imperial units, and the
+// countries whose huts are shown and offered (Switzerland unless more are chosen). Anything outside them is never offered. The language ("lang", chosen in the header) is kept here too, but read by i18n.js.
 import { $, esc } from "./util.js";
-import { t } from "./i18n.js";
+import { countryName, t } from "./i18n.js";
 
 const KEY = "huthop.settings";
 export const SETTING_DEFAULTS = {
-  limit: 4, maxAltitude: null, avoidLifts: false, transit: false, pace: 1, member: true, checkBeds: true, units: "metric", v: 2,
+  limit: 4, maxAltitude: null, avoidLifts: false, transit: false, pace: 1, member: true, checkBeds: true, units: "metric",
+  countries: ["CH"], v: 2,
 };
+// The countries setting's choices (ISO codes as the server takes them). Liechtenstein and huts of no known country (just
+// across the Swiss border) count as Switzerland.
+export const COUNTRIES = ["CH", "AT", "DE", "IT"];
+export const countryChoice = (code) => ({ LI: "CH" }[code] || code || "CH");
 const ALTITUDES = [2000, 2250, 2500, 2750, 3000, 3250];
 const PACES = [0.7, 0.8, 0.9, 1, 1.1, 1.2, 1.3, 1.5];
 const listeners = [];
@@ -20,7 +25,8 @@ function load() {
     const saved = JSON.parse(localStorage.getItem(KEY) || "{}");
     // Saves before v2 hold the whole object, so limit 3 there was the old default, not a choice: use the new one
     if (!saved.v && saved.limit === 3) delete saved.limit;
-    return { ...SETTING_DEFAULTS, ...saved };
+    const countries = Array.isArray(saved.countries) ? saved.countries.filter((c) => COUNTRIES.includes(c)) : [];
+    return { ...SETTING_DEFAULTS, ...saved, countries: countries.length ? countries : SETTING_DEFAULTS.countries };
   } catch {
     return { ...SETTING_DEFAULTS };
   }
@@ -41,12 +47,15 @@ export function setSettings(patch) {
 
 /** The settings the server applies, as query parameters (also merged into the search body). */
 export function settingsParams() {
-  const p = { limit: current.limit, avoid_lifts: current.avoidLifts, pace: current.pace };
+  const p = { limit: current.limit, avoid_lifts: current.avoidLifts, pace: current.pace, countries: current.countries.join(",") };
   if (current.maxAltitude) p.max_altitude = current.maxAltitude;
   return p;
 }
 
 export const settingsQuery = () => new URLSearchParams(settingsParams()).toString();
+
+/** Whether a hut (or anything with a country code) is in the chosen countries. */
+export const inChosenCountries = (place) => current.countries.includes(countryChoice(place.country));
 
 // ---------- Units ----------
 const FEET_PER_M = 3.28084;
@@ -63,6 +72,15 @@ export const heightUnit = () => (imperial() ? "ft" : "m");
 export const formatHeight = (m) => `${heightValue(m)} ${heightUnit()}`;
 
 // ---------- Dialog ----------
+export const COUNTRY_LABELS = { CH: countryName("CH"), AT: countryName("AT"), DE: t("Bavaria"), IT: t("South Tyrol, Trentino") };
+
+/** Open the settings, e.g. at the countries (`at`: an element id in the dialog). */
+export function openSettings(at) {
+  render();
+  $("#settings").showModal();
+  if (at) document.getElementById(at)?.scrollIntoView({ block: "nearest" });
+}
+
 function seg(name, options, value) {
   return `<div class="seg" role="group" data-setting="${name}">${options.map(([v, label]) =>
     `<button type="button" data-v="${v}" aria-pressed="${String(v) === String(value)}">${label}</button>`).join("")}</div>`;
@@ -82,6 +100,10 @@ function render() {
     </div>
     <div class="about-body settings-body">
       <p class="hint">${t("Saved in this browser. Routes outside these settings are never offered: not in tour suggestions, the tour editor or a hut's connections.")}</p>
+      <div class="field" id="setCountries"><div class="field-label">${t("Countries")}</div>
+        <div class="seg" role="group" data-setting="countries">${COUNTRIES.map((c) =>
+          `<button type="button" data-v="${c}" aria-pressed="${s.countries.includes(c)}">${COUNTRY_LABELS[c]}</button>`).join("")}</div>
+        <p class="hint">${t("Huts on the map and in tours. Liechtenstein counts as Switzerland; a day between two huts may still cross a border.")}</p></div>
       <div class="field"><div class="field-label">${t("Hardest trail")}</div>
         ${seg("limit", [[1, `<i class="trail-swatch c1"></i>${t("Yellow")}`], [2, `<i class="trail-swatch c2"></i>${t("Red-white")}`],
           [3, `<i class="trail-swatch c3"></i>${t("Blue-white")}`], [4, `<i class="trail-swatch c4"></i>${t("Unofficial")}`]], s.limit)}
@@ -108,17 +130,19 @@ function render() {
 
 export function bindSettings() {
   const dialog = $("#settings");
-  $("#settingsBtn").addEventListener("click", () => {
-    render();
-    dialog.showModal();
-  });
+  $("#settingsBtn").addEventListener("click", () => openSettings());
   dialog.addEventListener("click", (e) => {
     if (e.target === dialog || e.target.closest("[data-close]")) { dialog.close(); return; }
     if (e.target.closest("#setReset")) { setSettings({ ...SETTING_DEFAULTS }); render(); return; }
     const b = e.target.closest(".seg[data-setting] button");
     if (b) {
       const name = b.closest("[data-setting]").dataset.setting;
-      setSettings({ [name]: name === "limit" ? Number(b.dataset.v) : b.dataset.v });
+      if (name === "countries") {
+        // Several at once; at least one stays chosen
+        const on = current.countries.includes(b.dataset.v);
+        const countries = COUNTRIES.filter((c) => (c === b.dataset.v ? !on : current.countries.includes(c)));
+        if (countries.length) setSettings({ countries });
+      } else setSettings({ [name]: name === "limit" ? Number(b.dataset.v) : b.dataset.v });
       render();
     }
   });

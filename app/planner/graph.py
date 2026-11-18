@@ -72,6 +72,7 @@ class Hut:
     hrs_id: int | None = None
     altitude: int | None = None
     seasons: tuple[opening.Season, ...] = ()  # opening periods from the hut website
+    country: str | None = None  # ISO code; None if not known
 
 
 @dataclass(frozen=True)
@@ -83,6 +84,7 @@ class Stop:
     e: float
     n: float
     mode: str
+    country: str | None = None
 
 
 @dataclass
@@ -114,11 +116,12 @@ def load_graph(conn: sqlite3.Connection, limit: int, footprints: Footprints | No
     them are kept as alternatives, so allowing harder trails only ever adds options."""
     huts = {}
     codes, seasons = opening.load_codes(conn), opening.load_seasons(conn)
-    for r in conn.execute("SELECT id, name, lat, lon, e_lv95, n_lv95, services, hrs_id, altitude_m FROM hut_effective"):
+    for r in conn.execute("SELECT id, name, lat, lon, e_lv95, n_lv95, services, hrs_id, altitude_m, country "
+                          "FROM hut_effective"):
         c, s = codes.get(r["id"], (opening.NO_DATA, opening.NO_DATA))
         huts[r["id"]] = Hut(r["id"], r["name"], r["lat"], r["lon"], r["e_lv95"], r["n_lv95"], c, s,
                             json.loads(r["services"] or "{}").get("half_board", False), r["hrs_id"], r["altitude_m"],
-                            seasons.get(r["id"], ()))
+                            seasons.get(r["id"], ()), r["country"])
     rows = conn.execute(
         "SELECT id, from_place, to_place, time_min, distance_m, ascent_m, descent_m, max_category, sac_time_min, "
         "category_limit, max_altitude_m, footprint, samples, CASE WHEN footprint IS NULL THEN geometry END AS geometry "
@@ -128,9 +131,10 @@ def load_graph(conn: sqlite3.Connection, limit: int, footprints: Footprints | No
     stops = {}
     for chunk in range(0, len(stop_ids), 900):
         ids = list(stop_ids)[chunk:chunk + 900]
-        for r in conn.execute(f"SELECT p.id, p.name, p.lat, p.lon, p.e_lv95, p.n_lv95, s.mode FROM place p "
+        for r in conn.execute(f"SELECT p.id, p.name, p.lat, p.lon, p.e_lv95, p.n_lv95, s.mode, p.country FROM place p "
                               f"JOIN stop s ON s.place_id = p.id WHERE p.id IN ({','.join('?' * len(ids))})", ids):
-            stops[r["id"]] = Stop(r["id"], r["name"], r["lat"], r["lon"], r["e_lv95"], r["n_lv95"], r["mode"])
+            stops[r["id"]] = Stop(r["id"], r["name"], r["lat"], r["lon"], r["e_lv95"], r["n_lv95"], r["mode"],
+                                  r["country"])
     footprints = footprints or Footprints({})
     footprints.packed.update({r["id"]: (r["footprint"], r["samples"]) for r in rows if r["footprint"]})
     footprints.geometry.update({r["id"]: r["geometry"] for r in rows if not r["footprint"]})

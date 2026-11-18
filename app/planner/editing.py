@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 
 from app.planner.graph import Graph, Leg
-from app.planner.tours import TourKey, access_options, below, exit_options, is_lift
+from app.planner.tours import TourKey, access_options, below, exit_options, in_countries, is_lift
 
 MAX_STOP_OPTIONS = 12  # stops offered per end, closest first
 
@@ -41,12 +41,17 @@ class Rules:
     max_altitude: int | None = None  # highest point of a route (m)
     avoid_lifts: bool = False  # no start or end stop served only by mountain lifts
     pace: float = 1.0  # for the connection times at the start and end stop
+    countries: frozenset[str] | None = None  # huts and start / end stops only there (tours.in_countries); None: all
 
     def allows(self, leg: Leg) -> bool:
         return leg.category_limit <= self.cap and below(leg, self.max_altitude)
 
     def stop_ok(self, graph: Graph, stop_id: int) -> bool:
-        return not (self.avoid_lifts and is_lift(graph.stops[stop_id].mode))
+        stop = graph.stops[stop_id]
+        return not (self.avoid_lifts and is_lift(stop.mode)) and in_countries(stop.country, self.countries)
+
+    def hut_ok(self, graph: Graph, hut_id: int) -> bool:
+        return hut_id in graph.huts and in_countries(graph.huts[hut_id].country, self.countries)
 
 
 def leg_limit(graph: Graph, frm: int, to: int, rules: Rules = Rules()) -> int | None:
@@ -83,10 +88,12 @@ def edits(graph: Graph, key: TourKey, rules: Rules = Rules(), today: date | None
                       key=lambda x: x.time_min)
 
     def access(h: int, day: date) -> list[Leg]:
-        return access_options(graph, h, day, max_minutes, rules.avoid_lifts, None, rules.max_altitude, rules.pace)
+        return [x for x in access_options(graph, h, day, max_minutes, rules.avoid_lifts, None, rules.max_altitude,
+                                          rules.pace) if rules.stop_ok(graph, x.frm)]
 
     def exits(h: int, day: date) -> list[Leg]:
-        return exit_options(graph, h, day, max_minutes, rules.avoid_lifts, None, rules.max_altitude, rules.pace)
+        return [x for x in exit_options(graph, h, day, max_minutes, rules.avoid_lifts, None, rules.max_altitude,
+                                        rules.pace) if rules.stop_ok(graph, x.to)]
 
     def make(kind: str, slot: int | None, place: int | None, new_places: list[int], start: date = key.start_date,
              keep: dict[int, int] | None = None) -> Edit | None:
@@ -139,7 +146,7 @@ def edits(graph: Graph, key: TourKey, rules: Rules = Rules(), today: date | None
         else:
             candidates = out_huts(huts[i - 1]) & hut_in.get(huts[i + 1], set())
         for h in candidates - others - {current}:
-            if h not in graph.huts:
+            if not rules.hut_ok(graph, h):
                 continue
             new = list(places)
             new[i + 1] = h
@@ -159,7 +166,7 @@ def edits(graph: Graph, key: TourKey, rules: Rules = Rules(), today: date | None
         else:
             candidates = out_huts(huts[-1])
         for h in candidates - set(huts):
-            if h not in graph.huts:
+            if not rules.hut_ok(graph, h):
                 continue
             if k == 0:
                 start = key.start_date - timedelta(days=1)

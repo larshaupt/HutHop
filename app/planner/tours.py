@@ -32,6 +32,9 @@ MIN_RESULTS = 10
 MAX_RIDES = 2  # days with a ride per tour (TourRequest.transit): mostly a hut tour, not a bus tour
 LOOP_RADIUS_M = 3000
 START_RADIUS_M = 1500  # a chosen start stop means "start around here" (nearby bus stops, stations)
+# The countries setting: any of CH, AT, DE, IT. Liechtenstein, and places of no known country (huts just across the
+# Swiss border, from the SAC), count as Switzerland (in_countries).
+COUNTRIES_PATTERN = r"^(CH|AT|DE|IT)(,(CH|AT|DE|IT))*$"
 HRS_STATUS = {"SERVICED": "catered", "UNSERVICED": "self_service"}
 DEFAULT_HOURS = (3.0, 6.0)
 
@@ -55,6 +58,7 @@ class TourRequest:
     max_results: int = POOL_SIZE
     transit: bool = False  # a day between huts may include one public transport ride (ride_options)
     weights: dict[str, float] = field(default_factory=lambda: dict(ranking.DEFAULT_WEIGHTS))
+    countries: frozenset[str] | None = None  # huts and start / end stops only there (COUNTRY_CHOICES); None: all
 
 
 @dataclass(frozen=True)
@@ -160,6 +164,16 @@ def below(leg: Leg, max_altitude: int | None) -> bool:
     return max_altitude is None or leg.max_altitude_m is None or leg.max_altitude_m <= max_altitude
 
 
+def parse_countries(value: str | None) -> frozenset[str] | None:
+    """The countries setting as sent ("CH,AT"); None (not sent) allows all."""
+    return frozenset(value.split(",")) if value else None
+
+
+def in_countries(country: str | None, countries: frozenset[str] | None) -> bool:
+    """Whether a place of this country (ISO code, None if unknown) is within the countries setting."""
+    return countries is None or {"LI": "CH", None: "CH"}.get(country, country) in countries
+
+
 def is_lift(mode: str | None) -> bool:
     """A stop served only by mountain lifts, from its mode list (e.g. "cableway,funicular")."""
     return set((mode or "").split(",")) <= LIFT_MODES
@@ -263,9 +277,11 @@ def suggest(graph: Graph, req: TourRequest, availability: AvailabilityLookup | N
         return w_fresh * 2 * r / n_legs
 
     def in_region(hut_id: int) -> bool:
+        h = graph.huts[hut_id]
+        if not in_countries(h.country, req.countries):
+            return False
         if req.bbox is None:
             return True
-        h = graph.huts[hut_id]
         west, south, east, north = req.bbox
         return west <= h.lon <= east and south <= h.lat <= north
 
@@ -296,12 +312,16 @@ def suggest(graph: Graph, req: TourRequest, availability: AvailabilityLookup | N
             earlier.append(w.edge_id)
         return r / cells(leg) if cells(leg) else 0.0
 
+    def stops_ok(legs: list[Leg], stop_of: Callable[[Leg], int]) -> list[Leg]:
+        return [x for x in legs if in_countries(graph.stops[stop_of(x)].country, req.countries)]
+
     end_day = req.start_date + timedelta(days=req.nights)
     exits: dict[int, list[Leg]] = {}
 
     def exit_legs(hut_id: int) -> list[Leg]:
         if hut_id not in exits:
-            exits[hut_id] = exit_options(graph, hut_id, end_day, hi, req.avoid_lifts, None, req.max_altitude, req.pace)
+            exits[hut_id] = stops_ok(exit_options(graph, hut_id, end_day, hi, req.avoid_lifts, None, req.max_altitude,
+                                                  req.pace), lambda x: x.to)
         return exits[hut_id]
 
     # Day 1: the closest usable stop → first hut. State: (cost, legs, nights, walked): walked = cells of the tour
@@ -311,8 +331,8 @@ def suggest(graph: Graph, req: TourRequest, availability: AvailabilityLookup | N
     for hut_id in graph.stop_in:
         if not in_region(hut_id) or not (n := night(hut_id, 0)) or (req.nights == 1 and not exit_legs(hut_id)):
             continue
-        access = access_options(graph, hut_id, req.start_date, hi, req.avoid_lifts, req.start_near, req.max_altitude,
-                                req.pace)
+        access = stops_ok(access_options(graph, hut_id, req.start_date, hi, req.avoid_lifts, req.start_near,
+                                         req.max_altitude, req.pace), lambda x: x.frm)
         if access:
             states.append((day_cost(access[0], True) + penalty(n), (access[0],), (n,), 0.0))
     states = best_per_chain(states, 1)
@@ -349,7 +369,8 @@ def suggest(graph: Graph, req: TourRequest, availability: AvailabilityLookup | N
     tours = []
     for _, legs, nights, walked in states:
         start = graph.stops[legs[0].frm]
-        ends = exit_options(graph, legs[-1].to, end_day, hi, req.avoid_lifts, start, req.max_altitude, req.pace) \
+        ends = stops_ok(exit_options(graph, legs[-1].to, end_day, hi, req.avoid_lifts, start, req.max_altitude,
+                                     req.pace), lambda x: x.to) \
             if req.loop \
             else exit_legs(legs[-1].to)
         if not ends:

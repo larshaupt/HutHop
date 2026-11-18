@@ -2,6 +2,7 @@
 search used to pick a start point, and a stop's departures on a day, and the share page of a tour (link previews)."""
 
 import html
+import itertools
 import json
 import sqlite3
 import time
@@ -19,21 +20,34 @@ from app.clients import geoadmin, hut_reservation
 from app.ingest import countries, osm_access
 from app.planner import costs, editing, gpx, planning, polyline, ranking, transit
 from app.planner.graph import Graph, Leg, RideLeg, cached_graph
-from app.planner.tours import Catering, Night, Tour, TourRequest, build_tour, is_lift, parse_tour_id
+from app.planner.tours import (
+    COUNTRIES_PATTERN,
+    Catering,
+    Night,
+    Tour,
+    TourRequest,
+    build_tour,
+    in_countries,
+    is_lift,
+    parse_countries,
+    parse_tour_id,
+)
 
 router = APIRouter(prefix="/api", tags=["tours"])
 pages = APIRouter(tags=["tours"])  # outside /api: links people share
 AVAILABILITY_STATES = ("available", "not_released", "no_booking", "not_checked", "error")
 MAX_FLEX_DAYS = 14  # a search runs once per start date
+COUNTRIES_HELP = "huts and start / end stops only in these, e.g. CH,AT (CH includes LI); all if not given"
 
 
 def settings(limit: int = Query(3, ge=1, le=4, description="hardest trail: 1 yellow, 2 red-white, 3 blue-white, "
                                                    "4 also unofficial OSM paths"),
              max_altitude: int | None = Query(None, ge=500, le=5000, description="highest point of a route (m)"),
              avoid_lifts: bool = Query(False, description="no start or end stop served only by mountain lifts"),
-             pace: float = Query(1.0, ge=0.5, le=2.0, description="walking time / Swiss standard time")) -> editing.Rules:
+             pace: float = Query(1.0, ge=0.5, le=2.0, description="walking time / Swiss standard time"),
+             countries: str | None = Query(None, pattern=COUNTRIES_PATTERN, description=COUNTRIES_HELP)) -> editing.Rules:
     """The app's general settings (kept in the browser), sent with every request that offers or shows routes."""
-    return editing.Rules(limit, max_altitude, avoid_lifts, pace)
+    return editing.Rules(limit, max_altitude, avoid_lifts, pace, parse_countries(countries))
 
 
 class TourQuery(BaseModel):
@@ -54,6 +68,7 @@ class TourQuery(BaseModel):
     max_altitude: int | None = Field(None, ge=500, le=5000, description="highest point of a route (m)")
     pace: float = Field(1.0, ge=0.5, le=2.0, description="walking time / Swiss standard time")
     transit: bool = Field(False, description="a day between huts may include one bus, train or cable car ride")
+    countries: str | None = Field(None, pattern=COUNTRIES_PATTERN, description=COUNTRIES_HELP)
     people: int = Field(2, ge=1, le=30)
     check_availability: bool = True
 
@@ -78,6 +93,7 @@ def suggest_tours(q: TourQuery, conn: sqlite3.Connection = Depends(get_db)) -> d
         if not row:
             raise HTTPException(404, "start stop not found")
         params["start_near"] = (row["e_lv95"], row["n_lv95"])
+    params["countries"] = parse_countries(q.countries)
     req = TourRequest(**params, weights=config.ranking_weights())
     started = time.monotonic()
     graph, tours, fetched = planning.search_tours(conn, req, q.people, q.check_availability, q.flex_days)
@@ -85,7 +101,7 @@ def suggest_tours(q: TourQuery, conn: sqlite3.Connection = Depends(get_db)) -> d
         conn.execute("INSERT INTO search_log (created_at, query, results, best_tour, duration_ms) VALUES (?, ?, ?, ?, ?)",
                      (datetime.now(UTC).isoformat(timespec="seconds"), q.model_dump_json(), len(tours),
                       tours[0].id if tours else None, round((time.monotonic() - started) * 1000)))
-    rules = editing.Rules(q.limit, q.max_altitude, q.avoid_lifts, q.pace)
+    rules = editing.Rules(q.limit, q.max_altitude, q.avoid_lifts, q.pace, params["countries"])
     return {"query": q.model_dump(mode="json"), "tours": tour_json(conn, graph, tours, rules),
             "calendars_fetched": fetched}
 
@@ -309,7 +325,7 @@ def hut_contacts(conn: sqlite3.Connection, hut_ids: set[int]) -> dict[int, dict]
 
 def outside_settings(graph: Graph, t: Tour, rules: editing.Rules) -> list[str]:
     """What of a tour the settings wouldn't offer: 'trail' (harder), 'altitude' (higher), 'lift' (a mountain-lift
-    stop although avoided)."""
+    stop although avoided), 'country' (a hut or the start or end stop in a country not chosen)."""
     out = []
     if any(leg.max_category > rules.cap for leg in t.legs):
         out.append("trail")
@@ -318,6 +334,9 @@ def outside_settings(graph: Graph, t: Tour, rules: editing.Rules) -> list[str]:
     if rules.avoid_lifts and (is_lift(graph.stops[t.legs[0].frm].mode) or is_lift(graph.stops[t.legs[-1].to].mode)
                               or any(isinstance(leg, RideLeg) and leg.ride.lift for leg in t.legs)):
         out.append("lift")
+    if not all(in_countries(graph.huts[n.hut].country, rules.countries) for n in t.nights) or \
+            not all(in_countries(graph.stops[s].country, rules.countries) for s in (t.legs[0].frm, t.legs[-1].to)):
+        out.append("country")
     return out
 
 
@@ -373,19 +392,22 @@ def night_json(night: Night, hrs_id: int | None) -> dict:
 # ---------- Stops ----------
 
 @router.get("/stops")
-def search_stops(q: str = Query(..., min_length=2), conn: sqlite3.Connection = Depends(get_db)) -> list[dict]:
+def search_stops(q: str = Query(..., min_length=2),
+                 countries: str | None = Query(None, pattern=COUNTRIES_PATTERN, description=COUNTRIES_HELP),
+                 conn: sqlite3.Connection = Depends(get_db)) -> list[dict]:
     """Stops matched by name: prefix matches first, then stations and mountain transport before bus stops."""
+    wanted = parse_countries(countries)
     rows = conn.execute(
-        """SELECT p.id, p.name, p.lat, p.lon, s.mode FROM place p JOIN stop s ON s.place_id = p.id
+        """SELECT p.id, p.name, p.lat, p.lon, s.mode, p.country FROM place p JOIN stop s ON s.place_id = p.id
            WHERE p.name LIKE :any
            ORDER BY p.name NOT LIKE :prefix,
                     NOT (s.mode LIKE '%train%' OR s.mode LIKE '%cableway%' OR s.mode LIKE '%funicular%'
                          OR s.mode LIKE '%rack_railway%' OR s.mode LIKE '%chairlift%'),
-                    length(p.name), p.name
-           LIMIT 12""",
+                    length(p.name), p.name""",
         {"any": f"%{q}%", "prefix": f"{q}%"},
-    ).fetchall()
-    return [dict(r) for r in rows]
+    )
+    found = (r for r in rows if in_countries(r["country"], wanted))
+    return [{k: r[k] for k in ("id", "name", "lat", "lon", "mode")} for r in itertools.islice(found, 12)]
 
 
 @router.get("/stops/{stop_id}/departures")
