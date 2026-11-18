@@ -1,7 +1,7 @@
 // Service worker: HutHop without a connection, with what was loaded or saved before.
 // - Our own files and API: network first (a deploy is never hidden behind the cache), the cache only as a fallback.
 //   The app shell and the data it starts with are kept here; saved tours are stored by the page (js/offline.js).
-// - Map tiles (swisstopo, basemap.at, OpenTopoMap): from the cache when a saved tour stored them, else the network.
+// - Map tiles (swisstopo, TopPlusOpen): from the cache when a saved tour stored them, else the network.
 // Only 200 responses of our own origin with the expected content type are kept, so a Cloudflare Access login
 // redirect is never cached.
 const VERSION = 3; // bump when this file's caching changes: old shell caches are deleted when it activates
@@ -16,7 +16,7 @@ const FILES = [
 const API = ["/api/huts", "/api/osm-paths", "/api/info", "/api/border"]; // what the app needs to start, kept with the shell
 const TYPES = { "": "text/html", html: "text/html", js: "javascript", css: "text/css", json: "application/json",
   png: "image/png" };
-const MAP_HOSTS = ["https://wmts.geo.admin.ch/", "https://mapsneu.wien.gv.at/basemap/", "https://tile.opentopomap.org/",
+const MAP_HOSTS = ["https://wmts.geo.admin.ch/", "https://sgx.geodatenzentrum.de/wmts_topplus_open/",
   "https://vectortiles.geo.admin.ch/fonts/"]; // js/map.js
 
 /** A response worth keeping for `path`: complete, ours, not redirected, of the type its extension promises. */
