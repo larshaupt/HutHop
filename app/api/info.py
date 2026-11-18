@@ -2,7 +2,7 @@
 of Switzerland and Liechtenstein for the map."""
 
 import json
-from functools import cache
+from functools import lru_cache
 
 import numpy as np
 import shapely
@@ -33,11 +33,12 @@ def info() -> dict:
 def border() -> dict:
     """Switzerland and Liechtenstein as one GeoJSON area (WGS84, simplified to 100 m), or null before
     swissBOUNDARIES3D is downloaded. Inside it the map shows swisstopo, outside the maps of other sources (js/map.js)."""
-    return {"type": "Feature", "properties": {}, "geometry": _border()}
+    return {"type": "Feature", "properties": {}, "geometry": _border(countries.edition())}
 
 
-@cache
-def _border() -> dict | None:
+@lru_cache(maxsize=1)
+def _border(stamp: tuple) -> dict | None:
+    """Per edition of the border files (countries.edition): refresh writes them while the app runs."""
     shapes = countries.borders()
     if "CH" not in shapes:
         return None
