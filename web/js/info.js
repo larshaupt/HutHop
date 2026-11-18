@@ -54,9 +54,10 @@ async function openAbout() {
         <li>${t("Unofficial paths to huts away from the signposted trails:")} © <a href="https://www.openstreetmap.org/copyright"
           target="_blank" rel="noopener">OpenStreetMap</a> ${t("contributors (ODbL); their heights: Copernicus DEM via")}
           <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a>.</li>
-        <li>${t("Maps outside Switzerland:")} ${t("Data source:")} <a href="https://basemap.at" target="_blank" rel="noopener">basemap.at</a>
-          (CC BY 4.0, ${t("Austria")}); ${t("elsewhere")} © <a href="https://opentopomap.org" target="_blank" rel="noopener">OpenTopoMap</a>
-          (CC BY-SA), ${t("map data © OpenStreetMap contributors, SRTM")}.</li>
+        <li>${t("Maps outside Switzerland:")} TopPlusOpen, © <a href="https://www.bkg.bund.de" target="_blank" rel="noopener">BKG</a> (2026)
+          <a href="https://www.govdata.de/dl-de/by-2-0" target="_blank" rel="noopener">dl-de/by-2-0</a>,
+          <a href="https://sgx.geodatenzentrum.de/web_public/gdz/datenquellen/datenquellen_topplusopen.html" target="_blank"
+          rel="noopener">${t("Data sources")}</a>.</li>
         <li>${t("Trails in Austria:")} © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>
           ${t("contributors (ODbL); on the map the signposted routes of")} <a href="https://waymarkedtrails.org" target="_blank"
           rel="noopener">Waymarked Trails</a> (CC BY-SA). ${t("Heights of trails and paths outside swisstopo's data: Copernicus DEM, © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA.")}</li>

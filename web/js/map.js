@@ -7,23 +7,23 @@ import { t } from "./i18n.js";
 const CH_BOUNDS = [[5.9, 45.8], [10.5, 47.85]];
 const MAX_BOUNDS = [[4.5, 45.2], [17.8, 49.4]];  // Switzerland and all of Austria
 const link = (href, text) => `<a href="${href}" target="_blank" rel="noopener">${text}</a>`;
-const ATTRIBUTION = `${link("https://www.swisstopo.admin.ch", "© swisstopo")} · ${t("Data source:")} ${link("https://basemap.at", "basemap.at")} · ` +
-  `${link("https://opentopomap.org", "© OpenTopoMap")} (${link("https://creativecommons.org/licenses/by-sa/3.0/", "CC BY-SA")}), SRTM · ` +
+const ATTRIBUTION = `${link("https://www.swisstopo.admin.ch", "© swisstopo")} · ${link("https://www.bkg.bund.de", "© BKG")} (2026) ` +
+  `${link("https://www.govdata.de/dl-de/by-2-0", "dl-de/by-2-0")}, ` +
+  `${link("https://sgx.geodatenzentrum.de/web_public/gdz/datenquellen/datenquellen_topplusopen.html", t("Data sources"))} · ` +
   `${link("https://waymarkedtrails.org", "© Waymarked Trails")} (CC BY-SA) · ` +
   `${t("Hut data")} ${link("https://www.sac-cas.ch", "© SAC-CAS")}, ${link("https://www.hut-reservation.org", "hut-reservation.org")} · ` +
   link("https://www.openstreetmap.org/copyright", "© OpenStreetMap");
 
 // Each map comes in two parts, cut at the border of Switzerland and Liechtenstein (/api/border): swisstopo's inside,
-// and outside basemap.at (Austria) with OpenTopoMap under it where that is empty (other countries). swisstopo's maps
+// and outside BKG's TopPlusOpen, one calm map for all neighbouring countries (detailed in Germany and next to it). swisstopo's maps
 // reach a few kilometres past the border, less the further you zoom in, and are white beyond: a cut there would jump
 // with the zoom level. The parts are put together in the browser (mapTile), also for the tiles saved offline.
 const swisstopo = (layer, ext) => ({ url: `https://wmts.geo.admin.ch/1.0.0/${layer}/default/current/3857/{z}/{x}/{y}.${ext}` });
-const basemapAt = (layer) => ({ url: `https://mapsneu.wien.gv.at/basemap/${layer}/normal/google3857/{z}/{y}/{x}.png` });
-const OPENTOPOMAP = { url: "https://tile.opentopomap.org/{z}/{x}/{y}.png", maxzoom: 17 };
+const topPlus = (layer) => ({ url: `https://sgx.geodatenzentrum.de/wmts_topplus_open/tile/1.0.0/${layer}/default/WEBMERCATOR/{z}/{y}/{x}.png` });
 const MAPS = {
-  topo: { inside: swisstopo("ch.swisstopo.pixelkarte-farbe", "jpeg"), outside: [basemapAt("geolandbasemap"), OPENTOPOMAP] },
+  topo: { inside: swisstopo("ch.swisstopo.pixelkarte-farbe", "jpeg"), outside: [topPlus("web")] },
   // over swisstopo's light vector map, which shows little outside Switzerland: transparent inside the border
-  light: { outside: [basemapAt("bmapgrau"), { ...OPENTOPOMAP, filter: "grayscale(1)" }] },
+  light: { outside: [topPlus("web_light")] },
   // swissTLM3D's trails end at the border. Past it, our own trails (ownTrails) where we have them, else Waymarked
   // Trails, which only shows the ways in a hiking route in OpenStreetMap.
   trails: { inside: swisstopo("ch.swisstopo.swisstlm3d-wanderwege", "png"),
