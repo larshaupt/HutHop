@@ -2,7 +2,7 @@
 import { $, CATEGORY, categoryName, costTitle, decodePolyline, decodeValues, distanceM, esc, formatCost, formatMinutes, modeLabel }
   from "./util.js";
 import { state } from "./state.js";
-import { LOCALE, t as tr } from "./i18n.js";  // t is a tour here
+import { LOCALE, countryName, t as tr } from "./i18n.js";  // t is a tour here
 import { bookingPanel, isBooked } from "./booking.js";
 import { hutForecast, weatherLine } from "./weather.js";
 import { offlineStatus } from "./offline.js";
@@ -227,7 +227,7 @@ async function dayNotes(t) {
   t.days.forEach((d, i) => {
     const target = el(d.day);
     if (!target) return;  // another tour or view meanwhile
-    const w = found.days.find((x) => x.day === d.day) || { closures: [], shooting: [] };
+    const w = found.days.find((x) => x.day === d.day) || { closures: [], shooting: [], unchecked: [] };
     const link = (url, text) => (/^https?:\/\//i.test(url || "") ? ` · <a href="${esc(url)}" target="_blank" rel="noopener">${text}</a>` : "");
     target.innerHTML = [
       forecast[i] && `<div class="tl-meta" title="${tr("Forecast at {name}", { name: esc(d.to.kind === "hut" ? d.to.name : d.from.name) })}">${weatherLine(forecast[i])}</div>`,
@@ -237,6 +237,8 @@ async function dayNotes(t) {
       ...w.shooting.map((z) => `<div class="tl-meta${z.times.length ? " warn-text" : ""}">` +
         `${z.times.length ? `⚠ ${tr("Military shooting on this day")}, ${esc(z.times.join(", "))}` : tr("Crosses a military danger zone, no shooting published for this day")}` +
         `: ${esc(z.name)}${z.places.length ? ` (${esc(z.places.join(", "))})` : ""}${link(z.url, tr("shooting notice"))}</div>`),
+      w.unchecked?.length && `<div class="tl-meta">${tr("Trail closures and shooting notices are only published for Switzerland: not checked in {places}.",
+        { places: w.unchecked.map(countryName).join(", ") })}</div>`,
     ].filter(Boolean).join("");
   });
   if (found.error) el(1)?.insertAdjacentHTML("beforeend", `<div class="tl-meta">${tr("Could not check trail closures and shooting notices right now.")}</div>`);

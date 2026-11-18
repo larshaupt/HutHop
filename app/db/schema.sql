@@ -11,7 +11,8 @@ CREATE TABLE IF NOT EXISTS place (
   lat         REAL NOT NULL,          -- WGS84, for the map
   lon         REAL NOT NULL,
   altitude_m  INTEGER,
-  snap_m      REAL                    -- distance to the trail network (build_edges QA)
+  snap_m      REAL,                   -- distance to the trail network (build_edges QA)
+  country     TEXT                    -- ISO code, e.g. CH, LI (app/ingest/countries.py); NULL = not known
 );
 
 CREATE TABLE IF NOT EXISTS hut (
@@ -223,7 +224,7 @@ CREATE VIEW hut_effective AS
 SELECT
   p.id, p.name AS source_name,
   CASE WHEN json_type(ov.o, '$.name') IS NULL THEN p.name ELSE json_extract(ov.o, '$.name') END AS name,
-  p.lat, p.lon, p.e_lv95, p.n_lv95, p.snap_m,
+  p.lat, p.lon, p.e_lv95, p.n_lv95, p.snap_m, p.country,
   CASE WHEN json_type(ov.o, '$.altitude') IS NULL THEN p.altitude_m ELSE json_extract(ov.o, '$.altitude') END AS altitude_m,
   h.sac_id, h.operator, h.owner, h.description, h.services, h.photos, h.routes, h.source, h.synced_at,
   CASE WHEN json_type(ov.o, '$.hrs_id') IS NULL THEN h.hrs_id ELSE json_extract(ov.o, '$.hrs_id') END AS hrs_id,

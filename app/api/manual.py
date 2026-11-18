@@ -15,6 +15,7 @@ from pyproj import Transformer
 
 from app.admin import require_admin
 from app.api.deps import get_db
+from app.ingest import countries
 from app.planner import opening
 
 router = APIRouter(prefix="/api/huts", tags=["manual"])
@@ -178,8 +179,10 @@ def add_hut(hut: ManualHut, conn: sqlite3.Connection = Depends(get_db)) -> dict:
     e, n = WGS84_TO_LV95.transform(hut.lon, hut.lat)
     with conn:
         place_id = conn.execute(
-            "INSERT INTO place (kind, name, e_lv95, n_lv95, lat, lon, altitude_m) VALUES ('hut', ?, ?, ?, ?, ?, ?)",
-            (hut.name.strip(), e, n, round(hut.lat, 6), round(hut.lon, 6), hut.altitude)).lastrowid
+            "INSERT INTO place (kind, name, e_lv95, n_lv95, lat, lon, altitude_m, country) "
+            "VALUES ('hut', ?, ?, ?, ?, ?, ?, ?)",
+            (hut.name.strip(), e, n, round(hut.lat, 6), round(hut.lon, 6), hut.altitude,
+             countries.country_at([e], [n])[0])).lastrowid
         conn.execute(
             "INSERT INTO hut (place_id, hrs_id, operator, beds, shelter_beds, website, description, services, photos, "
             "routes, source, synced_at) VALUES (?, ?, 'private', ?, ?, ?, ?, '{}', '[]', '[]', 'manual', ?)",

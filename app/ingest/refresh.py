@@ -23,7 +23,7 @@ import httpx
 
 from app.clients import USER_AGENT
 from app.db import ROOT, connect
-from app.ingest import build_edges, footprints, load_stops, load_timetable, osm_access, sync_sac
+from app.ingest import build_edges, countries, footprints, load_stops, load_timetable, osm_access, sync_sac
 
 TLM_STAC_ITEMS = "https://data.geo.admin.ch/api/stac/v1/collections/ch.swisstopo.swisstlm3d-wanderwege/items"
 TLM_DIR = ROOT / "data/tlm"
@@ -69,6 +69,8 @@ def run(skip_huts: bool = False, skip_stops: bool = False, skip_timetable: bool 
     if not skip_stops:
         load_stops.download()
         report["stops"] = load_stops.load(conn, load_stops.read_stops())
+    countries.download()  # borders of Switzerland and Liechtenstein, when swisstopo publishes new ones
+    report["countries"] = countries.tag_places(conn)
     if not skip_timetable:
         # Loaded every time (~30 s, from the local file) so new stops get their lines too.
         report["timetable_updated"] = load_timetable.download()

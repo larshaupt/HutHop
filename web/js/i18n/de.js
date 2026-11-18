@@ -443,6 +443,8 @@ export default {
 "tour": "Tour",
 "Tours": "Touren",
 "Trail closure": "Wegsperrung",
+"Trail closures and shooting notices are only published for Switzerland: not checked in {places}.": "Wegsperrungen und Schiessanzeigen gibt es nur für die Schweiz: in {places} nicht geprüft.",
+"other countries": "anderen Ländern",
 "Try a wider range of hours, a harder trail, fewer nights, a larger map area, or including huts without opening data.": "Versuche eine grössere Stundenspanne, einen schwierigeren Weg, weniger Nächte, einen grösseren Kartenausschnitt oder Hütten ohne Öffnungsdaten.",
 "Try a wider range of hours, a harder trail, fewer nights, another start, or including huts without opening data.": "Versuche eine grössere Stundenspanne, einen schwierigeren Weg, weniger Nächte, einen anderen Start oder Hütten ohne Öffnungsdaten.",
 "Undo": "Rückgängig",

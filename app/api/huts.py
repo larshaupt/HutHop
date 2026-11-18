@@ -26,6 +26,7 @@ def summary(row: sqlite3.Row, codes: tuple[str, str]) -> dict:
         "beds": row["beds"],
         "shelter_beds": row["shelter_beds"],
         "operator": row["operator"],
+        "country": row["country"],
         "bookable": bool(row["hrs_id"]),
         "months": [opening.month_status(*codes, m) for m in range(1, 13)],
         "partial_months": [opening.is_partial(*codes, m) for m in range(1, 13)],

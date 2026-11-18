@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field, model_validator
 from app import config
 from app.api.deps import get_db
 from app.clients import geoadmin, hut_reservation
-from app.ingest import osm_access
+from app.ingest import countries, osm_access
 from app.planner import costs, editing, gpx, planning, polyline, ranking, transit
 from app.planner.graph import Graph, Leg, RideLeg, cached_graph
 from app.planner.tours import Catering, Night, Tour, TourRequest, build_tour, is_lift, parse_tour_id
@@ -171,7 +171,8 @@ def get_tour_gpx(tour_id: str, day: int | None = Query(None, ge=1, description="
 @router.get("/tours/{tour_id}/warnings")
 def tour_warnings(tour_id: str, conn: sqlite3.Connection = Depends(get_db)) -> dict:
     """Official trail closures and military danger zones along each day's route, with shooting times on that day
-    (clients/geoadmin.py). Separate from the tour, so a slow or failing geoportal never holds the tour up."""
+    (clients/geoadmin.py). Separate from the tour, so a slow or failing geoportal never holds the tour up. Both are
+    only published for Switzerland: `unchecked` lists where else the day goes (`LI`, or `abroad`)."""
     _, tour = rebuild(conn, tour_id, people=1, check_availability=False)
     edge_ids = [w.edge_id for leg in tour.legs for w in leg.walks]
     lines = {r["id"]: r["geometry"] for r in conn.execute(
@@ -180,8 +181,10 @@ def tour_warnings(tour_id: str, conn: sqlite3.Connection = Depends(get_db)) -> d
     def day(i: int) -> dict:
         found = [f for w in tour.legs[i].walks if (line := lines.get(w.edge_id))
                  for f in geoadmin.identify(polyline.decode(line), line)]
+        points = [p for w in tour.legs[i].walks if (line := lines.get(w.edge_id)) for p in polyline.decode(line)]
         return {"day": i + 1, "closures": geoadmin.closures(found),
-                "shooting": geoadmin.shooting(found, tour.start_date + timedelta(days=i))}
+                "shooting": geoadmin.shooting(found, tour.start_date + timedelta(days=i)),
+                "unchecked": countries.outside(points)}
 
     try:
         with ThreadPoolExecutor(4) as pool:
