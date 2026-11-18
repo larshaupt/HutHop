@@ -10,13 +10,14 @@ const FIELD_LABELS = { name: tr("Name"), altitude: tr("Altitude (m)"), beds: tr(
 const NUMERIC = new Set(["altitude", "beds", "shelter_beds", "hrs_id"]);
 const CODE_LABEL = { 0: "✓", 1: "½", 2: "–" };
 const CODE_TITLE = { 0: tr("whole month"), 1: tr("part of the month"), 2: tr("no") };
+const SOURCE_NAMES = { sac_api: "SAC", hrs_api: "hut-reservation.org" };  // hut.source → where its data comes from
 let editing = null; // { hutId, data } while the edit form is open
 
 // ---------- Season editor (shared by edit and add) ----------
-function seasonEditor(months) {
+function seasonEditor(months, sourceName = "SAC") {
   const row = (kind, label) => `<div class="season-edit-row"><span>${label}</span>${months[kind].map((m, i) =>
     `<button type="button" class="code c${m.value}${m.overridden ? " edited" : ""}" data-kind="${kind}" data-month="${i + 1}"
-      data-value="${m.value}" title="${MONTHS[i]}: ${CODE_TITLE[m.value]}${m.overridden ? ` (SAC: ${CODE_TITLE[m.source]})` : ""}">
+      data-value="${m.value}" title="${MONTHS[i]}: ${CODE_TITLE[m.value]}${m.overridden ? ` (${sourceName}: ${CODE_TITLE[m.source]})` : ""}">
       ${CODE_LABEL[m.value]}</button>`).join("")}</div>`;
   return `<div class="season-edit">
       <div class="season-edit-row head"><span></span>${MONTHS.map((m) => `<b>${m.charAt(0)}</b>`).join("")}</div>
@@ -38,24 +39,27 @@ export async function editHut(hutId) {
   if (!res.ok) return;
   editing = { hutId, data: await res.json() };
   const { fields, months, source } = editing.data;
+  const sourceName = SOURCE_NAMES[source];  // undefined for huts added by hand
   const inputs = Object.entries(FIELD_LABELS).map(([key, label]) => {
     const f = fields[key];
     const sourceText = f.source === null || f.source === undefined || f.source === "" ? tr("empty") : esc(f.source);
+    const resetTitle = source === "sac_api" ? tr("Back to the SAC value") : tr("Back to the original value");
     return `<label class="edit-field">
-        <span>${label}${f.overridden ? ` <button type="button" class="chip-edited" data-reset="${key}" title="${tr("Back to the SAC value")}">${tr("edited")} ×</button>` : ""}</span>
+        <span>${label}${f.overridden ? ` <button type="button" class="chip-edited" data-reset="${key}" title="${resetTitle}">${tr("edited")} ×</button>` : ""}</span>
         <input class="input" name="${key}" ${NUMERIC.has(key) ? 'type="number" min="0"' : ""} value="${esc(f.value ?? "")}">
-        ${source === "sac_api" ? `<small>SAC: ${sourceText}</small>` : ""}
+        ${sourceName ? `<small>${sourceName}: ${sourceText}</small>` : ""}
       </label>`;
   }).join("");
   $("#detail").innerHTML = `
     <div class="tour-top">
       <button class="back flat" data-editor-cancel><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6"/></svg>${tr("Cancel")}</button>
       <h2>${tr("Edit {name}", { name: esc(fields.name.value) })}</h2>
-      <p class="subtitle">${source === "sac_api" ? tr("Your changes override the SAC data and survive future updates.") : tr("Hut added by hand.")}</p>
+      <p class="subtitle">${source === "sac_api" ? tr("Your changes override the SAC data and survive future updates.")
+        : source === "hrs_api" ? tr("Your changes override the hut-reservation.org data and survive future updates.") : tr("Hut added by hand.")}</p>
     </div>
     <form class="detail-body editor" id="editForm">
       ${inputs}
-      <div class="section"><h3>${tr("Season")}</h3>${seasonEditor(months)}</div>
+      <div class="section"><h3>${tr("Season")}</h3>${seasonEditor(months, sourceName)}</div>
       <label class="edit-field"><span>${tr("Note (optional, e.g. where the information comes from)")}</span>
         <input class="input" name="note" maxlength="500"></label>
       <p class="warn" id="editError" hidden></p>

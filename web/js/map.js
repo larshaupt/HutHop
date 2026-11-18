@@ -5,12 +5,31 @@ import { settings } from "./settings.js";
 import { t } from "./i18n.js";
 
 const CH_BOUNDS = [[5.9, 45.8], [10.5, 47.85]];
-const ATTRIBUTION = '<a href="https://www.swisstopo.admin.ch" target="_blank" rel="noopener">© swisstopo</a> · ' +
-  `${t("Hut data")} <a href="https://www.sac-cas.ch" target="_blank" rel="noopener">© SAC-CAS</a> · ` +
-  `${t("Unofficial paths")} <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap</a>`;
+const MAX_BOUNDS = [[4.5, 45.2], [17.8, 49.4]];  // Switzerland and all of Austria
+const link = (href, text) => `<a href="${href}" target="_blank" rel="noopener">${text}</a>`;
+const ATTRIBUTION = `${link("https://www.swisstopo.admin.ch", "© swisstopo")} · ${t("Data source:")} ${link("https://basemap.at", "basemap.at")} · ` +
+  `${link("https://opentopomap.org", "© OpenTopoMap")} (${link("https://creativecommons.org/licenses/by-sa/3.0/", "CC BY-SA")}), SRTM · ` +
+  `${link("https://waymarkedtrails.org", "© Waymarked Trails")} (CC BY-SA) · ` +
+  `${t("Hut data")} ${link("https://www.sac-cas.ch", "© SAC-CAS")}, ${link("https://www.hut-reservation.org", "hut-reservation.org")} · ` +
+  link("https://www.openstreetmap.org/copyright", "© OpenStreetMap");
+
+// Each map comes in two parts, cut at the border of Switzerland and Liechtenstein (/api/border): swisstopo's inside,
+// and outside basemap.at (Austria) with OpenTopoMap under it where that is empty (other countries). swisstopo's maps
+// reach a few kilometres past the border, less the further you zoom in, and are white beyond: a cut there would jump
+// with the zoom level. The parts are put together in the browser (mapTile), also for the tiles saved offline.
+const swisstopo = (layer, ext) => ({ url: `https://wmts.geo.admin.ch/1.0.0/${layer}/default/current/3857/{z}/{x}/{y}.${ext}` });
+const basemapAt = (layer) => ({ url: `https://mapsneu.wien.gv.at/basemap/${layer}/normal/google3857/{z}/{y}/{x}.png` });
+const OPENTOPOMAP = { url: "https://tile.opentopomap.org/{z}/{x}/{y}.png", maxzoom: 17 };
+const MAPS = {
+  topo: { inside: swisstopo("ch.swisstopo.pixelkarte-farbe", "jpeg"), outside: [basemapAt("geolandbasemap"), OPENTOPOMAP] },
+  // over swisstopo's light vector map, which shows little outside Switzerland: transparent inside the border
+  light: { outside: [basemapAt("bmapgrau"), { ...OPENTOPOMAP, filter: "grayscale(1)" }] },
+  // swissTLM3D's trails end at the border; Waymarked Trails shows the signposted routes in OpenStreetMap
+  trails: { inside: swisstopo("ch.swisstopo.swisstlm3d-wanderwege", "png"),
+    outside: [{ url: "https://tile.waymarkedtrails.org/hiking/{z}/{x}/{y}.png", maxzoom: 18 }] },
+};
 /** The topographic map's tiles (also saved with tours for offline use, js/offline.js). */
-export const TOPO_TILES = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.pixelkarte-farbe/default/current/3857/{z}/{x}/{y}.jpeg";
-const TRAILS_TILES = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swisstlm3d-wanderwege/default/current/3857/{z}/{x}/{y}.png";
+export const TOPO_TILES = "huthop://topo/{z}/{x}/{y}";
 const STYLES = {
   light: "https://vectortiles.geo.admin.ch/styles/ch.swisstopo.lightbasemap.vt/style.json",
   topo: {
@@ -26,6 +45,98 @@ const STYLES = {
   },
 };
 
+// The border's rings in Web Mercator (0–1 across the world), or null without border data (then swisstopo everywhere)
+const mercator = ([lon, lat]) => [(lon + 180) / 360, (1 - Math.asinh(Math.tan(lat * Math.PI / 180)) / Math.PI) / 2];
+let border;
+const borderRings = () => (border ??= fetch("/api/border").then((r) => r.json())
+  .then((f) => f.geometry && (f.geometry.type === "Polygon" ? f.geometry.coordinates : f.geometry.coordinates.flat())
+    .map((ring) => ring.map(mercator)))
+  .catch(() => null));
+
+/** Where a tile lies: "inside" or "outside" the border, or "both" (the border may cross it). */
+function tileSide(rings, z, x, y) {
+  const n = 2 ** z, [x0, y0, x1, y1] = [x / n, y / n, (x + 1) / n, (y + 1) / n];
+  let crossings = 0;  // of a ray from the tile's centre to the west (even: outside)
+  for (const ring of rings) {
+    for (let i = 1; i < ring.length; i++) {
+      const [ax, ay] = ring[i - 1], [bx, by] = ring[i];
+      if (Math.max(ax, bx) >= x0 && Math.min(ax, bx) <= x1 && Math.max(ay, by) >= y0 && Math.min(ay, by) <= y1) return "both";
+      const cy = (y0 + y1) / 2;
+      if ((ay > cy) !== (by > cy) && ax + (cy - ay) / (by - ay) * (bx - ax) < x0) crossings++;
+    }
+  }
+  return crossings % 2 ? "inside" : "outside";
+}
+
+/** Switzerland and Liechtenstein drawn on a tile (opaque inside the border), and its alpha per pixel. */
+function borderMask(rings, z, x, y) {
+  const canvas = new OffscreenCanvas(256, 256), ctx = canvas.getContext("2d", { willReadFrequently: true });
+  const n = 2 ** z * 256;
+  ctx.beginPath();
+  for (const ring of rings) ring.forEach(([mx, my], i) => ctx[i ? "lineTo" : "moveTo"](mx * n - x * 256, my * n - y * 256));
+  ctx.fill("evenodd");  // the holes are the enclaves (Büsingen, Campione)
+  return { canvas, data: ctx.getImageData(0, 0, 256, 256).data };
+}
+
+const tileUrl = (source, z, x, y) => source.url.replace("{z}", z).replace("{x}", x).replace("{y}", y);
+
+/** A source's tile, scaled up from its highest zoom level beyond it; null where it has none. */
+async function tileImage(source, z, x, y, get) {
+  const zoom = Math.min(z, source.maxzoom ?? z), over = 2 ** (z - zoom);
+  const res = await get(tileUrl(source, zoom, Math.floor(x / over), Math.floor(y / over)));
+  if (!res.ok || !(res.headers.get("content-type") || "").startsWith("image/")) return null;
+  const bytes = await res.arrayBuffer();
+  const image = await createImageBitmap(new Blob([bytes]));
+  return { bytes, image, sx: (x % over) * 256 / over, sy: (y % over) * 256 / over, size: 256 / over };
+}
+
+/** One tile of a map (MAPS) as image data: swisstopo's inside the border, the other sources' outside. `get` fetches
+ * a URL (offline.js stores what it fetches). */
+export async function mapTile(name, z, x, y, get = fetch) {
+  const { inside, outside } = MAPS[name];
+  const rings = await borderRings();
+  const side = rings ? tileSide(rings, z, x, y) : "inside";
+  if (side === "inside") {
+    if (!inside) return new ArrayBuffer(0);  // transparent
+    const res = await get(tileUrl(inside, z, x, y));
+    if (!res.ok) throw new Error(`${res.status} ${res.url}`);
+    return res.arrayBuffer();
+  }
+  const mask = side === "both" && borderMask(rings, z, x, y);
+  const canvas = new OffscreenCanvas(256, 256), ctx = canvas.getContext("2d", { willReadFrequently: true });
+  ctx.globalCompositeOperation = "destination-over";  // each next source only shows where the ones before are empty
+  for (const [i, source] of outside.entries()) {
+    const tile = await tileImage(source, z, x, y, get).catch(() => null);
+    if (!tile) continue;
+    ctx.filter = source.filter || "none";
+    ctx.drawImage(tile.image, tile.sx, tile.sy, tile.size, tile.size, 0, 0, 256, 256);
+    let gap = false;  // a pixel outside the border not covered yet (the trail overlay is transparent where it has none)
+    const data = name !== "trails" && ctx.getImageData(0, 0, 256, 256).data;
+    for (let p = 3; p < data.length && !gap; p += 4) gap = data[p] < 255 && !(mask && mask.data[p] === 255);
+    if (gap) continue;
+    // as it comes when this one source fills the whole tile
+    if (!mask && !i && tile.size === 256 && !source.filter) return tile.bytes;
+    break;
+  }
+  ctx.filter = "none";
+  if (mask) {
+    ctx.globalCompositeOperation = "destination-out";
+    ctx.drawImage(mask.canvas, 0, 0);
+    if (inside) {
+      const tile = await tileImage(inside, z, x, y, get);
+      ctx.globalCompositeOperation = "destination-over";
+      if (tile) ctx.drawImage(tile.image, 0, 0);
+    }
+  }
+  return (await canvas.convertToBlob({ type: "image/png" })).arrayBuffer();
+}
+
+// huthop://{map}/{z}/{x}/{y}: a tile of one of MAPS
+maplibregl.addProtocol("huthop", async (params, abort) => {
+  const [name, z, x, y] = params.url.slice("huthop://".length).split("/");
+  return { data: await mapTile(name, +z, +x, +y, (url) => fetch(url, { signal: abort.signal })) };
+});
+
 /** The map instance (set by initMap). */
 export let map;
 
@@ -36,7 +147,7 @@ export function initMap(onStyleLoad) {
     style: STYLES[state.base],
     bounds: CH_BOUNDS,
     fitBoundsOptions: { padding: mapPadding() },
-    maxBounds: [[4.5, 45.2], [11.9, 48.3]],
+    maxBounds: MAX_BOUNDS,
     attributionControl: false,
     dragRotate: false,
     pitchWithRotate: false,
@@ -46,7 +157,13 @@ export function initMap(onStyleLoad) {
   map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
   map.addControl(new maplibregl.GeolocateControl({ positionOptions: { enableHighAccuracy: false } }), "top-right");
   map.addControl(new maplibregl.ScaleControl({ unit: "metric" }), "bottom-right");
-  map.on("style.load", onStyleLoad);
+  map.on("style.load", () => {
+    if (!map.getSource("topo")) {  // the light map: other maps over it outside Switzerland
+      map.addSource("abroad", { type: "raster", tiles: ["huthop://light/{z}/{x}/{y}"], tileSize: 256, maxzoom: 18 });
+      map.addLayer({ id: "abroad", type: "raster", source: "abroad" });
+    }
+    onStyleLoad();
+  });
   bindOsmPaths();
 }
 
@@ -75,7 +192,7 @@ export function setBaseStyle(name) {
 }
 
 export function addTrailLayer() {
-  map.addSource("trails", { type: "raster", tiles: [TRAILS_TILES], tileSize: 256, maxzoom: 18 });
+  map.addSource("trails", { type: "raster", tiles: ["huthop://trails/{z}/{x}/{y}"], tileSize: 256, maxzoom: 18 });
   map.addLayer({
     id: "trails", type: "raster", source: "trails",
     paint: { "raster-opacity": ["interpolate", ["linear"], ["zoom"], 7, 0.45, 10, 0.9] },

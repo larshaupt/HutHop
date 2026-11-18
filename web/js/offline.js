@@ -1,14 +1,14 @@
 // Offline use: registers the service worker (sw.js) and saves the tours in "My tours" for use without a connection.
 // A kept tour is saved when it is opened or added: its JSON (with the height profiles), its huts' details and the
-// swisstopo map along its route, in a cache of its own that sw.js answers from offline. Removing the tour from
-// "My tours" deletes it.
+// topographic map along its route (swisstopo's tiles, and basemap.at's or OpenTopoMap's past the border), in a cache of
+// its own that sw.js answers from offline. Removing the tour from "My tours" deletes it.
 import { $, decodePolyline } from "./util.js";
 import { LOCALE, t as tr } from "./i18n.js";  // t is a tour here
-import { TOPO_TILES } from "./map.js";
+import { TOPO_TILES, mapTile } from "./map.js";
 import { onYourToursChange, yourTours } from "./your-tours.js";
 
 const PREFIX = "huthop-tour-";
-export const MAX_TILES = 500; // map tiles per tour: about as many as a few minutes of browsing (swisstopo fair use)
+export const MAX_TILES = 500; // map tiles per tour: about as many as a few minutes of browsing (the map servers' fair use)
 const MIN_ZOOM = 8, MAX_ZOOM = 15;
 const status = new Map(); // tour id → what the tour view says about its offline copy
 const saving = new Set();
@@ -30,8 +30,8 @@ export function noteSaved(res) {
 
 export const offlineStatus = (tourId) => status.get(tourId) || "";
 
-/** The swisstopo tiles along a tour's route (one tile around each point), zoom level by zoom level from
- * MIN_ZOOM up while they fit in MAX_TILES. Returns the tile URLs and the highest zoom level included. */
+/** The map tiles along a tour's route (one tile around each point), zoom level by zoom level from MIN_ZOOM up while
+ * they fit in MAX_TILES. Returns the tile URLs (TOPO_TILES) and the highest zoom level included. */
 export function tourTiles(t) {
   const points = t.days.flatMap((d) => decodePolyline(d.geometry || ""));
   const urls = [];
@@ -80,16 +80,20 @@ export async function saveTourOffline(t) {
     }
     const { urls, zoom } = tourTiles(t);
     let done = 0, failed = 0, next = 0;
-    // a few at a time, and only tiles this tour hasn't stored yet
+    // Each tile as the map puts it together, keeping what it fetches (only what this tour hasn't stored yet; a source
+    // without that tile, such as basemap.at outside Austria, isn't kept). A few at a time.
+    const get = async (url) => {
+      const saved = await cache.match(url, { ignoreVary: true });
+      if (saved) return saved;
+      const res = await fetch(url);
+      if (res.ok) await cache.put(url, res.clone());
+      return res;
+    };
     await Promise.all([0, 1, 2, 3].map(async () => {
       while (next < urls.length) {
-        const url = urls[next++];
+        const [z, x, y] = urls[next++].split("/").slice(-3).map(Number);
         try {
-          if (!(await cache.match(url, { ignoreVary: true }))) {
-            const res = await fetch(url);
-            if (!res.ok) throw new Error(res.status);
-            await cache.put(url, res);
-          }
+          await mapTile("topo", z, x, y, get);
         } catch {
           failed++;
         }

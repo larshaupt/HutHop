@@ -29,6 +29,12 @@ def fake(tmp_path, monkeypatch, lines):
         {"uic": 1, "name": "Valley", "mode": "bus", "e_lv95": 2620000.0, "n_lv95": 1150000.0, "lat": 46.5, "lon": 7.9}])
     monkeypatch.setattr(refresh.load_timetable, "download", lambda: False)
     monkeypatch.setattr(refresh.countries, "download", lambda: False)
+    monkeypatch.setattr(refresh.regions, "download_polygons", lambda: None)
+    monkeypatch.setattr(refresh.sync_hrs, "sync", lambda conn: 0)
+    monkeypatch.setattr(refresh.at_transit, "download", lambda: False)
+    monkeypatch.setattr(refresh.at_transit, "read_stops", lambda: [])
+    monkeypatch.setattr(refresh.osm_trails, "refresh", lambda: False)
+    monkeypatch.setattr(refresh.osm_trails, "editions", lambda: {})
     monkeypatch.setattr(refresh.load_timetable, "read_all", lambda keep=None: [
         Feed(2027, "v1", date(2026, 12, 13), date(2027, 12, 11), lines=list(lines))])
     monkeypatch.setattr(refresh, "refresh_trails", lambda: False)

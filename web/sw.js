@@ -1,10 +1,10 @@
 // Service worker: HutHop without a connection, with what was loaded or saved before.
 // - Our own files and API: network first (a deploy is never hidden behind the cache), the cache only as a fallback.
 //   The app shell and the data it starts with are kept here; saved tours are stored by the page (js/offline.js).
-// - swisstopo map tiles: from the cache when a saved tour stored them, else the network.
+// - Map tiles (swisstopo, basemap.at, OpenTopoMap): from the cache when a saved tour stored them, else the network.
 // Only 200 responses of our own origin with the expected content type are kept, so a Cloudflare Access login
 // redirect is never cached.
-const VERSION = 2; // bump when this file's caching changes: old shell caches are deleted when it activates
+const VERSION = 3; // bump when this file's caching changes: old shell caches are deleted when it activates
 const SHELL = `huthop-shell-v${VERSION}`;
 const FILES = [
   "/", "/style.css", "/manifest.json", "/icon-192.png", "/icon-512.png",
@@ -13,10 +13,11 @@ const FILES = [
   "/js/huts.js", "/js/i18n.js", "/js/i18n/de.js", "/js/i18n/en.js", "/js/info.js", "/js/main.js", "/js/map.js", "/js/offline.js", "/js/settings.js", "/js/state.js",
   "/js/tour-detail.js", "/js/tour-editor.js", "/js/tours.js", "/js/util.js", "/js/weather.js", "/js/your-tours.js",
 ];
-const API = ["/api/huts", "/api/osm-paths", "/api/info"]; // what the app needs to start, kept with the shell
+const API = ["/api/huts", "/api/osm-paths", "/api/info", "/api/border"]; // what the app needs to start, kept with the shell
 const TYPES = { "": "text/html", html: "text/html", js: "javascript", css: "text/css", json: "application/json",
   png: "image/png" };
-const MAP_HOSTS = ["https://wmts.geo.admin.ch/", "https://vectortiles.geo.admin.ch/fonts/"];
+const MAP_HOSTS = ["https://wmts.geo.admin.ch/", "https://mapsneu.wien.gv.at/basemap/", "https://tile.opentopomap.org/",
+  "https://vectortiles.geo.admin.ch/fonts/"]; // js/map.js
 
 /** A response worth keeping for `path`: complete, ours, not redirected, of the type its extension promises. */
 function keepable(res, path) {

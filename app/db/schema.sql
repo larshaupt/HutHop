@@ -19,8 +19,8 @@ CREATE TABLE IF NOT EXISTS hut (
   place_id      INTEGER PRIMARY KEY REFERENCES place(id),
   sac_id        INTEGER UNIQUE,       -- SAC portal POI id; NULL for manually added huts
   hrs_id        INTEGER,              -- hut-reservation.org id (NULL = none)
-  operator      TEXT,                 -- 'sac' | 'private'
-  owner         TEXT,                 -- owning section or person, as published by SAC
+  operator      TEXT,                 -- 'sac' | 'club' (other alpine club, sync_hrs) | 'private'
+  owner         TEXT,                 -- owning section or person, as published by SAC; the club (e.g. ÖAV) for 'club'
   beds          INTEGER,
   shelter_beds  INTEGER,              -- places in the winter room / emergency shelter
   website       TEXT,
@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS hut (
   services      TEXT,                 -- JSON object of booleans
   photos        TEXT,                 -- JSON list of {caption, copyright, small, medium, large}
   routes        TEXT,                 -- JSON list of free SAC access routes (paid content excluded)
-  source        TEXT NOT NULL,        -- 'sac_api' | 'manual' | 'scraped'
+  source        TEXT NOT NULL,        -- 'sac_api' | 'hrs_api' (hut-reservation.org, sync_hrs) | 'manual' | 'scraped'
   raw           TEXT,                 -- original API JSON
   synced_at     TEXT
 );
@@ -117,9 +117,11 @@ CREATE TABLE IF NOT EXISTS hut_override (
 CREATE TABLE IF NOT EXISTS stop (
   place_id  INTEGER PRIMARY KEY REFERENCES place(id),
   uic       INTEGER UNIQUE,           -- official stop number (DiDok/UIC, e.g. 8507492)
-  mode      TEXT                      -- comma list: bus, train, tram, metro, rack_railway, funicular,
+  mode      TEXT,                     -- comma list: bus, train, tram, metro, rack_railway, funicular,
                                       -- cableway, chairlift, boat, elevator
+  ref       TEXT                      -- stop key for stops without a uic (Austria: station id, e.g. at:47:1234)
 );
+CREATE UNIQUE INDEX IF NOT EXISTS stop_ref ON stop(ref);
 
 -- Lines serving each stop, from the official timetable (app/ingest/load_timetable.py). Replaced on every load.
 CREATE TABLE IF NOT EXISTS stop_line (

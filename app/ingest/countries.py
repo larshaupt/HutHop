@@ -4,8 +4,9 @@
 
 Switzerland and Liechtenstein come from swisstopo's swissBOUNDARIES3D (`tlm_landesgebiet`, open data, ~40 MB,
 published about yearly). They are kept simplified in data/countries.json (LV95), which the app also reads: trail
-closures and military shooting notices are only published for Switzerland (app/api/tours.py). Places elsewhere get
-the country their source gives, or none.
+closures and military shooting notices are only published for Switzerland (app/api/tours.py). The countries of the
+regions (regions.py, e.g. Austria) come from their OpenStreetMap extract (osm_trails, data/osm/border_<code>.json).
+Places elsewhere get the country their source gives, or none.
 """
 
 import io
@@ -22,6 +23,7 @@ from pyproj import Transformer
 
 from app.clients import USER_AGENT
 from app.db import ROOT, connect
+from app.ingest import regions
 
 STAC_ITEMS = "https://data.geo.admin.ch/api/stac/v1/collections/ch.swisstopo.swissboundaries3d/items?limit=100"
 FILE = ROOT / "data/countries.json"
@@ -57,25 +59,37 @@ def download() -> bool:
     return True
 
 
+def region_border_path(code: str):
+    """A region's country border (same format as countries.json, from its OpenStreetMap extract by osm_trails), in
+    data/osm/ next to countries.json."""
+    return FILE.parent / "osm" / f"border_{code.lower()}.json"
+
+
 @cache
 def borders() -> dict[str, shapely.Geometry]:
-    """Country code → area (LV95), prepared for fast point tests; empty before the first download."""
+    """Country code → area (LV95), prepared for fast point tests: Switzerland and Liechtenstein, then the regions'
+    countries (e.g. AT) whose border osm_trails has extracted; empty before the first download."""
     if not FILE.exists():
         return {}
     shapes = {code: shapely.from_geojson(g) for code, g in json.loads(FILE.read_text())["countries"].items()}
+    for code in regions.REGIONS:
+        if region_border_path(code).exists():
+            shapes[code] = shapely.from_geojson(json.loads(region_border_path(code).read_text())["countries"][code])
     for shape in shapes.values():
         shapely.prepare(shape)
     return shapes
 
 
 def country_at(e: np.ndarray, n: np.ndarray) -> list[str | None]:
-    """The country of each LV95 point: CH or LI, else None (abroad, or no border data yet). A point within a metre of
-    the border counts as inside (Pfälzerhütte stands on the Liechtenstein–Austria border)."""
+    """The country of each LV95 point: CH or LI, or a region's country (AT), else None (elsewhere, or no border data
+    yet). A point within a metre of the border counts as inside, Switzerland and Liechtenstein first (Pfälzerhütte
+    stands on the Liechtenstein–Austria border)."""
     points = shapely.points(np.asarray(e, dtype=float), np.asarray(n, dtype=float))
     found: list[str | None] = [None] * len(points)
     for code, shape in borders().items():
         for i in np.flatnonzero(shapely.dwithin(shape, points, ON_BORDER_M)):
-            found[i] = code
+            if code in COUNTRIES or found[i] is None:
+                found[i] = code
     return found
 
 
@@ -89,13 +103,13 @@ def tag_places(conn: sqlite3.Connection) -> dict[str, int]:
     with conn:
         conn.executemany("UPDATE place SET country = ? WHERE id = ?",
                          [(code, r["id"]) for r, code in zip(rows, codes) if code])
-    return {code: codes.count(code) for code in COUNTRIES}
+    return {code: codes.count(code) for code in borders() if code in COUNTRIES or code in codes}
 
 
 def outside(latlon: list[tuple[float, float]], code: str = "CH", tolerance_m: float = 50.0) -> list[str]:
-    """Where a route line of (lat, lon) points leaves the country: the other countries it passes through (`LI`, or
-    `abroad` for anywhere else), in order of first visit. Points within `tolerance_m` of the border count as inside.
-    Empty without border data."""
+    """Where a route line of (lat, lon) points leaves the country: the other countries it passes through (`LI`, `AT`
+    once its border is extracted, or `abroad` for anywhere else), in order of first visit. Points within
+    `tolerance_m` of the border count as inside. Empty without border data."""
     shapes = borders()
     if code not in shapes or not len(latlon):
         return []

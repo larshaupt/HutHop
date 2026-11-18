@@ -23,7 +23,19 @@ import httpx
 
 from app.clients import USER_AGENT
 from app.db import ROOT, connect
-from app.ingest import build_edges, countries, footprints, load_stops, load_timetable, osm_access, sync_sac
+from app.ingest import (
+    at_transit,
+    build_edges,
+    countries,
+    footprints,
+    load_stops,
+    load_timetable,
+    osm_access,
+    osm_trails,
+    regions,
+    sync_hrs,
+    sync_sac,
+)
 
 TLM_STAC_ITEMS = "https://data.geo.admin.ch/api/stac/v1/collections/ch.swisstopo.swisstlm3d-wanderwege/items"
 TLM_DIR = ROOT / "data/tlm"
@@ -64,12 +76,28 @@ def run(skip_huts: bool = False, skip_stops: bool = False, skip_timetable: bool 
     conn = connect()
     report: dict = {"started_at": datetime.now(UTC).isoformat(timespec="seconds")}
 
+    # Borders of Switzerland and Liechtenstein (when swisstopo publishes new ones) and the areas of the regions
+    # abroad: which huts and stops each source contributes depends on them.
+    countries.download()
+    regions.download_polygons()
     if not skip_huts:
         report["huts"] = sync_sac.sync(conn, sync_sac.fetch_and_save())
+        report["hrs_huts"] = sync_hrs.sync(conn)  # huts abroad (Austria) from hut-reservation.org
+    if not skip_timetable:
+        # Austrian timetables need an account (MVO_USERNAME, MVO_PASSWORD); skipped without one. A failed login
+        # must not stop the Swiss data from refreshing.
+        try:
+            report["at_timetable_updated"] = at_transit.download()
+        except Exception as e:  # noqa: BLE001
+            report["at_timetable_error"] = str(e)
+            print(f"austrian timetables: {e}")
     if not skip_stops:
         load_stops.download()
         report["stops"] = load_stops.load(conn, load_stops.read_stops())
-    countries.download()  # borders of Switzerland and Liechtenstein, when swisstopo publishes new ones
+        report["at_stops"] = load_stops.load(conn, at_transit.read_stops())
+    if not skip_trails:
+        # OpenStreetMap trails of the regions abroad (Geofabrik, about monthly); also their country borders
+        report["osm_trails_updated"] = osm_trails.refresh()
     report["countries"] = countries.tag_places(conn)
     if not skip_timetable:
         # Loaded every time (~30 s, from the local file) so new stops get their lines too.
@@ -85,7 +113,8 @@ def run(skip_huts: bool = False, skip_stops: bool = False, skip_timetable: bool 
     state = {"huts": positions_fingerprint(conn, "hut"), "stops": positions_fingerprint(conn, "stop"),
              "lines": load_timetable.lines_fingerprint(conn),
              "trails": TLM_EDITION.read_text() if TLM_EDITION.exists() else None,
-             "osm": hashlib.sha256(osm_access.FILE.read_bytes()).hexdigest() if osm_access.FILE.exists() else None}
+             "osm": hashlib.sha256(osm_access.FILE.read_bytes()).hexdigest() if osm_access.FILE.exists() else None,
+             "osm_trails": json.dumps(e, sort_keys=True) if (e := osm_trails.editions()) else None}
     built = json.loads(BUILT.read_text()) if BUILT.exists() else {}
     report["changed"] = [k for k in state if state[k] != built.get(k)]
     if rebuild or report["changed"]:
