@@ -32,7 +32,12 @@ services:
     image: ghcr.io/larshaupt/huthop:latest
     profiles: [jobs]
     volumes: [../data:/app/data]
-    environment: [PYTHONUNBUFFERED=1]  # progress lines appear as they happen
+    environment:
+      - PYTHONUNBUFFERED=1  # progress lines appear as they happen
+      # Austrian timetables (data.mobilitaetsverbuende.at account): set in server/.env next to this file (not in
+      # git); without them refresh skips the Austrian timetables.
+      - MVO_USERNAME=${MVO_USERNAME:-}
+      - MVO_PASSWORD=${MVO_PASSWORD:-}
     mem_limit: 3g  # a graph build needs ~2 GB; never more, whatever else runs on the VM
     read_only: true
     tmpfs: [/tmp]
