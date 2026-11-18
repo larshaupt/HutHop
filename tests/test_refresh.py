@@ -2,6 +2,7 @@
 
 from datetime import date
 
+import httpx
 import pytest
 
 from app.db import connect
@@ -80,3 +81,12 @@ def test_failed_run_rebuilds_next_time(fake, monkeypatch):
     monkeypatch.setattr(refresh.load_timetable, "download", lambda: False)
     assert refresh.run()["changed"] == ["huts"]
     assert fake.count("build") == 2
+
+
+def test_overpass_down_does_not_stop_the_run(fake, monkeypatch):
+    def overloaded(conn):
+        request = httpx.Request("POST", "https://overpass-api.de/api/interpreter")
+        raise httpx.HTTPStatusError("502 Bad Gateway", request=request, response=httpx.Response(502, request=request))
+    monkeypatch.setattr(refresh.osm_access, "refresh", overloaded)
+    report = refresh.run()
+    assert "502" in report["osm_access_error"] and report["edges"] == 42

@@ -108,7 +108,13 @@ def run(skip_huts: bool = False, skip_stops: bool = False, skip_timetable: bool 
     if not skip_trails:
         report["trails_updated"] = refresh_trails()
     if not skip_osm:
-        report["osm_access"] = osm_access.refresh(conn)
+        # Overpass (the public OpenStreetMap API) is often overloaded: keep the paths of the last run and go on.
+        # The far huts saved with them differ, so the next run fetches them again.
+        try:
+            report["osm_access"] = osm_access.refresh(conn)
+        except httpx.HTTPError as e:
+            report["osm_access_error"] = str(e)
+            print(f"osm access: {e}; keeping the paths of the last run")
 
     # Compared with the last successful build, not the start of this run: a run that failed after a change (e.g. a
     # download error, or the build killed) leaves it for the next run to rebuild.
