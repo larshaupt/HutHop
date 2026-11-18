@@ -85,7 +85,7 @@ def download(force: bool = False, today: date | None = None) -> bool:
     AT_DIR.mkdir(parents=True, exist_ok=True)
     client = httpx.Client(headers={"User-Agent": USER_AGENT}, timeout=300, follow_redirects=True)
     listing = {int(d["id"]): d for d in client.get(LISTING).raise_for_status().json()}
-    token, updated = None, False
+    updated = False
     for dataset, name in DATASETS.items():
         for v in listing.get(dataset, {}).get("activeVersions", []):
             y, version = int(v["year"]), v["dataSetVersion"]["id"]
@@ -96,7 +96,7 @@ def download(force: bool = False, today: date | None = None) -> bool:
             if known == {"version": version} and path(dataset, y).exists() and not force:
                 print(f"austria {dataset} {name} {y}: up to date ({v['dataSetVersion']['file']['originalName']})")
                 continue
-            token = token or _token(client, user, password)
+            token = _token(client, user, password)  # one per file: tokens expire after ~5 minutes
             print(f"austria {dataset} {name} {y}: downloading {v['dataSetVersion']['file']['originalName']}")
             partial = path(dataset, y).with_suffix(".part")
             with client.stream("GET", FILE_URL.format(dataset=dataset, year=y),
