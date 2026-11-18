@@ -102,8 +102,9 @@ def scraped(tmp_path, monkeypatch):
     result = {
         "about_this_hut": True, "phone": "+41 33 222 22 22", "email": "mailto:info@huette.ch", "booking_methods": ["phone"], "booking_url": None,
         "closed_otherwise": None, "winter_room": False, "winter_room_beds": None, "beds": 30,
-        "notes": "Cash only.\x00",
+        "notes": "Cash only.\x00", "notes_de": "Nur Barzahlung.",
         "seasons": [{"kind": "catered", "start": "06-20", "end": "09-30", "year": 2027, "approximate": False,
+                     "note": "Weekends only in June", "note_de": "Im Juni nur am Wochenende",
                      "quote": "Bewartet vom 20. Juni bis 30. September 2027.", "source_url": "https://huette.ch"},
                     {"kind": "catered", "start": "13-01", "end": "09-30", "year": None, "approximate": False,
                      "quote": "?", "source_url": ""}],
@@ -126,7 +127,10 @@ def test_load_extractions(scraped):
     assert status == {2: "ok", 3: "unreachable"}
     price = scraped.execute("SELECT * FROM hut_price").fetchone()
     assert (price["member"], price["non_member"], price["includes_overnight"], price["verified"]) == (35, 45, 0, 1)
-    assert scraped.execute("SELECT notes FROM hut_web WHERE notes IS NOT NULL").fetchone()[0] == "Cash only."
+    assert tuple(scraped.execute("SELECT notes, notes_de FROM hut_web WHERE notes IS NOT NULL").fetchone()) == (
+        "Cash only.", "Nur Barzahlung.")
+    assert tuple(scraped.execute("SELECT note, note_de FROM hut_season").fetchone()) == (
+        "Weekends only in June", "Im Juni nur am Wochenende")
     # Loading again replaces the scraped rows instead of adding to them
     assert scrape_huts.load(scraped)["prices"] == 1
     assert scraped.execute("SELECT count(*) FROM hut_price").fetchone()[0] == 1

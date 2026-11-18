@@ -371,12 +371,16 @@ function formatPrice(p) {
   return `${p.currency} ${main}${reduced ? `<span class="route-meta"> · ${reduced}</span>` : ""}`;
 }
 
+// A text the extraction model wrote in English and German (older extractions: English only)
+const inLanguage = (en, de) => (LANG === "de" && de) || en;
+
 // What the hut website says (read by app/ingest/scrape_huts.py); values may be outdated, so the source is linked.
 function websiteSection(w) {
   if (!w || w.status !== "ok") return "";
+  const notes = inLanguage(w.notes, w.notes_de);
   const seasons = w.seasons.map((s) => {
     const range = `${s.approximate ? `${t("about")} ` : ""}${formatMonthDay(s.start_md)} – ${formatMonthDay(s.end_md)}${s.year ? ` ${s.year}` : ""}`;
-    return `<li><b>${STATUS_LABEL[s.kind]}</b> ${range}${s.verified === 0 ? UNVERIFIED : ""}${s.note ? `<span class="route-meta"> · ${esc(s.note)}</span>` : ""}</li>`;
+    return `<li><b>${STATUS_LABEL[s.kind]}</b> ${range}${s.verified === 0 ? UNVERIFIED : ""}${s.note ? `<span class="route-meta"> · ${esc(inLanguage(s.note, s.note_de))}</span>` : ""}</li>`;
   });
   const prices = w.prices.map((p) => {
     const what = p.item === "half_board" && !p.includes_overnight ? t("Half board (plus night)") : PRICE_LABEL[p.item];
@@ -387,10 +391,10 @@ function websiteSection(w) {
   const priceYear = Math.max(...w.prices.map((p) => p.year || 0));
   let host = w.url;
   try { host = new URL(w.url).hostname.replace(/^www\./, ""); } catch { /* keep the URL */ }
-  if (!seasons.length && !prices.length && !booking && !w.notes) return "";
+  if (!seasons.length && !prices.length && !booking && !notes) return "";
   return `<div class="section website-info"><h3>${t("From the hut website")}</h3>
     ${booking ? `<p>${t("Booking:")} ${booking}${/^https?:\/\//i.test(w.booking_url) ? ` · <a href="${esc(w.booking_url)}" target="_blank" rel="noopener">${t("booking page")}</a>` : ""}</p>` : ""}
-    ${w.notes ? `<p>${esc(w.notes)}</p>` : ""}
+    ${notes ? `<p>${esc(notes)}</p>` : ""}
     ${seasons.length ? `<ul class="web-seasons">${seasons.join("")}</ul>` : ""}
     ${prices.length ? `<table class="prices"><caption>${t("Prices per person and night")}${priceYear ? ` (${priceYear})` : ""}</caption>${prices.join("")}</table>` : ""}
     <p class="hint">${t("Read from {site} by AI on {date}; may be outdated or wrong. Check there before you go.", {

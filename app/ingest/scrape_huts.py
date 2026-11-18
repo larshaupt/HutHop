@@ -35,10 +35,11 @@ MAX_PDFS = 3
 WORKERS = 8
 # Words in a link's URL or text that point to useful pages (de, fr, it, en), with a weight.
 LINK_WORDS = {
-    3: ("preis", "tarif", "prix", "prezz", "price", "kosten", "taxe", "öffnung", "oeffnung", "offnung",
-        "ouverture", "apertura", "opening", "saison", "season", "stagion", "reserv", "prenot", "buchen", "booking"),
+    3: ("preis", "tarif", "prix", "prezz", "listino", "price", "kosten", "taxe", "öffnung", "oeffnung", "offnung",
+        "ouverture", "apertura", "orari", "opening", "saison", "season", "stagion", "reserv", "prenot", "buchen",
+        "booking"),
     2: ("bewart", "gardienn", "custod", "winterraum", "local-d-hiver", "locale-invernale", "übernacht",
-        "uebernacht", "nuitée", "pernott", "kontakt", "contact", "contatt", "info"),
+        "uebernacht", "nuitée", "pernott", "chiusura", "kontakt", "contact", "contatt", "info"),
     1: ("hütte", "huette", "hutte", "cabane", "capanna", "rifugio", "hut", "unterkunft", "angebot", "allgemein"),
 }
 SKIP_LINK = re.compile(r"\.(jpe?g|png|gif|webp|svg|zip|docx?|xlsx?|mp4|ics)(\?|$)|/(wp-content/uploads/.*\.(?!pdf))"
@@ -182,7 +183,7 @@ EXTRACT_SCHEMA = {
         "seasons": {"type": "ARRAY", "items": {"type": "OBJECT", "properties": {
             "kind": {"type": "STRING", "enum": ["catered", "self_service", "closed"]},
             "start": {"type": "STRING"}, "end": {"type": "STRING"}, "year": _INT,
-            "approximate": {"type": "BOOLEAN"}, "note": _STR, "quote": {"type": "STRING"},
+            "approximate": {"type": "BOOLEAN"}, "note": _STR, "note_de": _STR, "quote": {"type": "STRING"},
             "source_url": {"type": "STRING"}},
             "required": ["kind", "start", "end", "year", "approximate", "quote", "source_url"]}},
         "closed_otherwise": _BOOL,
@@ -198,12 +199,15 @@ EXTRACT_SCHEMA = {
             "required": ["item", "label", "includes_overnight", "member", "non_member", "currency", "year",
                          "quote", "source_url"]}},
         "notes": _STR,
+        "notes_de": _STR,
     },
     "required": ["about_this_hut", "phone", "email", "booking_methods", "booking_url", "seasons", "closed_otherwise",
-                 "winter_room", "winter_room_beds", "beds", "prices", "notes"],
+                 "winter_room", "winter_room_beds", "beds", "prices", "notes", "notes_de"],
 }
 PROMPT = """You extract facts about one mountain hut from its website, for a hut-to-hut hiking planner.
 Use only what the pages below (and attached PDFs) say. Never guess; use null or an empty list when not stated.
+The pages may be in German, French, Italian, English or several of these; read them all. The texts you write
+yourself (notes, note) are shown to hikers in English and German: give each in both, the same facts in each.
 Today is {today}.
 
 Hut: {name} ({ident}), {altitude} m. Website: {website}
@@ -211,7 +215,7 @@ Hut: {name} ({ident}), {altitude} m. Website: {website}
 Fields:
 - about_this_hut: false if the pages are not about this hut (dead page, generic tourism or club site without
   details on this hut). Then leave everything else empty.
-- phone: number to call the hut or its reservations, in international format (+41 …). Prefer the hut / reservation
+- phone: number to call the hut or its reservations, in international format (+41 …, +43 …, +39 …). Prefer the hut / reservation
   number over a private or club office number.
 - email: address to write to the hut or its reservations (same preference as phone).
 - booking_methods: how to reserve a night (hut_reservation_org = hut-reservation.org; online_other = any other
@@ -220,7 +224,8 @@ Fields:
   "self_service" = unstaffed but usable (winter room, Winterraum, local d'hiver, locale invernale, self-catering).
   start/end as MM-DD. year: the year the dates are for, or null if stated as every year. approximate: true for
   vague dates ("mid June", "Ende September", "depending on snow"; use the 15th / last day of the month).
-  Weekend-only service: kind "catered" with a note. quote: the sentence it comes from, verbatim.
+  Weekend-only service: kind "catered" with a note (note in English, note_de the same in German). quote: the
+  sentence it comes from, verbatim, in the page's language.
   Only the most recent year's dates if several years are listed. Don't add a season for "on request" only.
   Give the whole season even if part of it is over ("open until 15 November" in a season that started in June:
   use the published start, or the 1st of the month with approximate true if none).
@@ -239,6 +244,7 @@ Fields:
   prices only for local residents or for members of one particular club section.
 - notes: up to 2 short sentences in English with practical facts a hiker must know before booking
   (e.g. reservation compulsory, cash only, no showers, dogs not allowed). null if nothing notable.
+- notes_de: the same notes in German (Swiss spelling: ss, not ß), or null when notes is null.
 
 Pages:
 {pages}
@@ -357,11 +363,11 @@ def load(conn: sqlite3.Connection) -> dict:
             conn.execute("DELETE FROM hut_price WHERE hut_id = ? AND source = 'scraped'", (hut_id,))
             conn.execute(
                 "INSERT OR REPLACE INTO hut_web (hut_id, url, status, phone, email, booking_methods, booking_url, "
-                "closed_otherwise, winter_room, winter_room_beds, beds, notes, fetched_at, extracted_at, model) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "closed_otherwise, winter_room, winter_room_beds, beds, notes, notes_de, fetched_at, extracted_at, "
+                "model) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (hut_id, raw["website"], status, r.get("phone"), _email(r.get("email")), json.dumps(r.get("booking_methods") or []),
                  r.get("booking_url"), r.get("closed_otherwise"), r.get("winter_room"), r.get("winter_room_beds"),
-                 r.get("beds"), _clean(r.get("notes")), raw["fetched_at"], out["extracted_at"], out["info"].get("model")))
+                 r.get("beds"), _clean(r.get("notes")), _clean(r.get("notes_de")), raw["fetched_at"], out["extracted_at"], out["info"].get("model")))
             for s in r.get("seasons") or []:
                 start, end = _month_day(s.get("start")), _month_day(s.get("end"))
                 if not start or not end or s.get("kind") not in ("catered", "self_service", "closed") \
@@ -369,9 +375,10 @@ def load(conn: sqlite3.Connection) -> dict:
                     counts["skipped_values"] += 1
                     continue
                 conn.execute("INSERT INTO hut_season (hut_id, kind, start_md, end_md, year, approximate, note, "
-                             "source, source_url, quote, verified) VALUES (?, ?, ?, ?, ?, ?, ?, 'scraped', ?, ?, ?)",
+                             "note_de, source, source_url, quote, verified) "
+                             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'scraped', ?, ?, ?)",
                              (hut_id, s["kind"], start, end, s.get("year"), bool(s.get("approximate")),
-                              _clean(s.get("note")), s.get("source_url"), _clean(s.get("quote")),
+                              _clean(s.get("note")), _clean(s.get("note_de")), s.get("source_url"), _clean(s.get("quote")),
                               quoted(s.get("quote"))))
                 counts["seasons"] += 1
             for p in r.get("prices") or []:
