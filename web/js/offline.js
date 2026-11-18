@@ -1,6 +1,6 @@
 // Offline use: registers the service worker (sw.js) and saves the tours in "My tours" for use without a connection.
 // A kept tour is saved when it is opened or added: its JSON (with the height profiles), its huts' details and the
-// topographic map along its route (swisstopo's tiles, and basemap.at's or OpenTopoMap's past the border), in a cache of
+// topographic map along its route (swisstopo's tiles, and TopPlusOpen's past the border), in a cache of
 // its own that sw.js answers from offline. Removing the tour from "My tours" deletes it.
 import { $, decodePolyline } from "./util.js";
 import { LOCALE, t as tr } from "./i18n.js";  // t is a tour here
@@ -81,7 +81,7 @@ export async function saveTourOffline(t) {
     const { urls, zoom } = tourTiles(t);
     let done = 0, failed = 0, next = 0;
     // Each tile as the map puts it together, keeping what it fetches (only what this tour hasn't stored yet; a source
-    // without that tile, such as basemap.at outside Austria, isn't kept). A few at a time.
+    // without that tile isn't kept). A few at a time.
     const get = async (url) => {
       const saved = await cache.match(url, { ignoreVary: true });
       if (saved) return saved;
