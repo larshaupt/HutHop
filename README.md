@@ -34,6 +34,8 @@ uv run playwright install chromium        # once: the browser for the mobile tes
 only when swisstopo publishes one, and rebuilds the route graph only when hut/stop positions or trails changed
 (`--rebuild` forces it). Each run is logged to `data/refresh_log.json`. Run it weekly during the season.
 `sync_sac --from-file data/raw/sac/huts.json` re-imports the last saved API response without fetching.
+Huts in Austria come from hut-reservation.org (`sync_hrs`: hut info found by probing ids, opening months from each
+hut's booking calendar, responses kept in `data/raw/hrs/`; `--offline` re-imports them without fetching).
 
 Deployment (Oracle VM, Cloudflare tunnel and Access), backups and the data workflow: see [`docs/deployment.md`](docs/deployment.md).
 Changing data needs the admin password once one is set (`python -m app.admin set-password`); on the server,
@@ -59,6 +61,13 @@ the Open-Meteo elevation API (Copernicus DEM, ~90 m; the free tier's rate limit 
 The build adds these as trail category 4, "unofficial path", which the planner only uses with "Hardest trail:
 Unofficial" in the settings. They are fetched again only when the set of far huts changes (`--force` to refetch); a
 hut that only became far in this run gets its path at the next one.
+Outside Switzerland and Liechtenstein (Austria, `app/ingest/regions.py`), the trails come from OpenStreetMap:
+`osm_trails` downloads the Geofabrik extract (about 800 MB, again after 30 days) into `data/osm/` and extracts the
+hiking network into `data/osm/trails_at.gpkg` (signposted: ways in hiking routes and paths with a `sac_scale`,
+and tracks and minor roads within 1 km of a hut; other paths as category 4) and Austria's border into
+`data/osm/border_at.json`. Heights come from the Copernicus DEM GLO-30 (`dem`, tiles cached in `data/dem/`).
+`build_edges` uses them instead of swissTLM3D within the extract's area and joins both networks at the border.
+Without the trail file, it builds on swissTLM3D alone.
 On the server, `server/refresh.sh` does the same in a one-off container (see the deployment doc). Edges without a stored
 footprint (grid cells and shape samples for the tour search) get one with `python -m app.ingest.footprints`, which
 `refresh` also runs.
@@ -71,8 +80,10 @@ Other commands: `python -m app.backup` (dated copy in `data/backups/`, keeps 14)
 ## Contributing
 
 No secrets or accounts are needed to run HutHop locally: `refresh` fetches all data from public sources, and
-locally no admin password is required. Only `python -m app.ingest.scrape_huts` (prices and season dates from
-the hut websites) needs Gemini on Vertex AI via your own `gcloud` login and project (`GEMINI_PROJECT`).
+locally no admin password is required. Austrian timetables (`at_transit`, GTFS from Mobilitätsverbünde
+Österreich, free licence) need a free account at user.mobilitaetsverbuende.at in `MVO_USERNAME` and `MVO_PASSWORD`;
+without it they are skipped and only Switzerland and Liechtenstein have stops and timetables. Only
+`python -m app.ingest.scrape_huts` (prices and season dates from the hut websites) needs Gemini on Vertex AI via your own `gcloud` login and project (`GEMINI_PROJECT`).
 
 Work on a branch and open a pull request against `main`. CI runs `uv run ruff check .` and `uv run pytest -q` on
 every pull request (including the mobile browser tests, with screenshots of failures as a build artifact);
@@ -95,7 +106,7 @@ app/
              (overrides, added huts), tours (/suggest, /{id}, /{id}/gpx (?day=N for one day), /{id}/warnings, /{id}/options for the editor, /huts/{id}/tour, /stops),
              info (About dialog), feedback (sent from the app; reading it needs the admin password)
   db/        schema.sql (tables, views, change-counter triggers) and connect() (migrations, WAL)
-  ingest/    offline jobs: refresh, sync_sac, load_stops, load_timetable, osm_access, build_edges, footprints,
+  ingest/    offline jobs: refresh, sync_sac, sync_hrs (huts abroad from hut-reservation.org), load_stops, load_timetable, osm_access, build_edges, footprints,
              countries (borders of Switzerland and Liechtenstein), scrape_huts (prices, season dates and booking
              from the hut websites)
   planner/   graph (model, loading, cache), tours (beam search, scoring, rebuilding, diversity),
@@ -123,4 +134,4 @@ tests/
 
 The code is open source under the [MIT licence](LICENSE). The licence covers the code only, not the data it loads.
 
-No data is in this repository: the app fetches it from its sources into a local database (`data/`, not in git). The hosted app is for private, non-commercial use, behind a login; opening it to the public is planned, but only once SAC has given its written consent. Hut data comes from the SAC (© sac-cas.ch) and must not be redistributed: if you run your own copy, keep it private too. Maps and trail data © swisstopo. Unofficial paths © OpenStreetMap contributors (ODbL). Suggested tours are planning aids: always check difficulty, conditions, weather and official sources before you go.
+No data is in this repository: the app fetches it from its sources into a local database (`data/`, not in git). The hosted app is for private, non-commercial use, behind a login; opening it to the public is planned, but only once SAC has given its written consent. Hut data comes from the SAC (© sac-cas.ch) and must not be redistributed: if you run your own copy, keep it private too. Maps and trail data © swisstopo; outside Switzerland and Liechtenstein the map shows basemap.at (CC BY 4.0) in Austria, OpenTopoMap (CC BY-SA) elsewhere and Waymarked Trails' hiking routes (CC BY-SA), cut at the border (`web/js/map.js`). Unofficial paths © OpenStreetMap contributors (ODbL). Suggested tours are planning aids: always check difficulty, conditions, weather and official sources before you go.

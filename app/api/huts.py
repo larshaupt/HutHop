@@ -110,11 +110,12 @@ def hut_availability(hut_id: int, people: int = Query(2, ge=1, le=30), conn: sql
 
 @router.get("/{hut_id}/weather")
 def hut_weather(hut_id: int, conn: sqlite3.Connection = Depends(get_db)) -> dict:
-    """MeteoSwiss forecast for the next days at the hut's position and altitude (clients/weather.py)."""
+    """Forecast for the next days at the hut's position and altitude: MeteoSwiss, or DWD where MeteoSwiss's model
+    doesn't reach (clients/weather.py)."""
     row = conn.execute("SELECT lat, lon, altitude_m FROM hut_effective WHERE id = ?", (hut_id,)).fetchone()
     if not row:
         raise HTTPException(404, "hut not found")
     try:
-        return {"days": weather.forecast(row["lat"], row["lon"], row["altitude_m"]), "error": False}
+        return {**weather.forecast(row["lat"], row["lon"], row["altitude_m"]), "error": False}
     except Exception:  # network and HTTP errors, unexpected JSON: the app just shows no forecast
         return {"days": [], "error": True}

@@ -9,6 +9,8 @@ All flat at 1000 m, so times follow the flat pace of 4.2 km/h (14.271 min/km).
 
 import numpy as np
 import pytest
+import shapely
+from scipy.sparse.csgraph import dijkstra
 
 from app.ingest.build_edges import network_from_lines, search, snap, store
 from app.planner import hiking_time, polyline
@@ -178,3 +180,53 @@ def test_exclusion_kept_when_its_limit_variant_is_gone(network, places, tmp_path
     rows = conn.execute("SELECT category_limit, excluded, note FROM edge WHERE from_place = 1 AND to_place = 2")
     assert [tuple(r) for r in rows] == [(1, 1, "path closed")]
     assert not conn.execute("SELECT 1 FROM edge WHERE from_place = 2 AND to_place = 1 AND excluded = 1").fetchone()
+
+
+def test_osm_trails_replace_tlm_abroad_and_are_stitched_at_the_border():
+    """A Swiss trail running east across the border at E 2 610 000 and an OpenStreetMap trail abroad that ends 20 m
+    off it: the Swiss trail is cut at the border, and a connector joins the two."""
+    from app.ingest.build_edges import merge_osm
+
+    abroad = shapely.box(2_610_000, 1_190_000, 2_630_000, 1_210_000)
+    tlm = [line((2_605_000, 1_200_000), (2_608_000, 1_200_000), (2_615_000, 1_200_000)),  # crosses into the region
+           line((2_620_000, 1_205_000), (2_625_000, 1_205_000))]   # wholly abroad: dropped
+    osm = [line((2_610_000, 1_200_020), (2_612_000, 1_200_020)),   # starts at the border, 20 m north
+           line((2_610_000, 1_203_000), (2_611_000, 1_203_000))]   # no Swiss trail within 50 m
+    lines, categories = merge_osm(tlm, [1, 1], osm, [2, 4], abroad)
+    assert len(lines) == 4 and categories == [1, 2, 4, 2]
+    assert lines[0][-1].tolist() == [2_610_000, 1_200_000, 1000]  # cut at the border
+    assert lines[3].tolist() == [[2_610_000, 1_200_000, 1000], [2_610_000, 1_200_020, 1000]]  # the connector
+    network = network_from_lines(lines, categories)
+    nodes, _ = snap(network, np.array([(2_605_000, 1_200_000), (2_612_000, 1_200_020)]))
+    dist = dijkstra(network.edges[2].graph, indices=nodes[0])
+    assert dist[nodes[1]] == pytest.approx((5000 + 20 + 2000) * hiking_time.FLAT_MIN_PER_KM / 1000, abs=0.1)
+    assert np.isinf(dijkstra(network.edges[1].graph, indices=nodes[0])[nodes[1]])  # red-white beyond the border
+
+
+def test_stitch_joins_nodes_on_the_border():
+    """Ends and junctions on the border (x = 0) are joined to the other network's nearest node within 50 m."""
+    from app.ingest.build_edges import stitch
+
+    border = shapely.LineString([(0, -1000), (0, 1000)])
+    swiss = [line((-500, 0), (0, 0)),
+             line((-500, 100), (0, 100)), line((0, 100), (-300, 400)),  # a junction on the border (Bettlerjoch)
+             line((-500, 300), (-10, 300)),  # ends 10 m before the border: not on it
+             line((-500, 500), (0, 500))]  # the other network has a node at the same point already
+    other = [line((0, 30), (500, 30)),  # 30 m along the border from the Swiss end
+             line((3, 104), (500, 104)), line((3, 104), (300, 400)),  # its junction, 5 m from the Swiss one
+             line((2, 300), (500, 300)),
+             line((0.2, 500), (500, 500)),
+             line((0, -60), (500, -60))]  # 60 m from the nearest Swiss node: too far
+    connectors, categories = stitch(swiss, [2, 1, 3, 1, 1], other, [3, 2, 1, 1, 1, 1], border)
+    assert [c[:, :2].tolist() for c in connectors] == [[[0, 0], [0, 30]], [[0, 100], [3, 104]]]
+    assert categories == [3, 1]  # the harder of the two ends; at a junction, the easiest trail there
+
+
+def test_without_osm_trails_the_network_is_swisstlm3d_only(monkeypatch):
+    from app.ingest import build_edges
+
+    monkeypatch.setattr(build_edges.osm_trails, "load", lambda: ([], [], None))
+    monkeypatch.setattr(build_edges.osm_trails, "read_lines", lambda *a, **k: (
+        [line(A, J), line(J, B)], np.array(["Wanderweg", "x"])))
+    network = build_edges.load_network()
+    assert len(network.lines) == 2 and len(network.node_xy) == 3

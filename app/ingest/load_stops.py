@@ -62,18 +62,23 @@ def read_stops() -> list[dict]:
 
 
 def load(conn: sqlite3.Connection, stops: list[dict]) -> int:
-    existing = dict(conn.execute("SELECT uic, place_id FROM stop").fetchall())
+    """Upsert stops by their key: `uic`, or `ref` for stops without one (Austria, at_transit.py, which also gives
+    their `country`)."""
+    existing = dict(conn.execute("SELECT coalesce(uic, ref), place_id FROM stop").fetchall())
     with conn:
         for s in stops:
-            place = {k: s[k] for k in ("name", "e_lv95", "n_lv95", "lat", "lon")}
-            if s["uic"] in existing:
-                conn.execute("UPDATE place SET name = :name, e_lv95 = :e_lv95, n_lv95 = :n_lv95, lat = :lat, lon = :lon "
-                             "WHERE id = :id", place | {"id": existing[s["uic"]]})
-                conn.execute("UPDATE stop SET mode = ? WHERE uic = ?", (s["mode"], s["uic"]))
+            key = s.get("uic") or s["ref"]
+            place = {k: s[k] for k in ("name", "e_lv95", "n_lv95", "lat", "lon")} | {"country": s.get("country")}
+            if key in existing:
+                conn.execute("UPDATE place SET name = :name, e_lv95 = :e_lv95, n_lv95 = :n_lv95, lat = :lat, lon = :lon, "
+                             "country = coalesce(:country, country) WHERE id = :id", place | {"id": existing[key]})
+                conn.execute("UPDATE stop SET mode = ? WHERE place_id = ?", (s["mode"], existing[key]))
             else:
-                place_id = conn.execute("INSERT INTO place (kind, name, e_lv95, n_lv95, lat, lon) "
-                                        "VALUES ('stop', :name, :e_lv95, :n_lv95, :lat, :lon)", place).lastrowid
-                conn.execute("INSERT INTO stop (place_id, uic, mode) VALUES (?, ?, ?)", (place_id, s["uic"], s["mode"]))
+                place_id = conn.execute("INSERT INTO place (kind, name, e_lv95, n_lv95, lat, lon, country) "
+                                        "VALUES ('stop', :name, :e_lv95, :n_lv95, :lat, :lon, :country)",
+                                        place).lastrowid
+                conn.execute("INSERT INTO stop (place_id, uic, ref, mode) VALUES (?, ?, ?, ?)",
+                             (place_id, s.get("uic"), s.get("ref"), s["mode"]))
     return len(stops)
 
 

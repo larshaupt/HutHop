@@ -54,7 +54,17 @@ async function openAbout() {
         <li>${t("Unofficial paths to huts away from the signposted trails:")} © <a href="https://www.openstreetmap.org/copyright"
           target="_blank" rel="noopener">OpenStreetMap</a> ${t("contributors (ODbL); their heights: Copernicus DEM via")}
           <a href="https://open-meteo.com" target="_blank" rel="noopener">Open-Meteo</a>.</li>
-        <li>${t("Public transport stops: Federal Office of Transport (BAV), via data.geo.admin.ch.")}</li>
+        <li>${t("Maps outside Switzerland:")} ${t("Data source:")} <a href="https://basemap.at" target="_blank" rel="noopener">basemap.at</a>
+          (CC BY 4.0, ${t("Austria")}); ${t("elsewhere")} © <a href="https://opentopomap.org" target="_blank" rel="noopener">OpenTopoMap</a>
+          (CC BY-SA), ${t("map data © OpenStreetMap contributors, SRTM")}.</li>
+        <li>${t("Trails in Austria:")} © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a>
+          ${t("contributors (ODbL); on the map the signposted routes of")} <a href="https://waymarkedtrails.org" target="_blank"
+          rel="noopener">Waymarked Trails</a> (CC BY-SA). ${t("Heights of trails and paths outside swisstopo's data: Copernicus DEM, © DLR e.V. 2010-2014 and © Airbus Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA.")}</li>
+        <li>${t("Huts in Austria and their opening months:")} <a href="https://www.hut-reservation.org" target="_blank" rel="noopener">hut-reservation.org</a>.</li>
+        <li>${t("Public transport stops: Federal Office of Transport (BAV), via data.geo.admin.ch.")}
+          ${t("Timetables in Austria:")} <a href="https://data.mobilitaetsverbuende.at" target="_blank" rel="noopener">Mobilitätsverbünde Österreich</a>.</li>
+        <li>${t("Weather: MeteoSwiss (ICON-CH2), on Austria's eastern edge DWD (ICON), via")} <a href="https://open-meteo.com"
+          target="_blank" rel="noopener">Open-Meteo</a>.</li>
         <li>${t("Free beds:")} <a href="https://www.hut-reservation.org" target="_blank" rel="noopener">hut-reservation.org</a>.
           ${t("HutHop only reads availability; book there or with the hut.")}</li>
       </ul>

@@ -1,5 +1,5 @@
-// Short-term weather at a hut (MeteoSwiss forecast via /api/huts/{id}/weather, about 5 days): in the hut details,
-// and per day in the tour view.
+// Short-term weather at a hut (MeteoSwiss forecast via /api/huts/{id}/weather, about 5 days; DWD's where MeteoSwiss's
+// model doesn't reach, on Austria's eastern edge): in the hut details, and per day in the tour view.
 import { esc } from "./util.js";
 import { LOCALE, t } from "./i18n.js";
 
@@ -44,6 +44,9 @@ export async function loadWeather(id, el) {
       <span class="wx-icon" aria-label="${words}">${icon}</span><b>${Math.round(d.temperature_2m_max)}°</b>
       <small>${Math.round(d.temperature_2m_min)}°${d.precipitation_sum >= 0.5 ? ` · ${Math.round(d.precipitation_sum)} mm` : ""}</small></div>`;
   }).join("")}</div>
-    <p class="hint">${t("MeteoSwiss forecast at the hut's altitude (via Open-Meteo). Mountain weather changes fast: check {meteoswiss} before you go.", {
+    <p class="hint">${data.source === "dwd"
+    ? t("DWD forecast at the hut's altitude (via Open-Meteo; MeteoSwiss's model doesn't reach this far east). Mountain weather changes fast: check {geosphere} before you go.", {
+      geosphere: '<a href="https://www.geosphere.at" target="_blank" rel="noopener">GeoSphere Austria</a>' })
+    : t("MeteoSwiss forecast at the hut's altitude (via Open-Meteo). Mountain weather changes fast: check {meteoswiss} before you go.", {
       meteoswiss: '<a href="https://www.meteoswiss.admin.ch" target="_blank" rel="noopener">MeteoSwiss</a>' })}</p>`;
 }

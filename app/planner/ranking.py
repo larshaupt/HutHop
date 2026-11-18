@@ -12,7 +12,8 @@ METRIC_INFO = {  # key: (label, what scores 1)
     "fresh": ("New trail", "No stretch of trail is walked twice (more than half walked twice scores 0)."),
     "shape": ("Shape", "The tour goes from A to B or makes a real loop, instead of out and back or zig-zag."),
     "beds": ("Free beds", "Free beds confirmed on hut-reservation.org for every night (unknown counts half)."),
-    "certainty": ("Opening data", "The SAC lists every night's hut as open for the whole month."),
+    "certainty": ("Opening data", "The opening data (SAC, or the booking calendar of huts abroad) lists every night's "
+                                  "hut as open for the whole month."),
     "even": ("Even days", "All days between huts take about the same time (the first and last day count for "
                           "short approach)."),
     "ease": ("Easy trails", "Only yellow hiking trails (red-white counts half, blue-white zero)."),
