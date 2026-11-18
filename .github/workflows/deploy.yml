@@ -37,8 +37,29 @@ jobs:
           name: test-results
           path: test-results/
 
+  # The tests run on the runner, which has system libraries the image may lack (osmium needed libexpat1, and refresh
+  # failed on the server). So the image is built and the app's and refresh's modules imported in it, also for PRs.
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64  # arm64 (emulated) only when publishing: same Dockerfile and packages
+          load: true
+          tags: huthop:smoke
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Smoke test
+        run: docker run --rm huthop:smoke python -c "import app.main, app.ingest.refresh"
+
   publish:
-    needs: test
+    needs: [test, image]
     if: github.event_name != 'pull_request'  # PRs are tested, never published
     runs-on: ubuntu-latest
     permissions:
