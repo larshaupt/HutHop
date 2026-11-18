@@ -49,7 +49,7 @@ def website_info(conn: sqlite3.Connection, hut_id: int) -> dict | None:
     web = conn.execute("SELECT * FROM hut_web WHERE hut_id = ?", (hut_id,)).fetchone()
     if not web:
         return None
-    seasons = conn.execute("SELECT kind, start_md, end_md, year, approximate, note, source_url, quote, verified "
+    seasons = conn.execute("SELECT kind, start_md, end_md, year, approximate, note, note_de, source_url, quote, verified "
                            "FROM hut_season WHERE hut_id = ? ORDER BY kind = 'closed', year, start_md", (hut_id,))
     prices = conn.execute("SELECT item, label, includes_overnight, member, non_member, youth, child, currency, year, "
                           "source, source_url, quote, verified FROM hut_price WHERE hut_id = ? ORDER BY rowid",
@@ -61,6 +61,7 @@ def website_info(conn: sqlite3.Connection, hut_id: int) -> dict | None:
         "booking_url": web["booking_url"],
         "winter_room": None if web["winter_room"] is None else bool(web["winter_room"]),
         "notes": web["notes"],
+        "notes_de": web["notes_de"],
         "checked_at": web["extracted_at"],
         "seasons": [dict(r) for r in seasons],
         "prices": [dict(r) for r in prices],

@@ -76,7 +76,8 @@ CREATE TABLE IF NOT EXISTS hut_season (
   end_md      TEXT NOT NULL,          -- 'MM-DD' (inclusive; earlier than start_md = over New Year)
   year        INTEGER,                -- year the dates were published for (NULL = every year)
   approximate INTEGER NOT NULL DEFAULT 0,   -- vague dates ("mid June", "depending on snow")
-  note        TEXT,
+  note        TEXT,                   -- in English; note_de the same in German (written by the extraction model)
+  note_de     TEXT,
   source      TEXT NOT NULL,          -- 'scraped'
   source_url  TEXT,
   quote       TEXT,
@@ -98,6 +99,7 @@ CREATE TABLE IF NOT EXISTS hut_web (
   winter_room_beds INTEGER,
   beds             INTEGER,
   notes            TEXT,              -- practical facts in English, written by the extraction model
+  notes_de         TEXT,              -- the same in German
   fetched_at       TEXT,
   extracted_at     TEXT,
   model            TEXT
