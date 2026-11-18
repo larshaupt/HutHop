@@ -35,6 +35,7 @@ from app.ingest import (
     regions,
     sync_hrs,
     sync_sac,
+    trail_map,
 )
 
 TLM_STAC_ITEMS = "https://data.geo.admin.ch/api/stac/v1/collections/ch.swisstopo.swisstlm3d-wanderwege/items"
@@ -98,6 +99,7 @@ def run(skip_huts: bool = False, skip_stops: bool = False, skip_timetable: bool 
     if not skip_trails:
         # OpenStreetMap trails of the regions abroad (Geofabrik, about monthly); also their country borders
         report["osm_trails_updated"] = osm_trails.refresh()
+        report["trail_map_updated"] = trail_map.refresh()  # the map's trail overlay abroad, from the trail files
     report["countries"] = countries.tag_places(conn)
     if not skip_timetable:
         # Loaded every time (~30 s, from the local file) so new stops get their lines too.
