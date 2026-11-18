@@ -336,7 +336,6 @@ def extract(code: str) -> dict[int, float]:
 
     countries.region_border_path(code).write_text(json.dumps(
         {"source": pbf_path(code).name, "crs": "EPSG:2056", "countries": {code: shapely.to_geojson(border)}}))
-    countries.borders.cache_clear()
     km = {c: round(float(km[c])) for c in range(1, UNOFFICIAL + 1)}
     print(f"osm_trails {code}: {n_lines:,} lines outside CH/LI, km per category {km}, border "
           f"{border.area / 1e6:,.0f} km² ({time.time() - started:.0f} s)", flush=True)

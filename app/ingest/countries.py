@@ -13,7 +13,7 @@ import io
 import json
 import sqlite3
 import zipfile
-from functools import cache
+from functools import lru_cache
 
 import httpx
 import numpy as np
@@ -55,7 +55,6 @@ def download() -> bool:
             shapes[code] = shapely.to_geojson(shapely.simplify(shape, SIMPLIFY_M))
     FILE.write_text(json.dumps({"href": href, "crs": "EPSG:2056", "countries": shapes}))
     path.unlink()
-    borders.cache_clear()
     return True
 
 
@@ -65,10 +64,21 @@ def region_border_path(code: str):
     return FILE.parent / "osm" / f"border_{code.lower()}.json"
 
 
-@cache
+def edition() -> tuple:
+    """What the borders are read from: each file's path and modification time. The web app runs for weeks while
+    refresh rewrites these files, so the cached borders follow it instead of keeping what they were at start-up."""
+    paths = [FILE] + [region_border_path(code) for code in regions.REGIONS]
+    return tuple((str(p), p.stat().st_mtime_ns) for p in paths if p.exists())
+
+
 def borders() -> dict[str, shapely.Geometry]:
     """Country code → area (LV95), prepared for fast point tests: Switzerland and Liechtenstein, then the regions'
     countries (e.g. AT) whose border osm_trails has extracted; empty before the first download."""
+    return _borders(edition())
+
+
+@lru_cache(maxsize=1)
+def _borders(stamp: tuple) -> dict[str, shapely.Geometry]:
     if not FILE.exists():
         return {}
     shapes = {code: shapely.from_geojson(g) for code, g in json.loads(FILE.read_text())["countries"].items()}
