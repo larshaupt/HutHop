@@ -7,7 +7,7 @@ import { clearTour, returnToTour } from "./tours.js";
 import { loadBeds } from "./beds.js";
 import { isFavourite, toggleFavourite } from "./favourites.js";
 import { loadWeather } from "./weather.js";
-import { COUNTRY_LABELS, countryChoice, formatHeight, heightUnit, heightValue, inChosenCountries, openSettings, settings } from "./settings.js";
+import { COUNTRY_LABELS, countryChoice, formatHeight, heightUnit, heightValue, inChosenCountries, openSettings, setSettings, settings } from "./settings.js";
 import { LANG, LOCALE, countryName, t } from "./i18n.js";
 import { noteSaved } from "./offline.js";
 
@@ -364,6 +364,23 @@ export function closeDetail() {
   clearTour();  // the listed tours' lines come back with the list
 }
 
+/** After the countries setting changed: close the open hut if its country is no longer chosen (it has left the map
+ * and the list). True if it closed. */
+export function closeHutOutsideCountries() {
+  const hut = huts.find((h) => h.id === state.hut);
+  if (!hut || inChosenCountries(hut)) return false;
+  closeDetail();
+  return true;
+}
+
+/** A hut outside the chosen countries (e.g. opened from a shared link): say so, with a button to add its country. */
+function countryNote(d) {
+  if (inChosenCountries(d)) return "";
+  const label = COUNTRY_LABELS[countryChoice(d.country)];
+  return `<p class="warn">${esc(t("{country} isn't in your countries.", { country: label }))} ` +
+    `<button type="button" class="link inline" id="addHutCountry">${esc(t("Show {country}", { country: label }))}</button></p>`;
+}
+
 const PRICE_LABEL = { overnight: t("Night"), half_board: t("Half board"), breakfast: t("Breakfast"), dinner: t("Dinner"),
   tax: t("Tourist tax"), winter_room: t("Winter room"), self_catering_fee: t("Kitchen use") };
 // Lucide "share" (ISC licence)
@@ -467,6 +484,7 @@ function renderDetail(d) {
     <div class="detail-body">
       <h2>${esc(d.name)}</h2>
       <div class="subtitle">${subtitle}</div>
+      ${countryNote(d)}
       <div class="facts">
         <div class="fact"><b>${d.altitude ? heightValue(d.altitude) : "–"}</b><span>${t("{unit} altitude", { unit: heightUnit() })}</span></div>
         <div class="fact"><b>${d.beds ?? "–"}</b><span>${t("beds")}</span></div>
@@ -504,6 +522,9 @@ function renderDetail(d) {
         <a href="#" data-edit-hut="${d.id}">${t("Edit hut data")}</a></p>
     </div>`;
   $("#back").addEventListener("click", closeDetail);
+  $("#addHutCountry")?.addEventListener("click", () => {
+    setSettings({ countries: [...settings().countries, countryChoice(d.country)] });
+  });
   $("#hutShare").addEventListener("click", async (ev) => {
     const button = ev.currentTarget;
     if (!await shareLink(`${location.origin}/#hut=${d.id}`, d.name)) return;

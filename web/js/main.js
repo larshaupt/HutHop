@@ -2,7 +2,7 @@
 import { $, isMobile, setSheet } from "./util.js";
 import { reloadFromHash, setState, state } from "./state.js";
 import { addTrailLayer, initMap, setBaseStyle, setTrailsVisible, showAll } from "./map.js";
-import { addHutLayers, bindHutEvents, bindHutMap, closeDetail, loadHuts, renderControls, selectHut, setHutClickHook, syncControls,
+import { addHutLayers, bindHutEvents, bindHutMap, closeDetail, closeHutOutsideCountries, loadHuts, renderControls, selectHut, setHutClickHook, syncControls,
   update } from "./huts.js";
 import { addEdgeLayers, bindConnectionEvents, redrawConnections } from "./connections.js";
 import { bindEditorEvents } from "./editor.js";
@@ -40,15 +40,19 @@ function setView(view) {
 }
 
 /** After a change in the settings (⚙): show everything open again within them (units, pace, what is offered). */
-let settingsTimer = null, settingsSearch = false;
+let settingsTimer = null, settingsSearch = false, countriesChanged = false;
 function applySettings(patch) {
   clearTimeout(settingsTimer);
   // Units and member prices only change how things are shown: no new search for them.
   settingsSearch ||= Object.keys(patch).some((k) => k !== "units" && k !== "member");
+  countriesChanged ||= "countries" in patch;
   setTrailsVisible(state.trails);
   settingsTimer = setTimeout(() => {
     update();
     syncControls();
+    // Unticking the open hut's country closes it: it has left the map and the list
+    if (countriesChanged) closeHutOutsideCountries();
+    countriesChanged = false;
     if (!settingsSearch) {
       rerenderTours();
       if (state.hut) selectHut(state.hut, { fly: false });
