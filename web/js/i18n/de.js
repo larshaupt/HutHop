@@ -528,6 +528,8 @@ export default {
 "Huts in {countries}": "Hütten in: {countries}",
 "More countries": "Weitere Länder",
 "a hut or stop in a country you haven't chosen": "eine Hütte oder Haltestelle in einem Land, das du nicht gewählt hast",
+"{country} isn't in your countries.": "{country} ist nicht in deinen Ländern.",
+"Show {country}": "{country} anzeigen",
 "{count} of {total} tours": {"one": "{count} von {total} Tour", "other": "{count} von {total} Touren"},
 "{n} rides between huts": {"one": "Fahrt zwischen Hütten", "other": "{n} Fahrten zwischen Hütten"},
 "{n} tiles could not be loaded.": {"one": "{n} Kachel konnte nicht geladen werden.", "other": "{n} Kacheln konnten nicht geladen werden."},
