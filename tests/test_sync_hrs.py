@@ -63,6 +63,21 @@ def test_parse_hut_maps_fields():
     assert sync_hrs.parse_hut(hut_info(2, "Private", "47.1, 12.7", tenant="HOBEX"))["hut"]["operator"] == "private"
 
 
+def test_dav_hut_in_bavarian_region_is_imported(tmp_path, monkeypatch):
+    conn = connect(tmp_path / "test.db")
+    bavaria = shapely.box(2_600_000, 1_170_000, 2_850_000, 1_270_000)
+    monkeypatch.setattr(regions, "areas", lambda: {"DE": bavaria})
+    monkeypatch.setattr(countries, "country_at", lambda e, n: [None] * len(e))
+    monkeypatch.setattr(countries, "borders", lambda: {})
+
+    info = hut_info(240, "Lindauer Hütte", "47.385, 10.1", tenant="DAV", tenantCountry="DE")
+    parsed = sync_hrs.select(conn, [info])
+
+    assert len(parsed) == 1
+    assert parsed[0]["place"]["country"] == "DE"
+    assert parsed[0]["hut"]["owner"] == "DAV"
+
+
 @pytest.mark.parametrize(("text", "expected"), [
     ("47.105367, 12.715533", (47.105367, 12.715533)),
     ("12.24388, 47.70463", (47.70463, 12.24388)),  # lon, lat
